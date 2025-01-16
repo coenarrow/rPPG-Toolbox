@@ -96,8 +96,8 @@ class UBFCPHYSLoader(BaseLoader):
         if config_preprocess.USE_PSUEDO_PPG_LABEL:
             bvps = self.generate_pos_psuedo_labels(frames, fs=self.config_data.FS)
         else:
-            bvps = self.read_wave(
-                os.path.join(os.path.dirname(data_dirs[i]['path']),"bvp_{0}.csv".format(saved_filename)))
+            bvp_path = os.path.join(os.path.dirname(data_dirs[i]['path']),f"bvp_{saved_filename}.csv")
+            bvps = self.read_wave(bvp_path)
 
         bvps = BaseLoader.resample_ppg(bvps, frames.shape[0])
             

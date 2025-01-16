@@ -85,8 +85,8 @@ class UBFCrPPGLoader(BaseLoader):
         if config_preprocess.USE_PSUEDO_PPG_LABEL:
             bvps = self.generate_pos_psuedo_labels(frames, fs=self.config_data.FS)
         else:
-            bvps = self.read_wave(
-                os.path.join(data_dirs[i]['path'],"ground_truth.txt"))
+            bvp_path = os.path.join(data_dirs[i]['path'],"ground_truth.txt")
+            bvps = self.read_wave(bvp_path)
             
         frames_clips, bvps_clips = self.preprocess(frames, bvps, config_preprocess)
         input_name_list, label_name_list = self.save_multi_process(frames_clips, bvps_clips, saved_filename)
