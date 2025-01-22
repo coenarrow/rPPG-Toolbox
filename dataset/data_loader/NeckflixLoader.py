@@ -18,7 +18,9 @@ from dataset.data_loader.BaseLoader import BaseLoader
 from tqdm import tqdm
 import csv
 import pandas as pd
+
 import av
+from collections import defaultdict
 
 class NeckflixLoader(BaseLoader):
     """The data loader for the Neckflix dataset."""
@@ -187,7 +189,7 @@ class NeckflixLoader(BaseLoader):
     #     file_list_dict[i] = input_name_list
 
     @staticmethod
-    def read_video(video_file, data_dict):
+    def read_video(video_file):
         """Reads a video file, returns frames(T,H,W,3) """
         VidObj = cv2.VideoCapture(video_file)
         VidObj.set(cv2.CAP_PROP_POS_MSEC, 0)
@@ -199,28 +201,23 @@ class NeckflixLoader(BaseLoader):
             frames.append(frame)
             success, frame = VidObj.read()
         VidObj.release()
-        data_dict['RGB'] = np.asarray(frames)
-        return data_dict
+        return np.asarray(frames)
 
     @staticmethod
-    def read_16bit_video(video_file, data_dict):
+    def read_16bit_video(video_file):
         """Reads a 16-bit grayscale FFV1 MKV file, returns frames (T, H, W, 1) as uint16"""
         container = av.open(video_file)
         video_stream = container.streams.video[0]
         frames = []
 
-        for frame in container.decode(video_stream):
+        for frame in container.decode(video_stream): # type: ignore
             # Convert to a NumPy array in 16-bit grayscale
             frame_np = frame.to_ndarray(format="gray16le")
             # PyAV returns grayscale frames with shape (H, W)
             frames.append(frame_np)
 
         # Return all frames as a single NumPy array of shape (T, H, W)
-        frames = np.asarray(frames, dtype=np.uint16)
-        if 'IR' in video_file:
-            data_dict['IR'] = np.expand_dims(frames,axis=-1)
-        elif 'Depth' in video_file:
-            data_dict['Depth'] = np.expand_dims(frames,axis=-1)
+        frames = np.expand_dims(np.asarray(frames, dtype=np.uint16),axis=-1) # changes type and expands dimensions
         return data_dict
 
     # @staticmethod
@@ -233,21 +230,43 @@ class NeckflixLoader(BaseLoader):
     #     return waves, sq_vec
 
 
+# Outline of the code for selecting the subsets
+# Create a defaultdict to group the dictionaries
+# def select_subset(dict_list, begin, end):
+#     grouped_dicts = defaultdict(list)
+
+#     # Grouping based on participant, Recording Directory, and camera
+#     for d in dict_list:
+#         key = (d['participant'], d['Recording Directory'], d['camera'])
+#         grouped_dicts[key].append(d)
+
+#     # Convert defaultdict to a regular dict if needed
+#     grouped_dicts = dict(grouped_dicts)
+
+#     # Print the grouped result
+#     for key, group in grouped_dicts.items():
+#         print(f"Group Key: {key}")
+#         for item in group:
+#             print(f"  {item}")
+
+
 # Variables
-data_path = "/Volumes/SMED-VEFCVP-001/CVP_Dataset/Processed_Dataset"
+data_path = "data/Neckflix"
 begin = 0
 end = 0.8
 
 ### Testing functions
 def get_raw_data(data_path):
-    """Returns data directories under the path(For iBVP dataset)."""
+    """Returns a list of dictionaries for each video recording in the Neckflix dataset."""
     data_dirs = sorted(glob.glob(os.path.join(data_path, "*", "*.mkv")) + glob.glob(os.path.join(data_path, "*", "*.hdf5")))
     # if not data_dirs:
     #     raise ValueError(self.dataset_name + " data paths empty!")
     dirs = list()
     for data_dir in tqdm(data_dirs):
         index = os.sep.join(data_dir.split(os.sep)[-2:]).split('.')[0]
-        video_type = index.split(os.sep)[-1].split(os.sep)[-1]
+        camera = index.split(os.sep)[-1].split('.')[0].split('_')[0]
+        video_type = index.split(os.sep)[-1].split('.')[0].split('_')[-1]
+        index = index.split(os.sep)[0]
         participant = data_dir.split(os.sep)[-2].split('_')[0]
         pos = data_dir.split(os.sep)[-2].split('_')[-2]
         if pos == '0':
@@ -259,6 +278,7 @@ def get_raw_data(data_path):
         else:
             raise ValueError(f"Position {pos} not recognized!")
         data_dir_info = {"index": index,
+                         "camera": camera,
                          "video_type": video_type, 
                          "path": data_dir, 
                          "participant": participant, 
@@ -268,49 +288,34 @@ def get_raw_data(data_path):
 
 def split_raw_data(data_dirs, begin, end):
     """Returns a subset of data dirs, split with begin and end values, 
-    and ensures no overlapping participants between splits"""
+    and ensures no overlapping subjects between splits"""
 
-    # return the full directory
+    # Return the full directory if range covers the entire dataset
     if begin == 0 and end == 1:
         return data_dirs
 
-    # get info about the dataset: participant list and num vids per participant
-    data_info = dict()
+    # Group data by subject
+    data_info = defaultdict(list)
     for data in data_dirs:
-        participant = data['participant']
-        video_type = data['video_type']
-        data_dir = data['path']
-        index = data['index']
-        position = data['position']
-        # creates a dictionary of data_dirs indexed by participant number
-        if participant not in data_info:  # if participant not in the data info dictionary
-            data_info[participant] = []  # make an emplty list for that participant
-        # append a tuple of the filename, participant num, trial num, and chunk num
-        data_info[participant].append({"index": index,
-                                       "video_type": video_type, 
-                                       "path": data_dir, 
-                                       "participant": participant, 
-                                       "position": position})
+        data_info[data['participant']].append(data)
 
-    participant_list = sorted(list(data_info.keys()))  # all participants by number ID
-    num_participants = len(participant_list)  # number of unique participants
+    # Sort subjects and calculate range of interest
+    subj_list = sorted(data_info.keys())
+    num_subjs = len(subj_list)
+    subj_range = subj_list[int(begin * num_subjs):int(end * num_subjs)]
 
-    # get split of data set (depending on start / end)
-    participant_range = list(range(0, num_participants))
-    if begin != 0 or end != 1:
-        participant_range = list(range(int(begin * num_participants), int(end * num_participants)))
+    # Compile the subset of data
+    subset = [data for subj in subj_range for data in data_info[subj]]
+    return subset
 
-    # compile file list
-    data_dirs_new = []
-    for i in participant_range:
-        participant_num = participant_list[i]
-        participant_files = data_info[participant_num]
-        data_dirs_new += participant_files  # add file information to file_list (tuple of fname, participant ID, trial num, chunk num)
 
-    return data_dirs_new
+
 
 data_dirs = get_raw_data(data_path)
+len(data_dirs)
 data_dirs_subset = split_raw_data(data_dirs, begin, end)
+len(data_dirs_subset)
+data_dirs_subset[0]
 data_dir_info = data_dirs_subset[1] # 0 for EV, 1 for Depth, 2 for IR, 3 for RGB
 #### Defining the construct_data_dict function
 # Get the instance for the specific video recording
