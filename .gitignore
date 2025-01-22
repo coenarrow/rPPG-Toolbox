@@ -20,3 +20,4 @@ debug_utils_physnet.py
 test.yaml
 env
 .vscode
+data
