@@ -166,6 +166,8 @@ if __name__ == "__main__":
             train_loader = data_loader.UBFCPHYSLoader.UBFCPHYSLoader
         elif config.TRAIN.DATA.DATASET == "iBVP":
             train_loader = data_loader.iBVPLoader.iBVPLoader
+        elif config.TRAIN.DATA.DATASET == 'NECKFLIX':
+            train_loader = data_loader.NeckflixLoader.NeckflixLoader
         else:
             raise ValueError("Unsupported dataset! Currently supporting UBFC-rPPG, PURE, MMPD, \
                              SCAMPS, BP4D+ (Normal and BigSmall preprocessing), UBFC-PHYS and iBVP.")
@@ -206,6 +208,8 @@ if __name__ == "__main__":
             valid_loader = data_loader.UBFCPHYSLoader.UBFCPHYSLoader
         elif config.VALID.DATA.DATASET == "iBVP":
             valid_loader = data_loader.iBVPLoader.iBVPLoader
+        elif config.VALID.DATA.DATASET == 'NECKFLIX':
+            valid_loader = data_loader.NeckflixLoader.NeckflixLoader
         elif config.VALID.DATA.DATASET is None and not config.TEST.USE_LAST_EPOCH:
             raise ValueError("Validation dataset not specified despite USE_LAST_EPOCH set to False!")
         else:
@@ -248,6 +252,8 @@ if __name__ == "__main__":
             test_loader = data_loader.UBFCPHYSLoader.UBFCPHYSLoader
         elif config.TEST.DATA.DATASET == "iBVP":
             test_loader = data_loader.iBVPLoader.iBVPLoader
+        elif config.TEST.DATA.DATASET == "NECKFLIX":
+            test_loader = data_loader.NeckflixLoader.NeckflixLoader
         else:
             raise ValueError("Unsupported dataset! Currently supporting UBFC-rPPG, PURE, MMPD, \
                              SCAMPS, BP4D+ (Normal and BigSmall preprocessing), UBFC-PHYS and iBVP.")
@@ -289,6 +295,8 @@ if __name__ == "__main__":
             unsupervised_loader = data_loader.UBFCPHYSLoader.UBFCPHYSLoader
         elif config.UNSUPERVISED.DATA.DATASET == "iBVP":
             unsupervised_loader = data_loader.iBVPLoader.iBVPLoader
+        elif config.UNSUPERVISED.DATA.DATASET == "NECKFLIX":
+            raise ValueError("Neckflix dataset is not supported for unsupervised method!")
         else:
             raise ValueError("Unsupported dataset! Currently supporting UBFC-rPPG, PURE, MMPD, \
                              SCAMPS, BP4D+, UBFC-PHYS and iBVP.")
@@ -305,7 +313,6 @@ if __name__ == "__main__":
             worker_init_fn=seed_worker,
             generator=general_generator
         )
-
     else:
         raise ValueError("Unsupported toolbox_mode! Currently support train_and_test or only_test or unsupervised_method.")
 
