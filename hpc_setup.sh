@@ -2,7 +2,7 @@
 
 # Check if a mode argument is provided
 if [ -z "$1" ]; then
-    echo "Usage: $0 {conda}"
+    echo "Usage: \"$0 conda\""
     exit 1
 fi
 
@@ -19,7 +19,7 @@ conda_setup() {
     conda create --prefix ./env python==3.10 -y
     chmod -R u+rwx ./env
     conda activate ./env
-    pip install torch==2.1.2 torchvision==0.16.2 torchaudio==2.1.2 --index-url https://download.pytorch.org/whl/cu118
+    pip install torch==2.1.2 torchvision==0.16.2 torchaudio==2.1.2 --index-url https://download.pytorch.org/whl/cu118 -y
     pip install -r requirements.txt
     cd tools/mamba || exit 1
     python -m pip install . || exit 1
