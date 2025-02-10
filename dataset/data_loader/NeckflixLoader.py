@@ -103,7 +103,6 @@ class NeckflixLoader(BaseLoader):
     def __getitem__(self,index):
         with open(self.inputs[index], 'rb') as handle:
             data = pickle.load(handle)
-
         for key, value in data.items():
             if self.data_format == 'NDCHW':
                 data[key] = np.float32(np.transpose(value, (0, 3, 1, 2)))
@@ -122,7 +121,7 @@ class NeckflixLoader(BaseLoader):
             pass
         
         label = np.load(self.labels[index])
-        label = np.float32(label)
+        label = np.float32(label[:,1:].squeeze()) # we don't want to load the time label
 
         # item_path is the location of a specific clip in a preprocessing output folder
         # For example, an item path could be /home/data/PURE_SizeW72_...unsupervised/501_input0.npy
@@ -138,6 +137,7 @@ class NeckflixLoader(BaseLoader):
         # chunk_id is the extracted, numeric chunk identifier. Following the previous comments, 
         # the chunk_id for example would be 0
         chunk_id = item_path_filename[split_idx + 6:].split('.')[0]
+        
         return data, label, filename, chunk_id
 
     def update_default_cached_path(self, config_data):
