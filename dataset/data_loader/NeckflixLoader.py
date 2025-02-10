@@ -584,42 +584,54 @@ class NeckflixLoader(BaseLoader):
         if use_bigsmall:
             big_resized_frames = [self.resize_frames(stream, config_data.PREPROCESS.BIGSMALL.RESIZE.BIG_H, config_data.PREPROCESS.BIGSMALL.RESIZE.BIG_W) for stream in f_c]
             ### Big Frames
+            big_input_data = list()
             for data_type in config_data.PREPROCESS.BIGSMALL.BIG_DATA_TYPE: # The loop allows multiple processing methods
                 if data_type == "Raw":
                     big_data = big_resized_frames
+                    big_input_data.append(np.concatenate(big_data, axis=-1))
                 elif data_type == "DiffNormalized":
                     big_data = [self.diff_normalize_data(stream, exclude_mask=True) for stream in big_resized_frames]
+                    big_input_data.append(np.concatenate(big_data, axis=-1))
                 elif data_type == "Standardized":
                     big_data = [self.standardized_data(stream, exclude_mask=True) for stream in big_resized_frames]
+                    big_input_data.append(np.concatenate(big_data, axis=-1))
                 else:
                     raise ValueError("Unsupported data type!")
-            big_data = np.concatenate(big_data, axis=-1)  # concatenate all channels
+            big_input_data = np.concatenate(big_input_data, axis=-1)  # concatenate all channels
             ### Small Frames
             small_resized_frames = [self.resize_frames(stream, config_data.PREPROCESS.BIGSMALL.RESIZE.SMALL_H, config_data.PREPROCESS.BIGSMALL.RESIZE.SMALL_W) for stream in f_c]
+            small_input_data = list()
             for data_type in config_data.PREPROCESS.BIGSMALL.SMALL_DATA_TYPE: # The loop allows multiple processing methods
                 if data_type == "Raw":
                     small_data = small_resized_frames
+                    small_input_data.append(np.concatenate(small_data, axis=-1))
                 elif data_type == "DiffNormalized":
                     small_data = [self.diff_normalize_data(stream, exclude_mask=True) for stream in small_resized_frames]
+                    small_input_data.append(np.concatenate(small_data, axis=-1))
                 elif data_type == "Standardized":
                     small_data = [self.standardized_data(stream, exclude_mask=True) for stream in small_resized_frames]
+                    small_input_data.append(np.concatenate(small_data, axis=-1))
                 else:
                     raise ValueError("Unsupported data type!")
-            small_data = np.concatenate(small_data, axis=-1)  # concatenate all channels
-            preprocessed_data = [big_data, small_data]
+            small_input_data = np.concatenate(small_input_data, axis=-1)  # concatenate all channels
+            preprocessed_data = [big_input_data, small_input_data]
         else:
             resized_frames = [self.resize_frames(stream, config_data.PREPROCESS.RESIZE.H, config_data.PREPROCESS.RESIZE.W) for stream in f_c]
+            input_data = list()
             for data_type in config_data.PREPROCESS.DATA_TYPE:
                 if data_type == "Raw":
                     data = resized_frames
+                    input_data.append(np.concatenate(data, axis=-1))
                 elif data_type == "DiffNormalized":
                     data = [self.diff_normalize_data(stream, exclude_mask=True) for stream in resized_frames]
+                    input_data.append(np.concatenate(data, axis=-1))
                 elif data_type == "Standardized":
                     data = [self.standardized_data(stream, exclude_mask=True) for stream in resized_frames]
+                    input_data.append(np.concatenate(data, axis=-1))
                 else:
                     raise ValueError("Unsupported data type!")
-            data = np.concatenate(data, axis=-1)  # concatenate all channels
-            preprocessed_data = [data]
+            input_data = np.concatenate(input_data, axis=-1)  # concatenate all channels
+            preprocessed_data = [input_data]
         return preprocessed_data
     
     def preprocess_labels(self,data_dict, config_data) -> np.ndarray:
@@ -902,11 +914,12 @@ class NeckflixLoader(BaseLoader):
         diffnormalized_len = n - 1
         diffnormalized_data = np.zeros((diffnormalized_len, h, w, c), dtype=precision)
         diffnormalized_data_padding = np.zeros((1, h, w, c), dtype=precision)
+        data = data.astype(precision)
         for j in range(diffnormalized_len):
             numerator = (data[j + 1, :, :, :] - data[j, :, :, :])
             denominator = (data[j + 1, :, :, :] + data[j, :, :, :] + 1e-7)
             diffnormalized_data[j, :, :, :] = numerator / denominator
-        diffnormalized_data = diffnormalized_data / np.std(diffnormalized_data)
+        diffnormalized_data = diffnormalized_data / np.nanstd(diffnormalized_data)
         diffnormalized_data = np.append(diffnormalized_data, diffnormalized_data_padding, axis=0)
         diffnormalized_data[np.isnan(diffnormalized_data)] = 0
         return diffnormalized_data
