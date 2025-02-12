@@ -1,17 +1,17 @@
 BASE: ['']
 TOOLBOX_MODE: "train_and_test"      # "train_and_test"  or "only_test"
 
-# iBVPNet Specifics
-# Resize options: ???
-# CHUNK_LENGTH options: must be divisible by the Frame_Depth setting at bottom
-# No real requirement for frame resizing visible
-# chunk length should also be specified in the specific model parameters
+# PhysFormer Specifics
+# A bit annoying to update all the parameters here, so keep the defaults.
+# Only suitable for 3 channels
+# Currently only supports chunk length of 160 frames
+# Resizing must be 128. 
 
 TRAIN:
   BATCH_SIZE: 8
   EPOCHS: 30
-  LR: 1e-3
-  MODEL_FILE_NAME: NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet
+  LR: 1e-4
+  MODEL_FILE_NAME: NECKFLIX_NECKFLIX_NECKFLIX_PhysFormer
   PLOT_LOSSES_AND_LR: True
   DATA:
     FS: 30
@@ -30,12 +30,12 @@ TRAIN:
     BEGIN: 0.0
     END: 0.8
     PREPROCESS:
-      DATA_TYPE: ['DiffNormalized']    # 'Raw' or 'DiffNormalized' is supported
+      DATA_TYPE: ['Standardized']    # 'Raw' or 'DiffNormalized' is supported
       DATA_AUG: ['None']    # 'None' or 'Motion' is supported, used if the data path points to an augmented dataset or requires augmentation
       USE_PSUEDO_PPG_LABEL: False
       LABEL_TYPE: DiffNormalized
       DO_CHUNK: True
-      CHUNK_LENGTH: 128
+      CHUNK_LENGTH: 160
       USE_BIGSMALL: False
       BIGSMALL:
         BIG_DATA_TYPE: ['Standardized']
@@ -52,8 +52,8 @@ TRAIN:
         CVP_NORMALIZATION: [-30, 40]
         ABP_NORMALIZATION: [-50, 200]
       RESIZE:
-        H: 96
-        W: 96
+        H: 128
+        W: 128
 
 VALID:
   DATA:
@@ -73,12 +73,12 @@ VALID:
     BEGIN: 0.8
     END: 0.9
     PREPROCESS:
-      DATA_TYPE: ['DiffNormalized']    # 'Raw' or 'DiffNormalized' is supported
+      DATA_TYPE: ['Standardized']    # 'Raw' or 'DiffNormalized' is supported
       DATA_AUG: ['None']    # 'None' or 'Motion' is supported, used if the data path points to an augmented dataset or requires augmentation
       USE_PSUEDO_PPG_LABEL: False
       LABEL_TYPE: DiffNormalized
       DO_CHUNK: True
-      CHUNK_LENGTH: 128
+      CHUNK_LENGTH: 160
       USE_BIGSMALL: False
       BIGSMALL:
         BIG_DATA_TYPE: ['Standardized']
@@ -95,8 +95,8 @@ VALID:
         CVP_NORMALIZATION: [-30, 40]
         ABP_NORMALIZATION: [-50, 200]
       RESIZE:
-        H: 96
-        W: 96
+        H: 128
+        W: 128
 
 TEST:
   METRICS: ['MAE', 'RMSE', 'MAPE', 'Pearson', 'SNR', 'BA']
@@ -118,12 +118,12 @@ TEST:
     BEGIN: 0.9
     END: 1.0
     PREPROCESS:
-      DATA_TYPE: ['DiffNormalized']    # 'Raw' or 'DiffNormalized' is supported
+      DATA_TYPE: ['Standardized']    # 'Raw' or 'DiffNormalized' is supported
       DATA_AUG: ['None']    # 'None' or 'Motion' is supported, used if the data path points to an augmented dataset or requires augmentation
       USE_PSUEDO_PPG_LABEL: False
       LABEL_TYPE: DiffNormalized
       DO_CHUNK: True
-      CHUNK_LENGTH: 128
+      CHUNK_LENGTH: 160
       USE_BIGSMALL: False
       BIGSMALL:
         BIG_DATA_TYPE: ['Standardized']
@@ -140,24 +140,27 @@ TEST:
         CVP_NORMALIZATION: [-30, 40]
         ABP_NORMALIZATION: [-50, 200]
       RESIZE:
-        H: 96
-        W: 96
+        H: 128
+        W: 128
 
 DEVICE: cuda:0
 NUM_OF_GPU_TRAIN: 1
 LOG:
   PATH: runs/exp
 MODEL:
-  DROP_RATE: 0.2
-  NAME: iBVPNet
-  iBVPNet:
-    CHANNELS: 3
-    FRAME_NUM: 128
+  DROP_RATE: 0.1
+  NAME: PhysFormer
+  PHYSFORMER:                     # Probably need to update these in some meaningful way
+    PATCH_SIZE: 4
+    DIM: 96
+    FF_DIM: 144
+    NUM_HEADS: 4
+    NUM_LAYERS: 12
+    THETA: 0.7
 INFERENCE:
   BATCH_SIZE: 4
   EVALUATION_METHOD: "FFT"        # "FFT" or "peak detection"
   EVALUATION_WINDOW:
     USE_SMALLER_WINDOW: False        # Change this if you'd like an evaluation window smaller than the test video length
     WINDOW_SIZE: 30        # In seconds
-  MODEL_PATH: ""
-
+  MODEL_PATH:   ""

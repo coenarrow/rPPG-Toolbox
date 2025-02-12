@@ -2,13 +2,12 @@ BASE: ['']
 TOOLBOX_MODE: "train_and_test"      # "train_and_test"  or "only_test"
 
 # EfficientPhys specifics
-# Resizing must be 36x36, 72x72 or 96x96 pixels
-# Chunk length must be divisible by the Frame_Depth setting at bottom
-
+# Resize options: 36x36, 72x72, 96x96 
+# CHUNK_LENGTH options: must be divisible by the Frame_Depth setting at bottom
 
 TRAIN:
-  BATCH_SIZE: 4
-  EPOCHS: 3
+  BATCH_SIZE: 8
+  EPOCHS: 30
   LR: 9e-3
   MODEL_FILE_NAME: NECKFLIX_NECKFLIX_NECKFLIX_EfficientPhys
   PLOT_LOSSES_AND_LR: True
@@ -16,7 +15,7 @@ TRAIN:
     FS: 30
     DATASET: NECKFLIX
     DO_PREPROCESS: True              # if first time, should be true
-    DATA_FORMAT: NDCHW    # Frames, Channels, Height, Width
+    DATA_FORMAT: NDCHW
     DATA_PATH:  "/group/pgh004/carrow/repo/hr_detection/datasets/CVP" 
     CACHED_PATH: "PreprocessedData"  # Processed dataset save path, need to be updated
     EXP_DATA_NAME: ""
@@ -29,12 +28,12 @@ TRAIN:
     BEGIN: 0.0
     END: 0.8
     PREPROCESS:
-      DATA_TYPE: ['Standardized','DiffNormalized']    # 'Raw' or 'DiffNormalized' is supported
+      DATA_TYPE: ['DiffNormalized']    # 'Raw', 'Standardized', 'DiffNormalized'
       DATA_AUG: ['None']    # 'None' or 'Motion' is supported, used if the data path points to an augmented dataset or requires augmentation
       USE_PSUEDO_PPG_LABEL: False
       LABEL_TYPE: DiffNormalized
       DO_CHUNK: True
-      CHUNK_LENGTH: 128 # Default chunk length 180
+      CHUNK_LENGTH: 128
       USE_BIGSMALL: False
       BIGSMALL:
         BIG_DATA_TYPE: ['Standardized']
@@ -72,12 +71,12 @@ VALID:
     BEGIN: 0.8
     END: 0.9
     PREPROCESS:
-      DATA_TYPE: ['Standardized','DiffNormalized']    # 'Raw' or 'DiffNormalized' is supported
+      DATA_TYPE: ['DiffNormalized']    # 'Raw', 'Standardized', 'DiffNormalized'
       DATA_AUG: ['None']    # 'None' or 'Motion' is supported, used if the data path points to an augmented dataset or requires augmentation
       USE_PSUEDO_PPG_LABEL: False
       LABEL_TYPE: DiffNormalized
       DO_CHUNK: True
-      CHUNK_LENGTH: 128 # Default chunk length 180
+      CHUNK_LENGTH: 128
       USE_BIGSMALL: False
       BIGSMALL:
         BIG_DATA_TYPE: ['Standardized']
@@ -117,12 +116,12 @@ TEST:
     BEGIN: 0.9
     END: 1.0
     PREPROCESS:
-      DATA_TYPE: ['Standardized','DiffNormalized']    # 'Raw' or 'DiffNormalized' is supported
+      DATA_TYPE: ['DiffNormalized']    # 'Raw', 'Standardized', 'DiffNormalized'
       DATA_AUG: ['None']    # 'None' or 'Motion' is supported, used if the data path points to an augmented dataset or requires augmentation
       USE_PSUEDO_PPG_LABEL: False
       LABEL_TYPE: DiffNormalized
       DO_CHUNK: True
-      CHUNK_LENGTH: 128 # Default chunk length 180
+      CHUNK_LENGTH: 128
       USE_BIGSMALL: False
       BIGSMALL:
         BIG_DATA_TYPE: ['Standardized']
@@ -150,7 +149,7 @@ MODEL:
   DROP_RATE: 0.2
   NAME: EfficientPhys
   EFFICIENTPHYS:
-    FRAME_DEPTH: 10
+    FRAME_DEPTH: 16
 INFERENCE:
   BATCH_SIZE: 4
   EVALUATION_METHOD: "FFT"        # "FFT" or "peak detection"

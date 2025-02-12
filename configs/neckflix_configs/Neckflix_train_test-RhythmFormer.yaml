@@ -1,12 +1,9 @@
 BASE: ['']
 TOOLBOX_MODE: "train_and_test"      # "train_and_test"  or "only_test"
 
-# Resize (128,128)
-# Chunk length (160)
-
 TRAIN:
-  BATCH_SIZE: 4
-  EPOCHS: 3
+  BATCH_SIZE: 8
+  EPOCHS: 30
   LR: 9e-3
   MODEL_FILE_NAME: NECKFLIX_NECKFLIX_NECKFLIX_RhythmFormer
   PLOT_LOSSES_AND_LR: True
@@ -27,12 +24,12 @@ TRAIN:
     BEGIN: 0.0
     END: 0.8
     PREPROCESS:
-      DATA_TYPE: ['Standardized','DiffNormalized']    # 'Raw' or 'DiffNormalized' is supported
+      DATA_TYPE: ['DiffNormalized']    # 'Raw' or 'DiffNormalized' is supported
       DATA_AUG: ['None']    # 'None' or 'Motion' is supported, used if the data path points to an augmented dataset or requires augmentation
       USE_PSUEDO_PPG_LABEL: False
-      LABEL_TYPE: DiffNormalized
+      LABEL_TYPE: Standardized
       DO_CHUNK: True
-      CHUNK_LENGTH: 180
+      CHUNK_LENGTH: 128
       USE_BIGSMALL: False
       BIGSMALL:
         BIG_DATA_TYPE: ['Standardized']
@@ -49,8 +46,8 @@ TRAIN:
         CVP_NORMALIZATION: [-30, 40]
         ABP_NORMALIZATION: [-50, 200]
       RESIZE:
-        H: 128
-        W: 128
+        H: 96
+        W: 96
 
 VALID:
   DATA:
@@ -70,12 +67,12 @@ VALID:
     BEGIN: 0.8
     END: 0.9
     PREPROCESS:
-      DATA_TYPE: ['Standardized','DiffNormalized']    # 'Raw' or 'DiffNormalized' is supported
+      DATA_TYPE: ['DiffNormalized']    # 'Raw' or 'DiffNormalized' is supported
       DATA_AUG: ['None']    # 'None' or 'Motion' is supported, used if the data path points to an augmented dataset or requires augmentation
       USE_PSUEDO_PPG_LABEL: False
-      LABEL_TYPE: DiffNormalized
+      LABEL_TYPE: Standardized
       DO_CHUNK: True
-      CHUNK_LENGTH: 180
+      CHUNK_LENGTH: 128
       USE_BIGSMALL: False
       BIGSMALL:
         BIG_DATA_TYPE: ['Standardized']
@@ -92,8 +89,8 @@ VALID:
         CVP_NORMALIZATION: [-30, 40]
         ABP_NORMALIZATION: [-50, 200]
       RESIZE:
-        H: 128
-        W: 128
+        H: 96
+        W: 96
 
 TEST:
   METRICS: ['MAE', 'RMSE', 'MAPE', 'Pearson', 'SNR', 'BA']
@@ -115,12 +112,12 @@ TEST:
     BEGIN: 0.9
     END: 1.0
     PREPROCESS:
-      DATA_TYPE: ['Standardized','DiffNormalized']    # 'Raw' or 'DiffNormalized' is supported
+      DATA_TYPE: ['DiffNormalized']    # 'Raw' or 'DiffNormalized' is supported
       DATA_AUG: ['None']    # 'None' or 'Motion' is supported, used if the data path points to an augmented dataset or requires augmentation
       USE_PSUEDO_PPG_LABEL: False
-      LABEL_TYPE: DiffNormalized
+      LABEL_TYPE: Standardized
       DO_CHUNK: True
-      CHUNK_LENGTH: 180
+      CHUNK_LENGTH: 128
       USE_BIGSMALL: False
       BIGSMALL:
         BIG_DATA_TYPE: ['Standardized']
@@ -137,8 +134,8 @@ TEST:
         CVP_NORMALIZATION: [-30, 40]
         ABP_NORMALIZATION: [-50, 200]
       RESIZE:
-        H: 128
-        W: 128
+        H: 96
+        W: 96
 
 DEVICE: cuda:0
 NUM_OF_GPU_TRAIN: 1

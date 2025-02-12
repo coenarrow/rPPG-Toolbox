@@ -1,23 +1,17 @@
 BASE: ['']
 TOOLBOX_MODE: "train_and_test"      # "train_and_test"  or "only_test"
 
-# iBVPNet Specifics
-# Resize options: ???
-# CHUNK_LENGTH options: must be divisible by the Frame_Depth setting at bottom
-# No real requirement for frame resizing visible
-# chunk length should also be specified in the specific model parameters
-
 TRAIN:
   BATCH_SIZE: 8
   EPOCHS: 30
-  LR: 1e-3
-  MODEL_FILE_NAME: NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet
+  LR: 9e-3
+  MODEL_FILE_NAME: NECKFLIX_NECKFLIX_NECKFLIX_RhythmFormer
   PLOT_LOSSES_AND_LR: True
   DATA:
     FS: 30
     DATASET: NECKFLIX
     DO_PREPROCESS: True              # if first time, should be true
-    DATA_FORMAT: NCDHW    # Frames, Channels, Height, Width
+    DATA_FORMAT: NDCHW    # Frames, Channels, Height, Width
     DATA_PATH:  "/group/pgh004/carrow/repo/hr_detection/datasets/CVP" 
     CACHED_PATH: "PreprocessedData"  # Processed dataset save path, need to be updated
     EXP_DATA_NAME: ""
@@ -30,10 +24,10 @@ TRAIN:
     BEGIN: 0.0
     END: 0.8
     PREPROCESS:
-      DATA_TYPE: ['DiffNormalized']    # 'Raw' or 'DiffNormalized' is supported
+      DATA_TYPE: ['Standardized']    # 'Raw' or 'DiffNormalized' is supported
       DATA_AUG: ['None']    # 'None' or 'Motion' is supported, used if the data path points to an augmented dataset or requires augmentation
       USE_PSUEDO_PPG_LABEL: False
-      LABEL_TYPE: DiffNormalized
+      LABEL_TYPE: Standardized
       DO_CHUNK: True
       CHUNK_LENGTH: 128
       USE_BIGSMALL: False
@@ -60,7 +54,7 @@ VALID:
     FS: 30
     DATASET: NECKFLIX
     DO_PREPROCESS: True              # if first time, should be true
-    DATA_FORMAT: NCDHW    # Frames, Channels, Height, Width
+    DATA_FORMAT: NDCHW    # Frames, Channels, Height, Width
     DATA_PATH:  "/group/pgh004/carrow/repo/hr_detection/datasets/CVP" 
     CACHED_PATH: "PreprocessedData"  # Processed dataset save path, need to be updated
     EXP_DATA_NAME: ""
@@ -73,10 +67,10 @@ VALID:
     BEGIN: 0.8
     END: 0.9
     PREPROCESS:
-      DATA_TYPE: ['DiffNormalized']    # 'Raw' or 'DiffNormalized' is supported
+      DATA_TYPE: ['Standardized']    # 'Raw' or 'DiffNormalized' is supported
       DATA_AUG: ['None']    # 'None' or 'Motion' is supported, used if the data path points to an augmented dataset or requires augmentation
       USE_PSUEDO_PPG_LABEL: False
-      LABEL_TYPE: DiffNormalized
+      LABEL_TYPE: Standardized
       DO_CHUNK: True
       CHUNK_LENGTH: 128
       USE_BIGSMALL: False
@@ -105,7 +99,7 @@ TEST:
     FS: 30
     DATASET: NECKFLIX
     DO_PREPROCESS: True              # if first time, should be true
-    DATA_FORMAT: NCDHW    # Frames, Channels, Height, Width
+    DATA_FORMAT: NDCHW    # Frames, Channels, Height, Width
     DATA_PATH:  "/group/pgh004/carrow/repo/hr_detection/datasets/CVP" 
     CACHED_PATH: "PreprocessedData"  # Processed dataset save path, need to be updated
     EXP_DATA_NAME: ""
@@ -118,10 +112,10 @@ TEST:
     BEGIN: 0.9
     END: 1.0
     PREPROCESS:
-      DATA_TYPE: ['DiffNormalized']    # 'Raw' or 'DiffNormalized' is supported
+      DATA_TYPE: ['Standardized']    # 'Raw' or 'DiffNormalized' is supported
       DATA_AUG: ['None']    # 'None' or 'Motion' is supported, used if the data path points to an augmented dataset or requires augmentation
       USE_PSUEDO_PPG_LABEL: False
-      LABEL_TYPE: DiffNormalized
+      LABEL_TYPE: Standardized
       DO_CHUNK: True
       CHUNK_LENGTH: 128
       USE_BIGSMALL: False
@@ -149,15 +143,11 @@ LOG:
   PATH: runs/exp
 MODEL:
   DROP_RATE: 0.2
-  NAME: iBVPNet
-  iBVPNet:
-    CHANNELS: 3
-    FRAME_NUM: 128
+  NAME: RhythmFormer
 INFERENCE:
   BATCH_SIZE: 4
   EVALUATION_METHOD: "FFT"        # "FFT" or "peak detection"
   EVALUATION_WINDOW:
     USE_SMALLER_WINDOW: False        # Change this if you'd like an evaluation window smaller than the test video length
-    WINDOW_SIZE: 30        # In seconds
-  MODEL_PATH: ""
-
+    WINDOW_SIZE: 10        # In seconds
+  MODEL_PATH:   ""

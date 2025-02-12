@@ -1,17 +1,14 @@
 BASE: ['']
 TOOLBOX_MODE: "train_and_test"      # "train_and_test"  or "only_test"
 
-# iBVPNet Specifics
-# Resize options: ???
-# CHUNK_LENGTH options: must be divisible by the Frame_Depth setting at bottom
-# No real requirement for frame resizing visible
-# chunk length should also be specified in the specific model parameters
+# PhysMamba Options
+# Resizing 
 
 TRAIN:
   BATCH_SIZE: 8
   EPOCHS: 30
-  LR: 1e-3
-  MODEL_FILE_NAME: NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet
+  LR: 3e-3
+  MODEL_FILE_NAME: NECKFLIX_NECKFLIX_NECKFLIX_PhysMamba
   PLOT_LOSSES_AND_LR: True
   DATA:
     FS: 30
@@ -30,7 +27,7 @@ TRAIN:
     BEGIN: 0.0
     END: 0.8
     PREPROCESS:
-      DATA_TYPE: ['DiffNormalized']    # 'Raw' or 'DiffNormalized' is supported
+      DATA_TYPE: ['Standardized']    # 'Raw' or 'DiffNormalized' is supported
       DATA_AUG: ['None']    # 'None' or 'Motion' is supported, used if the data path points to an augmented dataset or requires augmentation
       USE_PSUEDO_PPG_LABEL: False
       LABEL_TYPE: DiffNormalized
@@ -73,7 +70,7 @@ VALID:
     BEGIN: 0.8
     END: 0.9
     PREPROCESS:
-      DATA_TYPE: ['DiffNormalized']    # 'Raw' or 'DiffNormalized' is supported
+      DATA_TYPE: ['Standardized']    # 'Raw' or 'DiffNormalized' is supported
       DATA_AUG: ['None']    # 'None' or 'Motion' is supported, used if the data path points to an augmented dataset or requires augmentation
       USE_PSUEDO_PPG_LABEL: False
       LABEL_TYPE: DiffNormalized
@@ -118,7 +115,7 @@ TEST:
     BEGIN: 0.9
     END: 1.0
     PREPROCESS:
-      DATA_TYPE: ['DiffNormalized']    # 'Raw' or 'DiffNormalized' is supported
+      DATA_TYPE: ['Standardized']    # 'Raw' or 'DiffNormalized' is supported
       DATA_AUG: ['None']    # 'None' or 'Motion' is supported, used if the data path points to an augmented dataset or requires augmentation
       USE_PSUEDO_PPG_LABEL: False
       LABEL_TYPE: DiffNormalized
@@ -148,16 +145,11 @@ NUM_OF_GPU_TRAIN: 1
 LOG:
   PATH: runs/exp
 MODEL:
-  DROP_RATE: 0.2
-  NAME: iBVPNet
-  iBVPNet:
-    CHANNELS: 3
-    FRAME_NUM: 128
+  NAME: PhysMamba
 INFERENCE:
   BATCH_SIZE: 4
   EVALUATION_METHOD: "FFT"        # "FFT" or "peak detection"
   EVALUATION_WINDOW:
     USE_SMALLER_WINDOW: False        # Change this if you'd like an evaluation window smaller than the test video length
-    WINDOW_SIZE: 30        # In seconds
+    WINDOW_SIZE: 10        # In seconds
   MODEL_PATH: ""
-
