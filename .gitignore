@@ -21,3 +21,4 @@ test.yaml
 env
 .vscode
 data
+.vscode/settings.json
