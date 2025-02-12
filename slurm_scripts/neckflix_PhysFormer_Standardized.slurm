@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=PhysFormer-Neckflix
-#SBATCH --output=slurm_out/%A_PhysFormer-Neckflix.out
-#SBATCH --error=slurm_out/%A_PhysFormer-Neckflix.err
+#SBATCH --job-name=PhysFormer-Neckflix-Std
+#SBATCH --output=slurm_out/%A_PhysFormer-Neckflix-Std.out
+#SBATCH --error=slurm_out/%A_PhysFormer-Neckflix-Std.err
 #SBATCH --partition=pophealth
 #SBATCH --nodes=1
 #SBATCH --ntasks=8
@@ -43,7 +43,7 @@ conda info --envs
 echo "Start Time: $(date)"
 
 echo "Running with PhysFormer"
-python ${SCRIPT} --config_file "./configs/neckflix_configs/Neckflix_train_test-PhysFormer.yaml"
+python ${SCRIPT} --config_file "./configs/neckflix_configs/Neckflix_train_test-PhysFormer_Standardized.yaml"
 echo "PhysFormer Complete"
 
 echo "End Time: $(date)"

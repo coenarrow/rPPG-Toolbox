@@ -1,0 +1,62 @@
+Current Working Directory: /group/pgh004/carrow/repo/rPPG-Toolbox
+Currently Loaded Modulefiles:
+ 1) cuda/11.8   2) Anaconda3/2024.06(default)  
+Activated Conda Environment
+# conda environments:
+#
+                         /group/pgh004/carrow/repo/MedLLM/PMC-LLaMA/env
+                         /group/pgh004/carrow/repo/btseq/env
+                         /group/pgh004/carrow/repo/hr_detection/envs/pyvhr
+                         /group/pgh004/carrow/repo/hr_detection/envs/sam2
+                      *  /group/pgh004/carrow/repo/rPPG-Toolbox/env
+rppg-toolbox             /home/carrow/.conda/envs/rppg-toolbox
+base                     /uwahpc/centos8/python/Anaconda3/2024.06
+
+Start Time: Wed Feb 12 12:56:00 AWST 2025
+Running with PhysNet
+=> Merging a config file from ./configs/neckflix_configs/Neckflix_train_test-PhysNet.yaml
+Number of Recordings Found: 332
+Num files after separating by cameras: 986
+Num files after filtering by camera mode: 655
+Num Files after filtering by label: 627
+Starting Preprocessing...
+Num Files after splitting by participant: 492
+Num Files after removing already processed: 5
+Preprocessing dataset...
+Total Number of raw files preprocessed: 627
+
+Num loaded files 2829
+Number of Recordings Found: 332
+Num files after separating by cameras: 986
+Num files after filtering by camera mode: 655
+Num Files after filtering by label: 627
+Starting Preprocessing...
+Num Files after splitting by participant: 54
+Num Files after removing already processed: 0
+Preprocessing dataset...
+Total Number of raw files preprocessed: 627
+
+Num loaded files 324
+Number of Recordings Found: 332
+Num files after separating by cameras: 986
+Num files after filtering by camera mode: 655
+Num Files after filtering by label: 627
+Starting Preprocessing...
+Num Files after splitting by participant: 81
+Num Files after removing already processed: 1
+Preprocessing dataset...
+Total Number of raw files preprocessed: 627
+
+Num loaded files 445
+
+====Training Epoch: 0====
+[0,   100] loss: 0.994
+[0,   200] loss: 0.990
+[0,   300] loss: 0.992
+Saved Model Path:  runs/exp/NECKFLIX_SizeW96_SizeH96_ClipLength128_DataTypeDiffNormalized_DataAugNone_LabelTypeDiffNormalized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_PhysNet_Epoch0.pth
+
+ ====Validing===
+validation loss:  1.0123920542437856
+Update best model! Best epoch: 0
+
+====Training Epoch: 1====
