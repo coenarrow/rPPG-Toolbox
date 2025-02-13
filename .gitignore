@@ -21,4 +21,4 @@ test.yaml
 env
 .vscode
 data
-test_config.yaml
+test_config.py
