@@ -1,0 +1,1036 @@
+Current Working Directory: /group/pgh004/carrow/repo/rPPG-Toolbox
+Currently Loaded Modulefiles:
+ 1) Anaconda3/2024.06(default)   2) cuda/11.8  
+Activated Conda Environment
+# conda environments:
+#
+                         /group/pgh004/carrow/repo/MedLLM/PMC-LLaMA/env
+                         /group/pgh004/carrow/repo/btseq/env
+                         /group/pgh004/carrow/repo/hr_detection/envs/pyvhr
+                         /group/pgh004/carrow/repo/hr_detection/envs/sam2
+                      *  /group/pgh004/carrow/repo/rPPG-Toolbox/env
+rppg-toolbox             /home/carrow/.conda/envs/rppg-toolbox
+base                     /uwahpc/centos8/python/Anaconda3/2024.06
+
+Running config: /group/pgh004/carrow/repo/rPPG-Toolbox/configs/neckflix_configs/abp/defaults/Neckflix_train_test-iBVPNet_RGB.yaml
+Start Time: Fri Feb 14 06:37:06 AWST 2025
+=> Merging a config file from /group/pgh004/carrow/repo/rPPG-Toolbox/configs/neckflix_configs/abp/defaults/Neckflix_train_test-iBVPNet_RGB.yaml
+Number of Recordings Found: 332
+Num files after separating by cameras: 986
+Num files after filtering by camera mode: 655
+Num Files after filtering by label: 416
+Starting Preprocessing...
+Num Files after splitting by participant: 315
+Num Files after removing already processed: 11
+Preprocessing dataset...
+Total Number of raw files preprocessed: 416
+
+Num loaded files 1487
+Number of Recordings Found: 332
+Num files after separating by cameras: 986
+Num files after filtering by camera mode: 655
+Num Files after filtering by label: 416
+Starting Preprocessing...
+Num Files after splitting by participant: 32
+Num Files after removing already processed: 3
+Preprocessing dataset...
+Total Number of raw files preprocessed: 416
+
+Num loaded files 160
+Number of Recordings Found: 332
+Num files after separating by cameras: 986
+Num files after filtering by camera mode: 655
+Num Files after filtering by label: 416
+Starting Preprocessing...
+Num Files after splitting by participant: 69
+Num Files after removing already processed: 6
+Preprocessing dataset...
+Total Number of raw files preprocessed: 416
+
+Num loaded files 301
+
+====Training Epoch: 0====
+[0,   100] loss: 0.873
+[0,   200] loss: 0.684
+[0,   300] loss: 0.610
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch0.pth
+
+ ====Validing===
+validation loss:  0.5120183508843184
+Update best model! Best epoch: 0
+
+====Training Epoch: 1====
+[1,   100] loss: 0.536
+[1,   200] loss: 0.527
+[1,   300] loss: 0.487
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch1.pth
+
+ ====Validing===
+validation loss:  0.4915343660861254
+Update best model! Best epoch: 1
+
+====Training Epoch: 2====
+[2,   100] loss: 0.448
+[2,   200] loss: 0.415
+[2,   300] loss: 0.417
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch2.pth
+
+ ====Validing===
+validation loss:  0.5770691834390164
+
+====Training Epoch: 3====
+[3,   100] loss: 0.367
+[3,   200] loss: 0.354
+[3,   300] loss: 0.347
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch3.pth
+
+ ====Validing===
+validation loss:  0.480247125774622
+Update best model! Best epoch: 3
+
+====Training Epoch: 4====
+[4,   100] loss: 0.347
+[4,   200] loss: 0.287
+[4,   300] loss: 0.301
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch4.pth
+
+ ====Validing===
+validation loss:  0.4714472256600857
+Update best model! Best epoch: 4
+
+====Training Epoch: 5====
+[5,   100] loss: 0.276
+[5,   200] loss: 0.255
+[5,   300] loss: 0.293
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch5.pth
+
+ ====Validing===
+validation loss:  0.4768669012933969
+
+====Training Epoch: 6====
+[6,   100] loss: 0.249
+[6,   200] loss: 0.254
+[6,   300] loss: 0.237
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch6.pth
+
+ ====Validing===
+validation loss:  0.43956502377986906
+Update best model! Best epoch: 6
+
+====Training Epoch: 7====
+[7,   100] loss: 0.241
+[7,   200] loss: 0.239
+[7,   300] loss: 0.228
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch7.pth
+
+ ====Validing===
+validation loss:  0.43173047378659246
+Update best model! Best epoch: 7
+
+====Training Epoch: 8====
+[8,   100] loss: 0.218
+[8,   200] loss: 0.235
+[8,   300] loss: 0.236
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch8.pth
+
+ ====Validing===
+validation loss:  0.5139055296778678
+
+====Training Epoch: 9====
+[9,   100] loss: 0.203
+[9,   200] loss: 0.213
+[9,   300] loss: 0.248
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch9.pth
+
+ ====Validing===
+validation loss:  0.45428202077746394
+
+====Training Epoch: 10====
+[10,   100] loss: 0.198
+[10,   200] loss: 0.189
+[10,   300] loss: 0.222
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch10.pth
+
+ ====Validing===
+validation loss:  0.5045581683516502
+
+====Training Epoch: 11====
+[11,   100] loss: 0.205
+[11,   200] loss: 0.200
+[11,   300] loss: 0.207
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch11.pth
+
+ ====Validing===
+validation loss:  0.47429284192621707
+
+====Training Epoch: 12====
+[12,   100] loss: 0.203
+[12,   200] loss: 0.198
+[12,   300] loss: 0.211
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch12.pth
+
+ ====Validing===
+validation loss:  0.4904234610497952
+
+====Training Epoch: 13====
+[13,   100] loss: 0.195
+[13,   200] loss: 0.207
+[13,   300] loss: 0.184
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch13.pth
+
+ ====Validing===
+validation loss:  0.5183248940855265
+
+====Training Epoch: 14====
+[14,   100] loss: 0.197
+[14,   200] loss: 0.190
+[14,   300] loss: 0.210
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch14.pth
+
+ ====Validing===
+validation loss:  0.4816477965563536
+
+====Training Epoch: 15====
+[15,   100] loss: 0.196
+[15,   200] loss: 0.192
+[15,   300] loss: 0.190
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch15.pth
+
+ ====Validing===
+validation loss:  0.42182374112308024
+Update best model! Best epoch: 15
+
+====Training Epoch: 16====
+[16,   100] loss: 0.178
+[16,   200] loss: 0.183
+[16,   300] loss: 0.194
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch16.pth
+
+ ====Validing===
+validation loss:  0.47875824086368085
+
+====Training Epoch: 17====
+[17,   100] loss: 0.179
+[17,   200] loss: 0.193
+[17,   300] loss: 0.174
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch17.pth
+
+ ====Validing===
+validation loss:  0.42553504277020693
+
+====Training Epoch: 18====
+[18,   100] loss: 0.403
+[18,   200] loss: 0.271
+[18,   300] loss: 0.233
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch18.pth
+
+ ====Validing===
+validation loss:  0.4481399841606617
+
+====Training Epoch: 19====
+[19,   100] loss: 0.193
+[19,   200] loss: 0.184
+[19,   300] loss: 0.199
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch19.pth
+
+ ====Validing===
+validation loss:  0.4910329896956682
+
+====Training Epoch: 20====
+[20,   100] loss: 0.186
+[20,   200] loss: 0.173
+[20,   300] loss: 0.193
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch20.pth
+
+ ====Validing===
+validation loss:  0.46822671350091694
+
+====Training Epoch: 21====
+[21,   100] loss: 0.203
+[21,   200] loss: 0.176
+[21,   300] loss: 0.179
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch21.pth
+
+ ====Validing===
+validation loss:  0.5005685694515705
+
+====Training Epoch: 22====
+[22,   100] loss: 0.164
+[22,   200] loss: 0.197
+[22,   300] loss: 0.190
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch22.pth
+
+ ====Validing===
+validation loss:  0.48381723575294017
+
+====Training Epoch: 23====
+[23,   100] loss: 0.170
+[23,   200] loss: 0.164
+[23,   300] loss: 0.165
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch23.pth
+
+ ====Validing===
+validation loss:  0.5070844355970621
+
+====Training Epoch: 24====
+[24,   100] loss: 0.180
+[24,   200] loss: 0.178
+[24,   300] loss: 0.168
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch24.pth
+
+ ====Validing===
+validation loss:  0.48763258904218676
+
+====Training Epoch: 25====
+[25,   100] loss: 0.162
+[25,   200] loss: 0.155
+[25,   300] loss: 0.170
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch25.pth
+
+ ====Validing===
+validation loss:  0.46219452470541
+
+====Training Epoch: 26====
+[26,   100] loss: 0.152
+[26,   200] loss: 0.158
+[26,   300] loss: 0.172
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch26.pth
+
+ ====Validing===
+validation loss:  0.45762326531112196
+
+====Training Epoch: 27====
+[27,   100] loss: 0.139
+[27,   200] loss: 0.145
+[27,   300] loss: 0.158
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch27.pth
+
+ ====Validing===
+validation loss:  0.4686256133019924
+
+====Training Epoch: 28====
+[28,   100] loss: 0.140
+[28,   200] loss: 0.142
+[28,   300] loss: 0.146
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch28.pth
+
+ ====Validing===
+validation loss:  0.45102949645370244
+
+====Training Epoch: 29====
+[29,   100] loss: 0.146
+[29,   200] loss: 0.131
+[29,   300] loss: 0.145
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch29.pth
+
+ ====Validing===
+validation loss:  0.5052821509540081
+
+====Training Epoch: 30====
+[30,   100] loss: 0.132
+[30,   200] loss: 0.130
+[30,   300] loss: 0.130
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch30.pth
+
+ ====Validing===
+validation loss:  0.4411036141216755
+
+====Training Epoch: 31====
+[31,   100] loss: 0.127
+[31,   200] loss: 0.116
+[31,   300] loss: 0.139
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch31.pth
+
+ ====Validing===
+validation loss:  0.45189284682273867
+
+====Training Epoch: 32====
+[32,   100] loss: 0.119
+[32,   200] loss: 0.115
+[32,   300] loss: 0.121
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch32.pth
+
+ ====Validing===
+validation loss:  0.4495811812579632
+
+====Training Epoch: 33====
+[33,   100] loss: 0.107
+[33,   200] loss: 0.115
+[33,   300] loss: 0.110
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch33.pth
+
+ ====Validing===
+validation loss:  0.4625333555042744
+
+====Training Epoch: 34====
+[34,   100] loss: 0.106
+[34,   200] loss: 0.110
+[34,   300] loss: 0.115
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch34.pth
+
+ ====Validing===
+validation loss:  0.4477527590468526
+
+====Training Epoch: 35====
+[35,   100] loss: 0.105
+[35,   200] loss: 0.105
+[35,   300] loss: 0.101
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch35.pth
+
+ ====Validing===
+validation loss:  0.4704508505761623
+
+====Training Epoch: 36====
+[36,   100] loss: 0.096
+[36,   200] loss: 0.100
+[36,   300] loss: 0.098
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch36.pth
+
+ ====Validing===
+validation loss:  0.440090780518949
+
+====Training Epoch: 37====
+[37,   100] loss: 0.093
+[37,   200] loss: 0.094
+[37,   300] loss: 0.089
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch37.pth
+
+ ====Validing===
+validation loss:  0.438108123652637
+
+====Training Epoch: 38====
+[38,   100] loss: 0.082
+[38,   200] loss: 0.085
+[38,   300] loss: 0.092
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch38.pth
+
+ ====Validing===
+validation loss:  0.4346356986090541
+
+====Training Epoch: 39====
+[39,   100] loss: 0.088
+[39,   200] loss: 0.083
+[39,   300] loss: 0.082
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch39.pth
+
+ ====Validing===
+validation loss:  0.4552010051906109
+
+====Training Epoch: 40====
+[40,   100] loss: 0.078
+[40,   200] loss: 0.079
+[40,   300] loss: 0.075
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch40.pth
+
+ ====Validing===
+validation loss:  0.4455421414226294
+
+====Training Epoch: 41====
+[41,   100] loss: 0.071
+[41,   200] loss: 0.071
+[41,   300] loss: 0.071
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch41.pth
+
+ ====Validing===
+validation loss:  0.4474641205742955
+
+====Training Epoch: 42====
+[42,   100] loss: 0.071
+[42,   200] loss: 0.065
+[42,   300] loss: 0.069
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch42.pth
+
+ ====Validing===
+validation loss:  0.45744294840842487
+
+====Training Epoch: 43====
+[43,   100] loss: 0.063
+[43,   200] loss: 0.061
+[43,   300] loss: 0.067
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch43.pth
+
+ ====Validing===
+validation loss:  0.4528221905231476
+
+====Training Epoch: 44====
+[44,   100] loss: 0.055
+[44,   200] loss: 0.063
+[44,   300] loss: 0.064
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch44.pth
+
+ ====Validing===
+validation loss:  0.44555718135088684
+
+====Training Epoch: 45====
+[45,   100] loss: 0.056
+[45,   200] loss: 0.056
+[45,   300] loss: 0.059
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch45.pth
+
+ ====Validing===
+validation loss:  0.45308988317847254
+
+====Training Epoch: 46====
+[46,   100] loss: 0.055
+[46,   200] loss: 0.053
+[46,   300] loss: 0.055
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch46.pth
+
+ ====Validing===
+validation loss:  0.45031259935349227
+
+====Training Epoch: 47====
+[47,   100] loss: 0.050
+[47,   200] loss: 0.052
+[47,   300] loss: 0.054
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch47.pth
+
+ ====Validing===
+validation loss:  0.45250672064721587
+
+====Training Epoch: 48====
+[48,   100] loss: 0.050
+[48,   200] loss: 0.048
+[48,   300] loss: 0.047
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch48.pth
+
+ ====Validing===
+validation loss:  0.45257275123149154
+
+====Training Epoch: 49====
+[49,   100] loss: 0.051
+[49,   200] loss: 0.049
+[49,   300] loss: 0.049
+Saved Model Path:  runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch49.pth
+
+ ====Validing===
+validation loss:  0.45238211657851934
+best trained epoch: 15, min_val_loss: 0.42182374112308024
+Saving plots of losses and learning rates to: runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/plots
+
+===Testing===
+Testing uses best epoch selected using model selection as non-pretrained model!
+runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch15.pth
+Running model evaluation on the testing dataset!
+
+Calculating metrics!
+FFT MAE (FFT Label): 1.2330923507462686 +/- 0.4866265603472029
+FFT RMSE (FFT Label): 4.169709721819663 +/- 3.4482665604314424
+FFT MAPE (FFT Label): 1.6631854184631465 +/- 0.7254555515757902
+FFT Pearson (FFT Label): 0.9357980447835396 +/- 0.04372677746385978
+FFT SNR (FFT Label): 0.8087430096035602 +/- 0.5074668100908575 (dB)
+Saved NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_FFT_BlandAltman_ScatterPlot.pdf to runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/bland_altman_plots.
+Saved NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_FFT_BlandAltman_DifferencePlot.pdf to runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/bland_altman_plots.
+Saving outputs to: runs/exp/abp/defaults/RGB/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/saved_test_outputs/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_outputs.pickle
+Completed: /group/pgh004/carrow/repo/rPPG-Toolbox/configs/neckflix_configs/abp/defaults/Neckflix_train_test-iBVPNet_RGB.yaml
+End Time: Fri Feb 14 08:11:08 AWST 2025
+Running config: /group/pgh004/carrow/repo/rPPG-Toolbox/configs/neckflix_configs/abp/defaults/Neckflix_train_test-iBVPNet_RGBI.yaml
+Start Time: Fri Feb 14 08:11:08 AWST 2025
+=> Merging a config file from /group/pgh004/carrow/repo/rPPG-Toolbox/configs/neckflix_configs/abp/defaults/Neckflix_train_test-iBVPNet_RGBI.yaml
+Number of Recordings Found: 332
+Num files after separating by cameras: 986
+Num files after filtering by camera mode: 649
+Num Files after filtering by label: 414
+Starting Preprocessing...
+Num Files after splitting by participant: 313
+Num Files after removing already processed: 105
+Preprocessing dataset...
+Total Number of raw files preprocessed: 414
+
+Num loaded files 1245
+Number of Recordings Found: 332
+Num files after separating by cameras: 986
+Num files after filtering by camera mode: 649
+Num Files after filtering by label: 414
+Starting Preprocessing...
+Num Files after splitting by participant: 32
+Num Files after removing already processed: 14
+Preprocessing dataset...
+Total Number of raw files preprocessed: 414
+
+Num loaded files 120
+Number of Recordings Found: 332
+Num files after separating by cameras: 986
+Num files after filtering by camera mode: 649
+Num Files after filtering by label: 414
+Starting Preprocessing...
+Num Files after splitting by participant: 69
+Num Files after removing already processed: 14
+Preprocessing dataset...
+Total Number of raw files preprocessed: 414
+
+Num loaded files 276
+
+====Training Epoch: 0====
+[0,   100] loss: 0.806
+[0,   200] loss: 0.660
+[0,   300] loss: 0.591
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch0.pth
+
+ ====Validing===
+validation loss:  0.6171134442090989
+Update best model! Best epoch: 0
+
+====Training Epoch: 1====
+[1,   100] loss: 0.528
+[1,   200] loss: 0.531
+[1,   300] loss: 0.510
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch1.pth
+
+ ====Validing===
+validation loss:  0.452662235001723
+Update best model! Best epoch: 1
+
+====Training Epoch: 2====
+[2,   100] loss: 0.456
+[2,   200] loss: 0.448
+[2,   300] loss: 0.447
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch2.pth
+
+ ====Validing===
+validation loss:  0.4685162504514058
+
+====Training Epoch: 3====
+[3,   100] loss: 0.401
+[3,   200] loss: 0.392
+[3,   300] loss: 0.362
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch3.pth
+
+ ====Validing===
+validation loss:  0.4797118584314982
+
+====Training Epoch: 4====
+[4,   100] loss: 0.313
+[4,   200] loss: 0.313
+[4,   300] loss: 0.284
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch4.pth
+
+ ====Validing===
+validation loss:  0.4587599590420723
+
+====Training Epoch: 5====
+[5,   100] loss: 0.304
+[5,   200] loss: 0.317
+[5,   300] loss: 0.295
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch5.pth
+
+ ====Validing===
+validation loss:  0.5023555035392443
+
+====Training Epoch: 6====
+[6,   100] loss: 0.260
+[6,   200] loss: 0.257
+[6,   300] loss: 0.279
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch6.pth
+
+ ====Validing===
+validation loss:  0.5116241549452146
+
+====Training Epoch: 7====
+[7,   100] loss: 0.250
+[7,   200] loss: 0.254
+[7,   300] loss: 0.266
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch7.pth
+
+ ====Validing===
+validation loss:  0.4619411215186119
+
+====Training Epoch: 8====
+[8,   100] loss: 0.237
+[8,   200] loss: 0.241
+[8,   300] loss: 0.280
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch8.pth
+
+ ====Validing===
+validation loss:  0.49170807252327603
+
+====Training Epoch: 9====
+[9,   100] loss: 0.221
+[9,   200] loss: 0.229
+[9,   300] loss: 0.235
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch9.pth
+
+ ====Validing===
+validation loss:  0.5221944098671277
+
+====Training Epoch: 10====
+[10,   100] loss: 0.221
+[10,   200] loss: 0.217
+[10,   300] loss: 0.208
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch10.pth
+
+ ====Validing===
+validation loss:  0.5019275014599164
+
+====Training Epoch: 11====
+[11,   100] loss: 0.209
+[11,   200] loss: 0.213
+[11,   300] loss: 0.228
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch11.pth
+
+ ====Validing===
+validation loss:  0.4654753344754378
+
+====Training Epoch: 12====
+[12,   100] loss: 0.191
+[12,   200] loss: 0.180
+[12,   300] loss: 0.227
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch12.pth
+
+ ====Validing===
+validation loss:  0.47320683201154073
+
+====Training Epoch: 13====
+[13,   100] loss: 0.198
+[13,   200] loss: 0.211
+[13,   300] loss: 0.190
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch13.pth
+
+ ====Validing===
+validation loss:  0.45950051794449487
+
+====Training Epoch: 14====
+[14,   100] loss: 0.190
+[14,   200] loss: 0.202
+[14,   300] loss: 0.215
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch14.pth
+
+ ====Validing===
+validation loss:  0.5462439482410749
+
+====Training Epoch: 15====
+[15,   100] loss: 0.199
+[15,   200] loss: 0.197
+[15,   300] loss: 0.237
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch15.pth
+
+ ====Validing===
+validation loss:  0.46886169811089834
+
+====Training Epoch: 16====
+[16,   100] loss: 0.190
+[16,   200] loss: 0.188
+[16,   300] loss: 0.187
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch16.pth
+
+ ====Validing===
+validation loss:  0.48987239599227905
+
+====Training Epoch: 17====
+[17,   100] loss: 0.177
+[17,   200] loss: 0.176
+[17,   300] loss: 0.183
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch17.pth
+
+ ====Validing===
+validation loss:  0.5001218318939209
+
+====Training Epoch: 18====
+[18,   100] loss: 0.179
+[18,   200] loss: 0.195
+[18,   300] loss: 0.198
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch18.pth
+
+ ====Validing===
+validation loss:  0.4764598240454992
+
+====Training Epoch: 19====
+[19,   100] loss: 0.180
+[19,   200] loss: 0.167
+[19,   300] loss: 0.172
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch19.pth
+
+ ====Validing===
+validation loss:  0.48015835508704185
+
+====Training Epoch: 20====
+[20,   100] loss: 0.169
+[20,   200] loss: 0.182
+[20,   300] loss: 0.179
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch20.pth
+
+ ====Validing===
+validation loss:  0.4947254811724027
+
+====Training Epoch: 21====
+[21,   100] loss: 0.168
+[21,   200] loss: 0.175
+[21,   300] loss: 0.181
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch21.pth
+
+ ====Validing===
+validation loss:  0.5113267858823141
+
+====Training Epoch: 22====
+[22,   100] loss: 0.161
+[22,   200] loss: 0.179
+[22,   300] loss: 0.171
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch22.pth
+
+ ====Validing===
+validation loss:  0.5042210457225641
+
+====Training Epoch: 23====
+[23,   100] loss: 0.167
+[23,   200] loss: 0.166
+[23,   300] loss: 0.166
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch23.pth
+
+ ====Validing===
+validation loss:  0.45114728113015495
+Update best model! Best epoch: 23
+
+====Training Epoch: 24====
+[24,   100] loss: 0.173
+[24,   200] loss: 0.158
+[24,   300] loss: 0.162
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch24.pth
+
+ ====Validing===
+validation loss:  0.4658653554817041
+
+====Training Epoch: 25====
+[25,   100] loss: 0.141
+[25,   200] loss: 0.168
+[25,   300] loss: 0.153
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch25.pth
+
+ ====Validing===
+validation loss:  0.4446921902398268
+Update best model! Best epoch: 25
+
+====Training Epoch: 26====
+[26,   100] loss: 0.144
+[26,   200] loss: 0.146
+[26,   300] loss: 0.148
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch26.pth
+
+ ====Validing===
+validation loss:  0.5404727846384049
+
+====Training Epoch: 27====
+[27,   100] loss: 0.144
+[27,   200] loss: 0.140
+[27,   300] loss: 0.128
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch27.pth
+
+ ====Validing===
+validation loss:  0.4680868903795878
+
+====Training Epoch: 28====
+[28,   100] loss: 0.134
+[28,   200] loss: 0.128
+[28,   300] loss: 0.145
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch28.pth
+
+ ====Validing===
+validation loss:  0.4835350645085176
+
+====Training Epoch: 29====
+[29,   100] loss: 0.129
+[29,   200] loss: 0.125
+[29,   300] loss: 0.123
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch29.pth
+
+ ====Validing===
+validation loss:  0.4771139877537886
+
+====Training Epoch: 30====
+[30,   100] loss: 0.132
+[30,   200] loss: 0.126
+[30,   300] loss: 0.124
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch30.pth
+
+ ====Validing===
+validation loss:  0.4321223070224126
+Update best model! Best epoch: 30
+
+====Training Epoch: 31====
+[31,   100] loss: 0.131
+[31,   200] loss: 0.122
+[31,   300] loss: 0.112
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch31.pth
+
+ ====Validing===
+validation loss:  0.44490893855690955
+
+====Training Epoch: 32====
+[32,   100] loss: 0.110
+[32,   200] loss: 0.113
+[32,   300] loss: 0.106
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch32.pth
+
+ ====Validing===
+validation loss:  0.4584846089283625
+
+====Training Epoch: 33====
+[33,   100] loss: 0.103
+[33,   200] loss: 0.107
+[33,   300] loss: 0.110
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch33.pth
+
+ ====Validing===
+validation loss:  0.44176193947593373
+
+====Training Epoch: 34====
+[34,   100] loss: 0.112
+[34,   200] loss: 0.099
+[34,   300] loss: 0.108
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch34.pth
+
+ ====Validing===
+validation loss:  0.4476388389865557
+
+====Training Epoch: 35====
+[35,   100] loss: 0.100
+[35,   200] loss: 0.098
+[35,   300] loss: 0.095
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch35.pth
+
+ ====Validing===
+validation loss:  0.4518480196595192
+
+====Training Epoch: 36====
+[36,   100] loss: 0.089
+[36,   200] loss: 0.092
+[36,   300] loss: 0.092
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch36.pth
+
+ ====Validing===
+validation loss:  0.4555165506899357
+
+====Training Epoch: 37====
+[37,   100] loss: 0.084
+[37,   200] loss: 0.085
+[37,   300] loss: 0.085
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch37.pth
+
+ ====Validing===
+validation loss:  0.4809020447234313
+
+====Training Epoch: 38====
+[38,   100] loss: 0.085
+[38,   200] loss: 0.081
+[38,   300] loss: 0.081
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch38.pth
+
+ ====Validing===
+validation loss:  0.4512739233672619
+
+====Training Epoch: 39====
+[39,   100] loss: 0.078
+[39,   200] loss: 0.075
+[39,   300] loss: 0.078
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch39.pth
+
+ ====Validing===
+validation loss:  0.458242745945851
+
+====Training Epoch: 40====
+[40,   100] loss: 0.071
+[40,   200] loss: 0.069
+[40,   300] loss: 0.070
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch40.pth
+
+ ====Validing===
+validation loss:  0.4484885426859061
+
+====Training Epoch: 41====
+[41,   100] loss: 0.064
+[41,   200] loss: 0.068
+[41,   300] loss: 0.070
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch41.pth
+
+ ====Validing===
+validation loss:  0.44439812178413074
+
+====Training Epoch: 42====
+[42,   100] loss: 0.057
+[42,   200] loss: 0.064
+[42,   300] loss: 0.061
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch42.pth
+
+ ====Validing===
+validation loss:  0.4495687330762545
+
+====Training Epoch: 43====
+[43,   100] loss: 0.056
+[43,   200] loss: 0.056
+[43,   300] loss: 0.056
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch43.pth
+
+ ====Validing===
+validation loss:  0.44290994529922806
+
+====Training Epoch: 44====
+[44,   100] loss: 0.051
+[44,   200] loss: 0.056
+[44,   300] loss: 0.053
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch44.pth
+
+ ====Validing===
+validation loss:  0.4549826684097449
+
+====Training Epoch: 45====
+[45,   100] loss: 0.048
+[45,   200] loss: 0.050
+[45,   300] loss: 0.051
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch45.pth
+
+ ====Validing===
+validation loss:  0.4542484072347482
+
+====Training Epoch: 46====
+[46,   100] loss: 0.047
+[46,   200] loss: 0.049
+[46,   300] loss: 0.049
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch46.pth
+
+ ====Validing===
+validation loss:  0.44978356808423997
+
+====Training Epoch: 47====
+[47,   100] loss: 0.047
+[47,   200] loss: 0.044
+[47,   300] loss: 0.046
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch47.pth
+
+ ====Validing===
+validation loss:  0.4504276216030121
+
+====Training Epoch: 48====
+[48,   100] loss: 0.044
+[48,   200] loss: 0.046
+[48,   300] loss: 0.046
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch48.pth
+
+ ====Validing===
+validation loss:  0.4500343690315882
+
+====Training Epoch: 49====
+[49,   100] loss: 0.046
+[49,   200] loss: 0.043
+[49,   300] loss: 0.047
+Saved Model Path:  runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch49.pth
+
+ ====Validing===
+validation loss:  0.4504664455850919
+best trained epoch: 30, min_val_loss: 0.4321223070224126
+Saving plots of losses and learning rates to: runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/plots
+
+===Testing===
+Testing uses best epoch selected using model selection as non-pretrained model!
+runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/PreTrainedModels/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_Epoch30.pth
+Running model evaluation on the testing dataset!
+
+Calculating metrics!
+FFT MAE (FFT Label): 0.6237399193548387 +/- 0.26925798758656255
+FFT RMSE (FFT Label): 2.2099871147825816 +/- 1.613250621645606
+FFT MAPE (FFT Label): 0.7460930991212864 +/- 0.32140842698793815
+FFT Pearson (FFT Label): 0.9835074954019026 +/- 0.023349877404487754
+FFT SNR (FFT Label): 1.4390517082127388 +/- 0.49859073929847414 (dB)
+Saved NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_FFT_BlandAltman_ScatterPlot.pdf to runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/bland_altman_plots.
+Saved NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_FFT_BlandAltman_DifferencePlot.pdf to runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/bland_altman_plots.
+Saving outputs to: runs/exp/abp/defaults/RGBI/NECKFLIX_SizeW72_SizeH72_ClipLength160_DataTypeRaw_DataAugNone_LabelTypeStandardized_Crop_faceTrue_BackendHC_Large_boxTrue_Large_size1.5_Dyamic_DetFalse_det_len30_Median_face_boxFalse/saved_test_outputs/NECKFLIX_NECKFLIX_NECKFLIX_iBVPNet_outputs.pickle
+Completed: /group/pgh004/carrow/repo/rPPG-Toolbox/configs/neckflix_configs/abp/defaults/Neckflix_train_test-iBVPNet_RGBI.yaml
+End Time: Fri Feb 14 09:44:18 AWST 2025
