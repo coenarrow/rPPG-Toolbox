@@ -86,7 +86,7 @@ class PhysHydraTrainer(BaseTrainer):
                 labels = labels.to(self.device)
                 self.optimizer.zero_grad()
                 pred_ppg = self.model(data)
-                pred_ppg = (pred_ppg-torch.mean(pred_ppg, axis=-1).view(-1, 1))/torch.std(pred_ppg, axis=-1).view(-1, 1)    # normalize
+                pred_ppg = (pred_ppg - torch.mean(pred_ppg, dim=-1, keepdim=True)) / torch.std(pred_ppg, dim=-1, keepdim=True)
                 labels = (labels - torch.mean(labels)) / torch.std(labels)
                 loss = self.criterion_CCC(pred_ppg, labels)
                 loss.backward()
@@ -206,5 +206,6 @@ class PhysHydraTrainer(BaseTrainer):
 
     # HR calculation based on ground truth label
     def get_hr(self, y, sr=30, min=30, max=180):
+        print(f"Getting the shape of y:\nShape: {y.shape}")
         p, q = welch(y, sr, nfft=1e5/sr, nperseg=np.min((len(y)-1, 256)))
         return p[(p>min/60)&(p<max/60)][np.argmax(q[(p>min/60)&(p<max/60)])]*60

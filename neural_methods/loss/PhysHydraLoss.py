@@ -8,42 +8,60 @@ class CCC_Loss(nn.Module):
     
         loss = 1 - CCC,
         
-    where the CCC is computed as:
+    where the CCC is computed per channel as:
     
         CCC = (2 * cov(x, y)) / (var(x) + var(y) + (mean(x) - mean(y))^2 + epsilon)
     
-    Here, x is the predicted signal, y is the ground truth signal, and epsilon is a small
-    value to avoid division by zero.
+    The loss is averaged over all channels and samples.
     """
     def __init__(self):
         super(CCC_Loss, self).__init__()
 
     def forward(self, preds, labels):
-        loss = 0.0
-        batch_size = preds.shape[0]
+        """
+        Args:
+            preds: Tensor of shape (batch_size, channels, frames)
+            labels: Tensor of shape (batch_size, channels, frames)
+                    or possibly (batch_size, frames, channels)
+        Returns:
+            loss: Averaged CCC loss over the batch.
+        """
         epsilon = 1e-8  # small constant to prevent division by zero
+        batch_size = preds.shape[0]
+        total_loss = 0.0
         
         for i in range(batch_size):
+            # Extract the i-th sample from predictions and labels
             x = preds[i]
             y = labels[i]
             
-            # Calculate means
-            mean_x = torch.mean(x)
-            mean_y = torch.mean(y)
+            # Check if shapes are mismatched (e.g., (channels, frames) vs (frames, channels))
+            if x.shape != y.shape:
+                # If transposing y fixes the mismatch, do it.
+                if x.shape == (y.shape[1], y.shape[0]):
+                    y = y.transpose(0, 1)
+                else:
+                    raise ValueError(f"Shape mismatch: pred {x.shape} vs label {y.shape}")
             
-            # Calculate variances (using the population definition)
-            var_x = torch.mean((x - mean_x) ** 2)
-            var_y = torch.mean((y - mean_y) ** 2)
+            # Now x and y should both have shape (channels, frames)
+            # Compute means along the time dimension
+            mean_x = torch.mean(x, dim=-1, keepdim=True)  # shape: (channels, 1)
+            mean_y = torch.mean(y, dim=-1, keepdim=True)
             
-            # Calculate covariance
-            cov_xy = torch.mean((x - mean_x) * (y - mean_y))
+            # Compute variances along the time dimension
+            var_x = torch.mean((x - mean_x) ** 2, dim=-1, keepdim=True)
+            var_y = torch.mean((y - mean_y) ** 2, dim=-1, keepdim=True)
             
-            # Calculate the Concordance Correlation Coefficient (CCC)
+            # Compute covariance along the time dimension
+            cov_xy = torch.mean((x - mean_x) * (y - mean_y), dim=-1, keepdim=True)
+            
+            # Compute the CCC per channel
             ccc = (2 * cov_xy) / (var_x + var_y + (mean_x - mean_y) ** 2 + epsilon)
             
-            # Accumulate the loss for this sample
-            loss += 1 - ccc
+            # Compute loss for this sample by averaging the loss over channels
+            sample_loss = torch.mean(1 - ccc)
+            total_loss += sample_loss
             
         # Average the loss over the batch
-        loss = loss / batch_size
+        loss = total_loss / batch_size
         return loss

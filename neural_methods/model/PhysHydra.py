@@ -36,6 +36,12 @@ class LateralConnection(nn.Module):
         
     def forward(self, slow_path, fast_path):
         fast_path = self.conv(fast_path)
+        # If temporal dimensions differ, adjust fast_path via interpolation.
+        if fast_path.shape[2] != slow_path.shape[2]:
+            fast_path = torch.nn.functional.interpolate(
+                fast_path, size=(slow_path.shape[2], fast_path.shape[3], fast_path.shape[4]),
+                mode='nearest'
+            )
         return fast_path + slow_path
 
 class CDC_T(nn.Module):
@@ -244,6 +250,8 @@ class PhysHydra(nn.Module):
         f_x3 = self.drop_6(f_x3)
 
         # Final fusion and upsampling
+        if s_x3.shape[2] != f_x3.shape[2]:
+            f_x3 = torch.nn.functional.interpolate(f_x3, size=(s_x3.shape[2], f_x3.shape[3], f_x3.shape[4]), mode='nearest')
         x_fusion = torch.cat((f_x3, s_x3), dim=1)
         x_final = self.upsample2(x_fusion)
 

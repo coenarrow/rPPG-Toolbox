@@ -81,6 +81,8 @@ def train_and_test(config, data_loader_dict):
         model_trainer = trainer.PhysMambaTrainer.PhysMambaTrainer(config, data_loader_dict)
     elif config.MODEL.NAME == 'RhythmFormer':
         model_trainer = trainer.RhythmFormerTrainer.RhythmFormerTrainer(config, data_loader_dict)
+    elif config.MODEL.NAME == 'PhysHydra':
+        model_trainer = trainer.PhysHydraTrainer.PhysHydraTrainer(config,data_loader_dict)
     else:
         raise ValueError('Your Model is Not Supported  Yet!')
     model_trainer.train(data_loader_dict)
@@ -107,6 +109,8 @@ def test(config, data_loader_dict):
         model_trainer = trainer.PhysMambaTrainer.PhysMambaTrainer(config, data_loader_dict)
     elif config.MODEL.NAME == 'RhythmFormer':
         model_trainer = trainer.RhythmFormerTrainer.RhythmFormerTrainer(config, data_loader_dict)
+    elif config.MODEL.NAME == 'PhysHydra':
+        model_trainer = trainer.PhysHydraTrainer.PhysHydtraTrainer(config,data_loader_dict)
     else:
         raise ValueError('Your Model is Not Supported  Yet!')
     model_trainer.test(data_loader_dict)
