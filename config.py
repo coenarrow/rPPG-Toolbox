@@ -360,6 +360,13 @@ _C.MODEL.PHYSFORMER.NUM_LAYERS = 12
 _C.MODEL.PHYSFORMER.THETA = 0.7
 
 # -----------------------------------------------------------------------------
+# Model Settings for PhysHydra
+# -----------------------------------------------------------------------------
+_C.MODEL.PHYSHYDRA = CN()
+_C.MODEL.PHYSHYDRA.NUM_CHANNELS = 3 # Specifies the number of channels in the video
+_C.MODEL.PHYSHYDRA.NUM_LABELS = 1 # Specifies number of labels to do prediction
+
+# -----------------------------------------------------------------------------
 # Inference settings
 # -----------------------------------------------------------------------------
 _C.INFERENCE = CN()
