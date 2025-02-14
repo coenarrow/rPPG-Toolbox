@@ -24,3 +24,4 @@ data
 .vscode/settings.json
 test_config.py
 .vscode/settings.json
+slurm_out/
