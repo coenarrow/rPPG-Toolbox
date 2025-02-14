@@ -9,7 +9,7 @@ store_model
 store_physnet_model
 PreprocessedData
 PreTrainedModels
-runs
+configs/neckflix_configs/*
 temp
 facial_region_test.py
 interp_test.py
