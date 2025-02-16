@@ -16,7 +16,7 @@ TRAIN:
     DO_PREPROCESS: True              # if first time, should be true
     DATA_FORMAT: NCDHW    # Frames, Channels, Height, Width
     DATA_PATH:  "/group/pgh004/carrow/repo/hr_detection/datasets/CVP" 
-    CACHED_PATH: "PreprocessedData/ecg/defaults"  # Processed dataset save path, need to be updated
+    CACHED_PATH: "PreprocessedData/abp/defaults"  # Processed dataset save path, need to be updated
     EXP_DATA_NAME: ""
     # Fold is used for bigsmall referring to cross-fold validation
     FOLD:
@@ -45,7 +45,7 @@ TRAIN:
       NECKFLIX:
         CAMERA_MODE: RGBI # RGB, RGBI, RGBD, RGBID, I, ID, D, EV
         STEREO_MODE: False # Not yet implemented
-        LABELS: ['ECG'] # List of labels to use ['CVP','ECG','ABP']
+        LABELS: ['ABP'] # List of labels to use ['CVP','ECG','ABP']
         CVP_NORMALIZATION: [-30, 40]
         ABP_NORMALIZATION: [-50, 200]
       RESIZE:
@@ -59,7 +59,7 @@ VALID:
     DO_PREPROCESS: True              # if first time, should be true
     DATA_FORMAT: NCDHW    # Frames, Channels, Height, Width
     DATA_PATH:  "/group/pgh004/carrow/repo/hr_detection/datasets/CVP" 
-    CACHED_PATH: "PreprocessedData/ecg/defaults"  # Processed dataset save path, need to be updated
+    CACHED_PATH: "PreprocessedData/abp/defaults"  # Processed dataset save path, need to be updated
     EXP_DATA_NAME: ""
     # Fold is used for bigsmall referring to cross-fold validation
     FOLD:
@@ -88,7 +88,7 @@ VALID:
       NECKFLIX:
         CAMERA_MODE: RGBI # RGB, RGBI, RGBD, RGBID, I, ID, D, EV
         STEREO_MODE: False # Not yet implemented
-        LABELS: ['ECG'] # List of labels to use ['CVP','ECG','ABP']
+        LABELS: ['ABP'] # List of labels to use ['CVP','ECG','ABP']
         CVP_NORMALIZATION: [-30, 40]
         ABP_NORMALIZATION: [-50, 200]
       RESIZE:
@@ -104,7 +104,7 @@ TEST:
     DO_PREPROCESS: True              # if first time, should be true
     DATA_FORMAT: NCDHW    # Frames, Channels, Height, Width
     DATA_PATH:  "/group/pgh004/carrow/repo/hr_detection/datasets/CVP" 
-    CACHED_PATH: "PreprocessedData/ecg/defaults"  # Processed dataset save path, need to be updated
+    CACHED_PATH: "PreprocessedData/abp/defaults"  # Processed dataset save path, need to be updated
     EXP_DATA_NAME: ""
     # Fold is used for bigsmall referring to cross-fold validation
     FOLD:
@@ -133,7 +133,7 @@ TEST:
       NECKFLIX:
         CAMERA_MODE: RGBI # RGB, RGBI, RGBD, RGBID, I, ID, D, EV
         STEREO_MODE: False # Not yet implemented
-        LABELS: ['ECG'] # List of labels to use ['CVP','ECG','ABP']
+        LABELS: ['ABP'] # List of labels to use ['CVP','ECG','ABP']
         CVP_NORMALIZATION: [-30, 40]
         ABP_NORMALIZATION: [-50, 200]
       RESIZE:
@@ -143,7 +143,7 @@ TEST:
 DEVICE: cuda:0
 NUM_OF_GPU_TRAIN: 1
 LOG:
-  PATH: runs/exp/ecg/defaults/PhysHydra_RGBI
+  PATH: runs/exp/abp/defaults/PhysHydra_RGBI
 MODEL:
   NAME: PhysHydra
   PHYSHYDRA:

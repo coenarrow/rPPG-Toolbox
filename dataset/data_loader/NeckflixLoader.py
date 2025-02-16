@@ -512,6 +512,8 @@ class NeckflixLoader(BaseLoader):
             elif format == 'Depth' or format == 'IR':
                 video_path = video_info_dict['cameras'][video_info_dict['camera']][format]['path']
                 start_time = video_info_dict['cameras'][video_info_dict['camera']][format]['start_time']
+                if start_time is None:
+                    raise ValueError(f'start time missing for {video_path}')
                 frames = self.read_16bit_video(video_path).astype(np.float32)
                 frame_times = np.array([start_time+n/config_data.FS for n in range(len(frames))])
                 all_frames.append(frames)
@@ -520,7 +522,6 @@ class NeckflixLoader(BaseLoader):
                 raise ValueError(f'EV Video not yet supported')
             else:
                 raise ValueError(f"Video type {format} not recognized!")
-            
 
         # Align all the frames
         frames, times = self.align_frames(all_frames, all_frame_times, alignment_tolerance)

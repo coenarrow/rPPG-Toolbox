@@ -43,7 +43,7 @@ TRAIN:
           SMALL_H: 9
           SMALL_W: 9
       NECKFLIX:
-        CAMERA_MODE: RGBI # RGB, RGBI, RGBD, RGBID, I, ID, D, EV
+        CAMERA_MODE: RGB # RGB, RGBI, RGBD, RGBID, I, ID, D, EV
         STEREO_MODE: False # Not yet implemented
         LABELS: ['ECG'] # List of labels to use ['CVP','ECG','ABP']
         CVP_NORMALIZATION: [-30, 40]
@@ -86,7 +86,7 @@ VALID:
           SMALL_H: 9
           SMALL_W: 9
       NECKFLIX:
-        CAMERA_MODE: RGBI # RGB, RGBI, RGBD, RGBID, I, ID, D, EV
+        CAMERA_MODE: RGB # RGB, RGBI, RGBD, RGBID, I, ID, D, EV
         STEREO_MODE: False # Not yet implemented
         LABELS: ['ECG'] # List of labels to use ['CVP','ECG','ABP']
         CVP_NORMALIZATION: [-30, 40]
@@ -131,7 +131,7 @@ TEST:
           SMALL_H: 9
           SMALL_W: 9
       NECKFLIX:
-        CAMERA_MODE: RGBI # RGB, RGBI, RGBD, RGBID, I, ID, D, EV
+        CAMERA_MODE: RGB # RGB, RGBI, RGBD, RGBID, I, ID, D, EV
         STEREO_MODE: False # Not yet implemented
         LABELS: ['ECG'] # List of labels to use ['CVP','ECG','ABP']
         CVP_NORMALIZATION: [-30, 40]
@@ -143,11 +143,11 @@ TEST:
 DEVICE: cuda:0
 NUM_OF_GPU_TRAIN: 1
 LOG:
-  PATH: runs/exp/ecg/defaults/PhysHydra_RGBI
+  PATH: runs/exp/ecg/defaults/PhysHydra_RGB
 MODEL:
   NAME: PhysHydra
   PHYSHYDRA:
-    NUM_CHANNELS: 4 # Specifies the number of channels in the video
+    NUM_CHANNELS: 3 # Specifies the number of channels in the video
     NUM_LABELS: 1 # Specifies number of labels to do prediction
 
 INFERENCE:
