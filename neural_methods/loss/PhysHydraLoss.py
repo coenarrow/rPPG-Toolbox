@@ -34,6 +34,13 @@ class CCC_Loss(nn.Module):
             # Extract the i-th sample from predictions and labels
             x = preds[i]
             y = labels[i]
+
+            # Ensure that x and y are at least 2D. 
+            # If they are 1D, assume a single channel and unsqueeze.
+            if x.dim() == 1:
+                x = x.unsqueeze(0)  # Now shape becomes (1, frames)
+            if y.dim() == 1:
+                y = y.unsqueeze(0)
             
             # Check if shapes are mismatched (e.g., (channels, frames) vs (frames, channels))
             if x.shape != y.shape:

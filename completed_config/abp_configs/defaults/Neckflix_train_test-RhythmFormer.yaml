@@ -140,7 +140,7 @@ TEST:
 DEVICE: cuda:0
 NUM_OF_GPU_TRAIN: 1
 LOG:
-  PATH: runs/exp/abp/defaults
+  PATH: runs/exp/abp/defaults/RhythmFormer_RGB
 MODEL:
   DROP_RATE: 0.2
   NAME: RhythmFormer

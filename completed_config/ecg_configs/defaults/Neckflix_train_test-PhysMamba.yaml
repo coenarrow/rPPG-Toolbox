@@ -143,7 +143,7 @@ TEST:
 DEVICE: cuda:0
 NUM_OF_GPU_TRAIN: 1
 LOG:
-  PATH: runs/exp/ecg/defaults
+  PATH: runs/exp/ecg/defaults/PhysMamba_RGB
 MODEL:
   NAME: PhysMamba
 INFERENCE:

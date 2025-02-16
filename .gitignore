@@ -26,4 +26,3 @@ test_config.py
 .vscode/settings.json
 slurm_out/
 .vscode
-runs
