@@ -9,7 +9,6 @@ store_model
 store_physnet_model
 PreprocessedData
 PreTrainedModels
-configs/neckflix_configs/*
 temp
 facial_region_test.py
 interp_test.py
@@ -23,6 +22,5 @@ env
 data
 .vscode/settings.json
 test_config.py
-.vscode/settings.json
 slurm_out/
 .vscode

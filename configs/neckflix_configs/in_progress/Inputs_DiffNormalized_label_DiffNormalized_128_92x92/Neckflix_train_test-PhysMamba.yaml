@@ -1,0 +1,155 @@
+BASE: ['']
+TOOLBOX_MODE: "train_and_test"      # "train_and_test"  or "only_test"
+
+# PhysMamba Options
+# Resizing 
+
+TRAIN:
+  BATCH_SIZE: 8
+  EPOCHS: 30
+  LR: 3e-3
+  MODEL_FILE_NAME: NECKFLIX_NECKFLIX_NECKFLIX_PhysMamba
+  PLOT_LOSSES_AND_LR: True
+  DATA:
+    FS: 30
+    DATASET: NECKFLIX
+    DO_PREPROCESS: True              # if first time, should be true
+    DATA_FORMAT: NCDHW    # Frames, Channels, Height, Width
+    DATA_PATH:  "/group/pgh004/carrow/repo/hr_detection/datasets/CVP" 
+    CACHED_PATH: "PreprocessedData"  # Processed dataset save path, need to be updated
+    EXP_DATA_NAME: ""
+    # Fold is used for bigsmall referring to cross-fold validation
+    FOLD:
+      FOLD_NAME: ''
+      FOLD_PATH: ''
+    #FILE_LIST_PATH:
+    # Begin and End are used for when training on this dataset and testing on another dataset
+    BEGIN: 0.0
+    END: 0.8
+    PREPROCESS:
+      DATA_TYPE: ['DiffNormalized']    # 'Raw' or 'DiffNormalized' is supported
+      DATA_AUG: ['None']    # 'None' or 'Motion' is supported, used if the data path points to an augmented dataset or requires augmentation
+      USE_PSUEDO_PPG_LABEL: False
+      LABEL_TYPE: DiffNormalized
+      DO_CHUNK: True
+      CHUNK_LENGTH: 128
+      USE_BIGSMALL: False
+      BIGSMALL:
+        BIG_DATA_TYPE: ['Standardized']
+        SMALL_DATA_TYPE: ['Standardized']
+        RESIZE:
+          BIG_H: 144
+          BIG_W: 144
+          SMALL_H: 9
+          SMALL_W: 9
+      NECKFLIX:
+        CAMERA_MODE: RGB # RGB, RGBI, RGBD, RGBID, I, ID, D, EV
+        STEREO_MODE: False # Not yet implemented
+        LABELS: ['ECG'] # List of labels to use ['CVP','ECG','ABP']
+        CVP_NORMALIZATION: [-30, 40]
+        ABP_NORMALIZATION: [-50, 200]
+      RESIZE:
+        H: 96
+        W: 96
+
+VALID:
+  DATA:
+    FS: 30
+    DATASET: NECKFLIX
+    DO_PREPROCESS: True              # if first time, should be true
+    DATA_FORMAT: NCDHW    # Frames, Channels, Height, Width
+    DATA_PATH:  "/group/pgh004/carrow/repo/hr_detection/datasets/CVP" 
+    CACHED_PATH: "PreprocessedData"  # Processed dataset save path, need to be updated
+    EXP_DATA_NAME: ""
+    # Fold is used for bigsmall referring to cross-fold validation
+    FOLD:
+      FOLD_NAME: ''
+      FOLD_PATH: ''
+    #FILE_LIST_PATH:
+    # Begin and End are used for when training on this dataset and testing on another dataset
+    BEGIN: 0.8
+    END: 0.9
+    PREPROCESS:
+      DATA_TYPE: ['DiffNormalized']    # 'Raw' or 'DiffNormalized' is supported
+      DATA_AUG: ['None']    # 'None' or 'Motion' is supported, used if the data path points to an augmented dataset or requires augmentation
+      USE_PSUEDO_PPG_LABEL: False
+      LABEL_TYPE: DiffNormalized
+      DO_CHUNK: True
+      CHUNK_LENGTH: 128
+      USE_BIGSMALL: False
+      BIGSMALL:
+        BIG_DATA_TYPE: ['Standardized']
+        SMALL_DATA_TYPE: ['Standardized']
+        RESIZE:
+          BIG_H: 144
+          BIG_W: 144
+          SMALL_H: 9
+          SMALL_W: 9
+      NECKFLIX:
+        CAMERA_MODE: RGB # RGB, RGBI, RGBD, RGBID, I, ID, D, EV
+        STEREO_MODE: False # Not yet implemented
+        LABELS: ['ECG'] # List of labels to use ['CVP','ECG','ABP']
+        CVP_NORMALIZATION: [-30, 40]
+        ABP_NORMALIZATION: [-50, 200]
+      RESIZE:
+        H: 96
+        W: 96
+
+TEST:
+  METRICS: ['MAE', 'RMSE', 'MAPE', 'Pearson', 'SNR', 'BA']
+  USE_LAST_EPOCH: False                      # to use provided validation dataset to find the best epoch, should be false
+  DATA:
+    FS: 30
+    DATASET: NECKFLIX
+    DO_PREPROCESS: True              # if first time, should be true
+    DATA_FORMAT: NCDHW    # Frames, Channels, Height, Width
+    DATA_PATH:  "/group/pgh004/carrow/repo/hr_detection/datasets/CVP" 
+    CACHED_PATH: "PreprocessedData"  # Processed dataset save path, need to be updated
+    EXP_DATA_NAME: ""
+    # Fold is used for bigsmall referring to cross-fold validation
+    FOLD:
+      FOLD_NAME: ''
+      FOLD_PATH: ''
+    #FILE_LIST_PATH:
+    # Begin and End are used for when training on this dataset and testing on another dataset
+    BEGIN: 0.9
+    END: 1.0
+    PREPROCESS:
+      DATA_TYPE: ['DiffNormalized']    # 'Raw' or 'DiffNormalized' is supported
+      DATA_AUG: ['None']    # 'None' or 'Motion' is supported, used if the data path points to an augmented dataset or requires augmentation
+      USE_PSUEDO_PPG_LABEL: False
+      LABEL_TYPE: DiffNormalized
+      DO_CHUNK: True
+      CHUNK_LENGTH: 128
+      USE_BIGSMALL: False
+      BIGSMALL:
+        BIG_DATA_TYPE: ['Standardized']
+        SMALL_DATA_TYPE: ['Standardized']
+        RESIZE:
+          BIG_H: 144
+          BIG_W: 144
+          SMALL_H: 9
+          SMALL_W: 9
+      NECKFLIX:
+        CAMERA_MODE: RGB # RGB, RGBI, RGBD, RGBID, I, ID, D, EV
+        STEREO_MODE: False # Not yet implemented
+        LABELS: ['ECG'] # List of labels to use ['CVP','ECG','ABP']
+        CVP_NORMALIZATION: [-30, 40]
+        ABP_NORMALIZATION: [-50, 200]
+      RESIZE:
+        H: 96
+        W: 96
+
+DEVICE: cuda:0
+NUM_OF_GPU_TRAIN: 1
+LOG:
+  PATH: runs/exp
+MODEL:
+  NAME: PhysMamba
+INFERENCE:
+  BATCH_SIZE: 4
+  EVALUATION_METHOD: "FFT"        # "FFT" or "peak detection"
+  EVALUATION_WINDOW:
+    USE_SMALLER_WINDOW: False        # Change this if you'd like an evaluation window smaller than the test video length
+    WINDOW_SIZE: 10        # In seconds
+  MODEL_PATH: ""
