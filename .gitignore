@@ -19,8 +19,7 @@ debug_utils_physnet.py
 test.yaml
 env
 data
-.vscode/settings.json
 test_config.py
 slurm_out/
-.vscode
+.vscode/*
 **.DS_Store
