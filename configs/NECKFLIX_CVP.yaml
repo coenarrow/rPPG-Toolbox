@@ -1,0 +1,61 @@
+BASE: ['']
+TOOLBOX_MODE: "train_and_test"      # "train_and_test"  or "only_test"
+
+TRAIN:
+  BATCH_SIZE: 180
+  EPOCHS: 5
+  LR: 1e-3
+  MODEL_FILE_NAME: Neckflix_Neckflix_modelname
+  PLOT_LOSSES_AND_LR: True
+  DATA:
+    FS: 30
+    DATASET: Neckflix
+    DATA_PATH: "Neckflix/data"
+    DO_PREPROCESS: False # Neckflix has its own preprocessing functionality
+    DATA_FORMAT: NDCHW # annoyingly have to keep this part in for models
+    CACHED_PATH: "/Users/20759193/repos/Neckflix/cached_dir"  # Processed dataset save path, need to be updated
+    EXP_DATA_NAME: "rgbid_cvp"
+    FOLD:
+      FOLD_PATH: './dataset/Neckflix_splits/Train.csv'
+
+VALID:
+  DATA:
+    FS: 30
+    DATASET: Neckflix
+    DATA_PATH: "Neckflix/data"
+    DO_PREPROCESS: False # Neckflix has its own preprocessing functionality
+    DATA_FORMAT: NDCHW
+    CACHED_PATH: "/Users/20759193/repos/Neckflix/cached_dir"  # Processed dataset save path, need to be updated
+    EXP_DATA_NAME: "rgbid_cvp"
+    FOLD:
+      FOLD_PATH: './dataset/Neckflix_splits/Valid.csv'
+
+TEST:
+  METRICS: ['MAE', 'RMSE', 'MAPE', 'Pearson', 'SNR', 'BA', 'AU_METRICS']
+  USE_LAST_EPOCH: True  # to use provided validation dataset to find the best epoch, should be false
+  DATA:
+    FS: 30
+    DATASET: Neckflix
+    DATA_PATH: "Neckflix/data"
+    DO_PREPROCESS: False              # if first time, should be true
+    DATA_FORMAT: NDCHW
+    CACHED_PATH: "/Users/20759193/repos/Neckflix/cached_dir"  # Processed dataset save path, need to be updated
+    EXP_DATA_NAME: "rgbid_cvp"
+    FOLD:
+      FOLD_PATH: './dataset/Neckflix_splits/Test.csv'
+
+DEVICE: cuda:0
+NUM_OF_GPU_TRAIN: 1
+
+LOG:
+  PATH: runs/exp
+
+MODEL:
+  NAME: ModelName
+  BIGSMALL:
+    FRAME_DEPTH: 3
+
+INFERENCE:
+  BATCH_SIZE: 180
+  EVALUATION_METHOD: "FFT"        # "FFT" or "peak detection"
+  MODEL_PATH: ""
