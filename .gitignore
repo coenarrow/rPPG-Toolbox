@@ -23,3 +23,4 @@ test_config.py
 slurm_out/
 .vscode/*
 **.DS_Store
+.vscode/settings.json
