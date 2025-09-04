@@ -18,9 +18,9 @@ neural_methods/trainer/PhysnetTrainer_backup.py
 debug_utils_physnet.py
 test.yaml
 env
-.vscode
 data
 .vscode/settings.json
 test_config.py
 slurm_out/
 .vscode
+**.DS_Store
