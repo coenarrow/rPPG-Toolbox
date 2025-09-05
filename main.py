@@ -172,9 +172,11 @@ if __name__ == "__main__":
             train_loader = data_loader.iBVPLoader.iBVPLoader
         elif config.TRAIN.DATA.DATASET == "PhysDrive":
             train_loader = data_loader.PhysDriveLoader.PhysDriveLoader
+        elif config.TRAIN.DATA.DATASET == "Neckflix":
+            train_loader = data_loader.NeckflixLoader.NeckflixLoader
         else:
             raise ValueError("Unsupported dataset! Currently supporting UBFC-rPPG, PURE, MMPD, \
-                             SCAMPS, BP4D+ (Normal and BigSmall preprocessing), UBFC-PHYS and iBVP.")
+                             SCAMPS, BP4D+ (Normal and BigSmall preprocessing), UBFC-PHYS, iBVP, PhysDrive and Neckflix")
 
         # Create and initialize the train dataloader given the correct toolbox mode,
         # a supported dataset name, and a valid dataset paths
@@ -215,11 +217,13 @@ if __name__ == "__main__":
             valid_loader = data_loader.iBVPLoader.iBVPLoader
         elif config.VALID.DATA.DATASET == "PhysDrive":
             valid_loader = data_loader.PhysDriveLoader.PhysDriveLoader
+        elif config.VALID.DATA.DATASET == "Neckflix":
+            valid_loader = data_loader.NeckflixLoader.NeckflixLoader
         elif config.VALID.DATA.DATASET is None and not config.TEST.USE_LAST_EPOCH:
             raise ValueError("Validation dataset not specified despite USE_LAST_EPOCH set to False!")
         else:
             raise ValueError("Unsupported dataset! Currently supporting UBFC-rPPG, PURE, MMPD, \
-                             SCAMPS, BP4D+ (Normal and BigSmall preprocessing), UBFC-PHYS and iBVP")
+                             SCAMPS, BP4D+ (Normal and BigSmall preprocessing), UBFC-PHYS, iBVP, PhysDrive and Neckflix")
         
         # Create and initialize the valid dataloader given the correct toolbox mode,
         # a supported dataset name, and a valid dataset path
@@ -240,8 +244,8 @@ if __name__ == "__main__":
         else:
             data_loader_dict['valid'] = None
 
+    # test_loader
     if config.TOOLBOX_MODE == "train_and_test" or config.TOOLBOX_MODE == "only_test":
-        # test_loader
         if config.TEST.DATA.DATASET == "UBFC-rPPG":
             test_loader = data_loader.UBFCrPPGLoader.UBFCrPPGLoader
         elif config.TEST.DATA.DATASET == "PURE":
@@ -260,9 +264,11 @@ if __name__ == "__main__":
             test_loader = data_loader.iBVPLoader.iBVPLoader
         elif config.TEST.DATA.DATASET == "PhysDrive":
             test_loader = data_loader.PhysDriveLoader.PhysDriveLoader
+        elif config.TEST.DATA.DATASET == "Neckflix":
+            valid_loader = data_loader.NeckflixLoader.NeckflixLoader
         else:
             raise ValueError("Unsupported dataset! Currently supporting UBFC-rPPG, PURE, MMPD, \
-                             SCAMPS, BP4D+ (Normal and BigSmall preprocessing), UBFC-PHYS and iBVP.")
+                             SCAMPS, BP4D+ (Normal and BigSmall preprocessing), UBFC-PHYS, iBVP, PhysDrive and Neckflix")
         
         if config.TOOLBOX_MODE == "train_and_test" and config.TEST.USE_LAST_EPOCH:
             print("Testing uses last epoch, validation dataset is not required.", end='\n\n')   
