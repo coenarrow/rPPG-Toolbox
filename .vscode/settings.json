@@ -3,7 +3,7 @@
         "[Quiet Light]": {}
         
     },
-    "workbench.colorTheme": "Solarized Light",
+    "workbench.colorTheme": "Solarized Dark",
     "python.analysis.typeCheckingMode": "off",
     "python-envs.defaultEnvManager": "ms-python.python:venv",
     "python-envs.defaultPackageManager": "ms-python.python:pip",
