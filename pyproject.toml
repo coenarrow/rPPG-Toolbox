@@ -5,10 +5,12 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "causal-conv1d>=1.5.2; sys_platform == 'linux'",
     "fsspec==2025.7.0",
     "h5py==3.14.0",
     "ipykernel==6.30.1",
     "ipywidgets==8.1.7",
+    "mamba-ssm==2.2.4; sys_platform == 'linux'",
     "mat73==0.65",
     "matplotlib==3.10.6",
     "neurokit2==0.2.12",
@@ -54,3 +56,5 @@ url = "https://download.pytorch.org/whl/cu124"
 explicit = true
 
 [tool.uv.extra-build-dependencies]
+causal-conv1d = ["setuptools","wheel","torch==2.6.0","numpy","ninja"]
+mamba-ssm = ["torch==2.6.0","ninja"]
