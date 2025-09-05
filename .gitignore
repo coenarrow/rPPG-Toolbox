@@ -19,4 +19,3 @@ neural_methods/trainer/PhysnetTrainer_backup.py
 debug_utils_physnet.py
 test.yaml
 *.out
-test_configs
