@@ -158,8 +158,8 @@ full path, ints coerced to floats (`STRIDE_SECONDS: 0` is fine), and floats
 resolved with YAML 1.2 semantics (`LR: 9e-3` is a number). `BASE:
 [<file>]` deep-merges include files — the `_SMOKE` variants are
 `BASE: [<real config>]` plus a handful of overrides. Old-schema keys
-(`TOOLBOX_MODE`, `INFERENCE`, the four `*.DATA` blocks) are refused with a
-pointer at the design doc.
+(`TOOLBOX_MODE`, `INFERENCE`, the four `*.DATA` blocks) are refused like
+any other unknown key.
 
 - `MODE` — `train_and_test` / `only_test` / `unsupervised_method`
 - `DATA` — **which stores participate**: `CACHED_PATH`; `FILTERS` (attribute

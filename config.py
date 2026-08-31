@@ -36,10 +36,6 @@ MODES = ("train_and_test", "only_test", "unsupervised_method")
 UPSAMPLING_MODES = ("refuse", "interpolate")
 SPLIT_NAMES = ("TRAIN", "VALID", "TEST")
 
-#: Blocks and keys of the pre-redesign schema, recognised only to point at the
-#: design doc instead of printing a bare "unknown key".
-_LEGACY_TOP_KEYS = ("TOOLBOX_MODE", "INFERENCE", "VALID", "NUM_OF_GPU_TRAIN")
-
 DEFAULT_METRICS = ("MAE", "RMSE", "MAPE", "MACC", "Pearson", "SNR", "BA")
 
 
@@ -305,12 +301,6 @@ def config_from_mapping(mapping: dict) -> ExperimentConfig:
     """A validated :class:`ExperimentConfig` from one merged YAML mapping."""
     if not isinstance(mapping, dict):
         raise ConfigError(f"The config root must be a mapping, got {mapping!r}")
-    legacy = sorted(k for k in mapping if k in _LEGACY_TOP_KEYS)
-    if legacy:
-        raise ConfigError(
-            f"Key(s) {legacy} belong to the pre-redesign schema. The current "
-            "one is the DATA / INTERFACE / MODEL split — see "
-            "docs/plans/2026-08-31-interface-config-redesign.md")
     mapping = dict(mapping)
     model_mapping = mapping.pop("MODEL", None)
     splits_mapping = None

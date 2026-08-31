@@ -63,11 +63,6 @@ INTERFACE:
 """))
 
 
-def test_legacy_schema_keys_point_at_the_design_doc(tmp_path):
-    with pytest.raises(ConfigError, match="pre-redesign"):
-        load_config(write(tmp_path, "c.yaml", "TOOLBOX_MODE: train_and_test\n"))
-
-
 def test_base_includes_deep_merge(tmp_path):
     write(tmp_path, "base.yaml", MINIMAL + """\
 LOG_PATH: runs/base
