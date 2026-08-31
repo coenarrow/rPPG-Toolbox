@@ -167,13 +167,32 @@ ECG clock is detected per window and the resulting indices are offset into the
 section timeline, rather than detected on a stitched trace. An ABP clock,
 being `raw`, is detected on the stitched trace directly.
 
-**Beat boundaries from a pressure trace.** Detect systolic peaks on the
-reference with `scipy.signal.find_peaks` under physiological constraints
-(refractory `distance ≈ 0.25 s × fs`, prominence scaled to the trace), then
-take the minimum in the interval preceding each peak as that beat's foot.
-Beats run foot to foot, the standard arterial convention. The prototypes'
-`max_pool1d` width filter is dropped: no prominence control, and its padding
-produces edge artifacts.
+**Beat boundaries from a pressure trace.** Reuse the `find_peaks` the
+PhysHydra-era analysis used — the mature version in
+`evaluation/prototypes/neckflix_metrics.ipynb`, the one carrying `clip_ends`,
+not the earlier copy in `metrics.ipynb`. It is non-maximum suppression over a
+sliding window: `max_pool1d_with_indices` of width `width`, keeping the points
+that are the extremum of their own neighbourhood. At its established setting
+`width = int(fs × 2/3)` (≈ 0.67 s) that enforces a minimum beat separation
+directly — the same job `scipy.signal.find_peaks(distance=...)` does — and
+`clip_ends` drops a first or last peak lying more than 2 SD off the interior
+mean, which is the padding-edge artifact handled. It is proven on this data;
+it is lifted as-is into `beats.py`, with `type='min'` giving the feet.
+
+Beats run foot to foot, the standard arterial convention: feet from
+`find_peaks(type='min')` on the reference are the beat boundaries, and
+`max` / `mean` / `min` of both traces are read inside each
+`[foot_i, foot_{i+1})`.
+
+**The one gap, and where it is closed.** The function has no amplitude or
+prominence gate, so on a flat or noise-only trace it returns one "peak" per
+`width` window rather than none. That is harmless in the reference-anchored
+path — an arterial line always has beats — but it is exactly wrong for the
+detection-quality pass below, where "did the model produce recognisable beats
+at all" is the question being asked. So `beats.py` adds a small amplitude gate
+(peak-to-trough excursion against the trace's own noise floor) applied **only**
+in the detection-quality pass. The reference-anchored path uses the function
+unmodified.
 
 **Per-beat statistics.** Uniformly `max`, `mean`, `min` of both traces over
 `[foot_i, foot_{i+1})`, applied to the **reference-defined** intervals for
@@ -247,6 +266,17 @@ families. Nothing in a YAML selects them (D7).
 `uncertainty.py` carries the prototypes' two estimators, consumed rather than
 reinvented: a HAC (Newey-West) standard error with Bartlett / Parzen /
 quadratic-spectral kernels, and a moving-block bootstrap.
+
+Take them from `neckflix_metrics.ipynb`, not `metrics.ipynb` — the former is
+the mature version and the difference matters. Its `mean_se` returns
+`(mean, sd, se)` rather than `(mean, se)`, carries a `naive` / `HAC` switch so
+a caller can be explicit about which assumption it is making, and implements
+**Andrews (1991) automatic bandwidth selection** per kernel instead of the
+earlier fixed `n_sec = 5` lag. Its `get_snr`, `get_macc` and `get_hr_fft` are
+also windowed with overlap and return a spread as well as a point estimate,
+and `get_snr` additionally reports `auto_snr` — the reference's SNR evaluated
+at the *predicted* rate, which the PhysHydra analysis used to rank windows.
+All of that comes across.
 
 Applied per D6:
 
