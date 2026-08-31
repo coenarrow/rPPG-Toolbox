@@ -9,6 +9,17 @@ dataset: the multimodal Neckflix dataset (RGB/IR/Depth video + ABP/CVP/ECG
 traces). Validation includes clinical BP standards (IEEE 1708, ISO 81060,
 ESH 2023) and large-scale LOSO sweeps on an HPC cluster.
 
+## Design Principle
+
+**Extending the repo should be cheap, because everything shared is written
+once.** A new dataset is a `channel_map` subclass plus a markdown cache spec;
+a new model is a `DictModel` plus a registry line and a config — never a new
+trainer, loader, loss module, or plot set. When new work needs something a
+shared piece almost does, extend the shared piece for everyone rather than
+writing a parallel copy beside it; a second implementation of anything is a
+bug in the first one's design. This principle is why the per-model and
+per-dataset recipes below are short — keep them that way.
+
 ## Overhaul In Progress
 
 The repo is mid-overhaul from the upstream single-signal design to the
