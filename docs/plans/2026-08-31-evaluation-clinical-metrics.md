@@ -115,7 +115,7 @@ drift apart.
 | `level` | `beat` / `window` / `section` / `recording` / `participant` / `cohort` |
 | `unit_id` | Identifier of the unit at that level |
 | `signal` | Canonical signal name |
-| `metric` | e.g. `mae`, `pearson`, `mean_error`, `ieee1708_grade` |
+| `metric` | e.g. `mae`, `pearson`, `mean_error`, `ieee1708_mae` |
 | `statistic` | `max` / `mean` / `min` for beat-derived metrics; empty otherwise |
 | `value` | The number, in the signal's physical unit where one applies |
 | `se` | Standard error; `NaN` where none was estimated |
@@ -421,6 +421,14 @@ next person to read both modules sees it.
    `scoring/standards.py` against the purchased ISO 81060-3:2022 and
    IEEE 1708-2014 / 1708a-2019 texts** before any report prints a pass/fail.
    Blocking for clinical claims; not blocking for the rest of the build.
+   Two parts, and they are separate claims: the numeric **thresholds**, and
+   the **aggregation** — in particular that ISO 81060-3's SD is computed here
+   as a between-subject SD of per-subject biases, which is smaller than the
+   paired-beat-difference SD an invasive-reference standard tests and is
+   therefore biased toward passing. Both caveats currently print together
+   under `VERIFIED_AGAINST_STANDARD_TEXT`; verifying the thresholds alone and
+   flipping that flag would silently drop the aggregation caveat, so split the
+   flag rather than flipping it.
 2. Confirm the beat detector's constraints (refractory window, prominence
    scaling) against real cached ABP rather than only the synthetic test
    waveform.
