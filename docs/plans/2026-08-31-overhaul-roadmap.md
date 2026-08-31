@@ -228,19 +228,36 @@ kept as a parent.
 
 ## Phase 7 — Evaluation & clinical metrics
 
-Can overlap Phases 4–6 — it consumes saved outputs through the stable batch
-contract.
+**Closed 2026-09-01.** Can overlap Phases 4–6 — it consumes saved outputs
+through the stable batch contract.
 
-1. **Design doc first**: map IEEE 1708-2014 / 1708a-2019, ISO 81060-2:2018 /
+1. ~~**Design doc first**: map IEEE 1708-2014 / 1708a-2019, ISO 81060-2:2018 /
    81060-3:2022, and ESH 2023 onto computable metrics — per-beat
    systolic/diastolic detection, mean-error/SD acceptance bands, per-subject
    vs pooled aggregation, grading. Be explicit about which criteria are
    *computable from our data* vs *study-design requirements* (subject counts,
    reference-device protocol, cuff procedure) that a metrics report can note
-   but not satisfy.
-2. Extend `evaluation/metrics_report.py`; denormalised (mmHg) reporting via
-   the `label_stats` already carried in every batch.
-3. Consume, then delete, `evaluation/prototypes/` from Phase 1.
+   but not satisfy.~~ **Done** —
+   [the design](2026-08-31-evaluation-clinical-metrics.md); IEEE 1708 and
+   ISO 81060-3 implemented, both marked `UNVERIFIED` pending a line-by-line
+   check against the purchased texts; ESH 2023 and ISO 81060-2 deferred —
+   `standards.py`'s `Criterion`/`CRITERIA` mechanism is generic, so adding
+   either later is rows, not new code.
+2. ~~Extend `evaluation/metrics_report.py`; denormalised (mmHg) reporting via
+   the `label_stats` already carried in every batch.~~ **Done, as a rebuild
+   rather than an extension** — `evaluation/metrics_report.py` is deleted;
+   in its place a layered library (`records` → `beats` → `levels` →
+   `uncertainty` → `scoring/` → `report` → `plots`) that the trainer, the
+   unsupervised predictor and the offline LOSO summariser all consume
+   identically. Physical units (mmHg, etc.) throughout via `label_stats`.
+3. ~~Consume, then delete, `evaluation/prototypes/` from Phase 1.~~ **Done** —
+   every capability confirmed a home before deletion (`find_peaks` →
+   `evaluation/beats.py`; `mean_se` / the moving-block bootstrap →
+   `evaluation/uncertainty.py`; the `get_rmse`/`get_mae`/`get_pearson_r`/
+   `get_ccc`/`get_macc` family → `evaluation/scoring/waveform.py`;
+   `get_hr_fft`/`get_snr` → `evaluation/scoring/rate.py`; `aggregate_data` →
+   `evaluation/levels.py` + `evaluation/report.py`; the Bland-Altman cells →
+   `evaluation/plots.py`); see decision 16 below.
 
 ## Phase 8 — Docs finalization
 
@@ -367,4 +384,44 @@ contract.
     headline item for Phase 5 is that the four `DATA` blocks are one fact
     stated four times.
 
-Last updated: 2026-08-31
+16. **Phase 7 evaluation design (2026-09-01).** The package lives at
+    `evaluation/scoring/`, not `evaluation/metrics/` — a package named
+    `metrics/` would shadow the retained legacy module `evaluation/metrics.py`
+    and break `main.py`'s import of it. Four design choices, carried through
+    from [the design doc](2026-08-31-evaluation-clinical-metrics.md):
+    (a) **a six-level hierarchy** (beat → window → section → recording →
+    participant → cohort) rather than one fixed aggregation, because the
+    standards themselves disagree on the right level (ISO 81060-3 wants a
+    per-subject mean/SD, IEEE 1708 a per-subject MAE) and a report that
+    hardcodes one loses the others; a `Section` is a maximal contiguous run
+    of windows stitched back into one trace, so beat detection sees a
+    continuous recording rather than window-sized fragments, and overlapping
+    windows safely degrade to one section each rather than double-counting;
+    (b) **reference-anchored beats** — beat boundaries are detected on the
+    label trace only, and both prediction and label are read inside those
+    same intervals, so every reference beat yields exactly one comparison
+    and agreement statistics carry no selection bias from a prediction whose
+    own beats are hard to find; a separate `detection_quality` (sensitivity/
+    PPV/IBI error, gated by an autocorrelation pulsatility test) is kept
+    apart on purpose, so a model that finds few beats can't look accurate on
+    only the ones it found; (c) **uniform `max`/`mean`/`min` beat statistics
+    with per-signal display labels** — the computation is identical across
+    absolute-class signals, only `neural_methods/signals.beat_labels` maps
+    the triple onto the signal's own vocabulary (systolic/MAP/diastolic for
+    ABP, peak/mean/trough for CVP), so a new absolute signal needs a label
+    map, not a new metric; (d) **which families apply to a signal follows
+    from its class** (`FAMILIES` in `evaluation/scoring/__init__.py`), never
+    from a config key, so `TEST.METRICS` is deleted outright — replaced by
+    `TEST.REPORT.BOOTSTRAP` / `TEST.REPORT.PLOTS`, which gate cost
+    (bootstrap resamples, which figures) but never content. Every clinical
+    threshold in `evaluation/scoring/standards.py` is marked `UNVERIFIED`
+    with a named source and ships with a printed provenance line (including
+    the study-design requirements a metrics report can note but never
+    satisfy); flipping `VERIFIED_AGAINST_STANDARD_TEXT` waits on a
+    line-by-line check against the purchased ISO 81060-3:2022 and
+    IEEE 1708-2014/1708a-2019 texts (spec §17) — this phase is the
+    computable machinery, not a verified clinical grade. Verified end to end
+    on a real smoke run (`NECKFLIX_PHYSMAMBA_SMOKE`, the 332-store local
+    zarr cache, held-out participant 015); suite at 288, green.
+
+Last updated: 2026-09-01

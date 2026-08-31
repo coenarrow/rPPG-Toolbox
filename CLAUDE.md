@@ -78,7 +78,11 @@ tagged `pre-overhaul`.
   the external zarr cache), `neckflix_config.py` (typed config pattern), and
   one markdown **cache spec per legacy dataset** (`PURE.md`, `MMPD.md`, …) —
   the record of how to build each dataset's zarr stores
-- `evaluation/metrics_report.py`, `post_process.py` — per-signal scoring
+- `evaluation/` — `records`, `beats`, `levels`, `uncertainty`, `scoring/`
+  (`waveform`, `rate`, `clinical`, `standards`), `report`, `plots`:
+  per-signal scoring from beat to cohort. `post_process.py` is the unchanged
+  DSP layer underneath (FFT/peak-detection helpers), shared with the legacy
+  trainers
 - `unsupervised_methods/` — seven traditional methods, migrated to the dict
   pipeline, scored per trace
 - `tools/list_neckflix_folds.py`, `tools/summarise_neckflix_outputs.py`
@@ -228,9 +232,10 @@ any other unknown key.
   O(1 mmHg) and CCC is O(1), so unweighted the pressures own every gradient.
   Naming a signal not in `INTERFACE.TRACES` is an error, not a no-op
 - `TEST` — how predictions are scored, in every mode: `BATCH_SIZE`,
-  `METRICS` (omit for the standard set), `USE_LAST_EPOCH`,
-  `EVALUATION_METHOD`, `EVALUATION_WINDOW_SECONDS` (`0` = score each window
-  whole), and `MODEL_PATH` (the `only_test` checkpoint)
+  `USE_LAST_EPOCH`, `EVALUATION_METHOD`, `EVALUATION_WINDOW_SECONDS` (`0` =
+  score each window whole), `MODEL_PATH` (the `only_test` checkpoint), and
+  `REPORT.BOOTSTRAP` / `REPORT.PLOTS` (what applies to a signal follows from
+  its class; these gate only cost)
 - `LOG_PATH` — where the run's outputs land (default `runs/exp`)
 - `UNSUPERVISED_METHODS` — the traditional methods to score
 
@@ -269,10 +274,12 @@ otherwise. `--limit_windows N` subsamples evenly for smoke runs.
 
 **Outputs**: checkpoints and plots to `LOG_PATH` (default `runs/exp`);
 predictions to `config.RUN.output_dir`; SLURM logs to `logs/`. The standard
-plot set (written once, in the trainer and `evaluation/metrics_report.py`,
-never per model) is: loss/LR curves, per-signal per-component loss curves, HR
-Bland-Altman, per-signal waveform overlays, and predicted-vs-true agreement
-scatters (window mean, systolic, diastolic) for absolute-class signals.
+plot set (written once — loss/LR and per-signal per-component loss curves in
+the trainer, everything else in `evaluation/plots.py`, never per model) is:
+per-signal waveform overlays for every signal, plus predicted-vs-true
+agreement scatters (window mean/max/min) and per-subject Bland-Altman, both
+labelled per signal (systolic/MAP/diastolic for ABP, peak/mean/trough for
+CVP) and drawn only for absolute-class signals.
 
 ## Adding a Model
 
@@ -325,12 +332,15 @@ cache or preprocessor for a known dataset.
 
 ## Adding Metrics
 
-Extend `evaluation/metrics_report.py` (per-signal, physical units via the
-`label_stats` carried in every batch). For pressure waveforms the Phase 7
-design doc maps IEEE 1708 / ISO 81060 / ESH 2023 onto computable metrics —
-systolic/diastolic detection, agreement bands, per-subject aggregation.
-Prototype material lives in `evaluation/prototypes/` until Phase 7 consumes
-it.
+Extend the relevant family in `evaluation/scoring/` (per-signal, physical
+units via the `label_stats` carried in every batch, assembled by
+`evaluation/report.py` into one tidy frame). A new clinical criterion is rows
+in `evaluation/scoring/standards.py`, not new code — every number lands in
+the tidy frame. The IEEE 1708 / ISO 81060 / ESH 2023 mapping this rests on is
+[the Phase 7 design](docs/plans/2026-08-31-evaluation-clinical-metrics.md);
+its thresholds are marked `UNVERIFIED` pending a line-by-line check against
+the purchased standard texts — see that doc's §17 before using a report to
+support a clinical claim.
 
 ## Dataset Locations
 
@@ -386,4 +396,4 @@ that trains but materialises the hidden state. Correctness path, not speed.
 - Clinical BP validation: IEEE 1708-2014 / 1708a-2019, ISO 81060-2:2018 /
   81060-3:2022, ESH 2023 recommendations
 
-**Last updated**: 2026-08-31
+**Last updated**: 2026-09-01

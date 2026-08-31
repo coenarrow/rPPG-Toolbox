@@ -1,11 +1,11 @@
 """Reference-anchored beats: the clock, the intervals, the per-beat statistics.
 
-The detector is the one the PhysHydra-era analysis used (the mature copy in
-``evaluation/prototypes/neckflix_metrics.ipynb``, the one carrying
-``clip_ends``): non-maximum suppression over a sliding window, which enforces
-a minimum beat separation directly. Two changes on the way in — the reshapes
-are einops per the repo rule, and the odd-width normalisation now happens
-*before* pooling rather than after, where it had no effect.
+The detector is the one the PhysHydra-era analysis used (the mature copy,
+the one carrying ``clip_ends``, now retired — see git history for the
+original notebook): non-maximum suppression over a sliding window, which
+enforces a minimum beat separation directly. Two changes on the way in — the
+reshapes are einops per the repo rule, and the odd-width normalisation now
+happens *before* pooling rather than after, where it had no effect.
 """
 
 from einops import rearrange
