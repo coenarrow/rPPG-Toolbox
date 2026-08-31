@@ -38,6 +38,14 @@ published dataset, PNG filenames encode the capture timestamp in
 nanoseconds (e.g. `Image1392643993642815000.png`); the loader relied only
 on their lexicographic order.
 
+**Redistributed copies vary.** The local subset at
+`C:\Users\20759193\source\repos\hr_detection\datasets\PURE` flattens the
+nesting (`01-01/Image*.png`, no inner directory) and drops extra artefacts
+beside the frames — `01-01.avi`, `01-01_masks/`, `01-01_points_labels_dict.npy`
+— which are not part of PURE. `tools/cache_pure.py` therefore accepts both
+layouts and selects frames by the `Image<digits>.png` pattern rather than a
+bare `*.png` glob.
+
 ## Video
 
 - Format: PNG image sequence (one file per frame), not a video container.
@@ -76,7 +84,13 @@ never silently replace the real frames.
 
 ## Physiological traces
 
-### bvp (zarr key: `bvp`)
+### ppg (zarr key: `ppg`)
+
+**The key is `ppg`, not `bvp`.** `config.py` canonicalises
+`INTERFACE.TRACES` through `neural_methods/signals.py` before the loader
+sees them, and `BVP` is an alias of `PPG`; the loader then looks the trace
+group up by the *lowercased canonical* name. A group written as `bvp` is
+never found, and the sample is dropped for having no labels.
 
 - Source: `{recording}.json`, parsed with `json.load`. The loader read
   exactly `labels["/FullPackage"]`, a list of records, taking
@@ -104,6 +118,15 @@ never silently replace the real frames.
   frames and waveform samples, so a timestamp-based alignment is possible
   and arguably more correct, but it is *not* what the legacy pipeline did.
 
+  **Resolved:** `tools/cache_pure.py` defaults to the timestamp alignment
+  (`np.interp` on the two nanosecond timestamp arrays) and keeps the legacy
+  index grid behind `--align index`. Measured on the four-recording subset,
+  the two streams start and stop within ~10 ms of each other, so the index
+  grid is a good approximation — but only the timestamp path stays correct
+  if a capture ever drops frames, and waveform-level phase accuracy is what
+  this repo is ultimately validating. The mode used is recorded in the
+  store's `alignment` root attr, so a cache built either way says so.
+
 The JSON's pulse-rate and SpO2 series could become additional traces
 (`hr`, `spo2`) in a future cache; the legacy loader never read them, so
 this spec does not define their parsing.
@@ -121,31 +144,50 @@ this spec does not define their parsing.
   never shared subjects.
 - Proposed root attrs:
   - `recording`: the raw directory name, e.g. `"01-01"`
-  - `participant`: the subject token, unprefixed, e.g. `"01"`
+  - `participant`: the subject token, unprefixed and **zero-padded to three
+    digits** — `"001"`, not `"01"`. `normalise_participant()` pads every id
+    the CLI or a config offers (`P01`, `01`, `1`) to that width before
+    filtering, so a two-digit attr here would make every LOSO fold select
+    nothing, silently.
   - `setup` (or `trial`): the trial token, e.g. `"01"`. Per the dataset's
     published description the six setups are 01 steady, 02 talking,
     03 slow translation, 04 fast translation, 05 small rotation,
     06 medium rotation — useful as a motion/task filter.
 
-## Proposed store mapping
+## Store mapping (implemented)
 
-One store per recording: `{cache_dir}/01-01.zarr`.
+Written by `tools/cache_pure.py`; read by `PUREDataset`
+(`PURELoader.py`), whose channel map is `{"R": ("rgb", 0), "G": ("rgb", 1),
+"B": ("rgb", 2)}` — so frames are stored in RGB order.
 
-```
+```text
 01-01.zarr
-  attrs: complete: true, tool_version: ">=1.0.0",
-         recording: "01-01", participant: "01", setup: "01"
+  attrs: complete: true, tool_version: "1.0.0", dataset: "PURE",
+         recording: "01-01", participant: "001", subject: "01",
+         setup: "01", setup_name: "steady", alignment: "timestamp",
+         source_resolution: [480, 640], resized_to: null
   1/                          <- single perspective
     rgb/
-      video/frames            (3, T, H, W) uint8, RGB channel order
-      video/  attrs: num_frames (= T, required), fps (30.0)
-      bvp/data                (T,) float, oximeter a.u., index-aligned
-                              to frames via the resample_ppg mechanism
+      video/frames            (3, T, H, W) uint8, RGB, chunked (3, 32, H, W)
+      video/timestamps_us     (T,) int64, relative to the first frame
+      video/  attrs: num_frames (= T, required), fps (measured, ~29.9-30.0)
+      ppg/data                (T,) float64, oximeter a.u., one sample per
+                              frame (see the alignment note above)
 ```
 
-Channel map consumers will use `{"R": ("rgb", 0), "G": ("rgb", 1),
-"B": ("rgb", 2)}`, so store RGB order (i.e. keep the loader's BGR->RGB
-conversion).
+`fps` is *measured* from the frame timestamps rather than pinned to the
+nameplate 30, matching what the Neckflix preprocessor writes; the loader
+treats anything within 1% as the same nominal rate.
+
+`complete: true` is written only after the frames and the trace are on
+disk, so an interrupted run leaves a store the admission gate rejects
+rather than a plausible-looking short one.
+
+Build it with:
+
+```bash
+uv run python tools/cache_pure.py --src <raw PURE> --dest <cache dir>
+```
 
 ## Quirks
 
