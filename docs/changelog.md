@@ -6,6 +6,145 @@ This file tracks development milestones. As of 2026-08-25 all branches (HPC, Mac
 
 ---
 
+## 2026-08-31 — Branch: `main` — §7a re-verifications green; PURE on the zarr cache
+
+- **DeepPhys and PhysFormer §7a re-verification (one sub-agent per model) —
+  both passed, no architectural discrepancy.** The drafted configs carry the
+  pilots' settings; the built models are key-for-key the pilots'
+  `state_dict`s; suite and real-cache smokes green; the checkpoint-interface
+  adoption path exercised with deliberately wrong interfaces. Findings
+  recorded in the retros: PhysFormer's parameter shapes are grid-invariant,
+  so a plausible-but-wrong `RESIZE` is caught *only* by interface adoption;
+  and four things the schema still cannot express (`DATA_TYPE` order is
+  load-bearing but unstated; the serialized interface records `LABEL_NORM`'s
+  omission, not its resolution; frame-shape demands are build errors, not
+  declarations; batch size lives in two keys).
+- **PURE is on the zarr cache.** `tools/cache_pure.py` writes
+  `{recording}.zarr` from the raw PNG sequences + JSON sidecar (timestamp
+  alignment by default, the legacy index grid behind `--align index`, the
+  choice recorded in the store's `alignment` attr); `PUREDataset` is the
+  two-property `BaseZarrDataset` subclass the contract promises; `PURE.md`
+  upgraded from proposed to implemented mapping. The local four-recording
+  subset is cached at `D:/pure_zarr`. Suite: 288. Not yet reachable from
+  `main.py`, which still hardcodes `NeckflixDataset` — dataset selection via
+  `DATA.DATASET` is the open wiring.
+
+## 2026-08-31 — Branch: `main` — Config redesign: the DATA / INTERFACE / MODEL split
+
+Phase 5 pulled forward, reshaped around one idea from the two pilots: the
+config states the model's **demand** on the data pipeline explicitly, and the
+pipeline's job is to satisfy it
+([design](plans/2026-08-31-interface-config-redesign.md)).
+
+- **`config.py` rewritten**: yacs is gone (`uv remove yacs`). Typed
+  dataclasses — unknown keys refused with the full path, int→float coerced
+  (`STRIDE_SECONDS: 0` works, `FS: 29.9796` is representable), `BASE:`
+  include files deep-merged, so every `_SMOKE` config is now the real config
+  plus a handful of overrides. The four per-split data blocks collapse into
+  one `DATA` block + `SPLITS` (stride/random-windows/filter overrides only),
+  which deletes `main.py`'s hand-maintained train/test consistency check
+  outright. `INFERENCE` is absorbed into `TEST`; the dead legacy keys
+  (`CHUNK_LENGTH`, `LABEL_TYPE`, `DO_PREPROCESS`, `BEGIN`/`END`, ...) no
+  longer exist to write.
+- **`INTERFACE` is the model's demand, and checkpoints carry it.**
+  `ModelSpec` (unchanged in shape, so no builder changed) is now constructed
+  from `INTERFACE`; `MultiSignalTrainer` saves
+  `{state_dict, interface, model_name}` and at `MODE: only_test` `main.py`
+  adopts the checkpoint's interface over the config's before building
+  anything, printing the differences — a pretrained checkpoint is tested
+  against what it actually expects, not what a config restates.
+- **Demand-driven delivery in the zarr loader.** A demanded channel the
+  *dataset* can never provide (not just a store) is zeros +
+  `channel_mask=False` with one construction-time warning, so a wider
+  pretrained checkpoint runs on narrower data; zero-coverage channels/traces
+  warn loudly (training would teach the model to ignore them);
+  `INTERFACE.UPSAMPLING: interpolate` opts a slower store into linear
+  frame/label interpolation (refusal, naming the opt-in, stays the default —
+  duplication would blank DiffNormalized).
+- All seven `configs/neckflix/*.yaml` converted; suite green (280 tests,
+  including both pilots' smokes). The DeepPhys/PhysFormer configs are drafts
+  pending the contract's new **§7a re-verification** (one sub-agent per
+  model). `test_legacy_contract` now hands the legacy tuple-path trainer a
+  plain namespace instead of resurrecting the yacs tree.
+
+## 2026-08-31 — Branch: `main` — Phase 4: the DeepPhys pilot (stage 0)
+
+Executed per [the migration contract](plans/2026-08-31-model-migration-contract.md)
+§7. The pilot's job was the shared infrastructure every later migration
+assumes; DeepPhys is the worked example of using it.
+
+### Stage 0 — shared infrastructure
+- **Physical-time windowing.** `PREPROCESS.WINDOW_SECONDS` / `STRIDE_SECONDS`
+  replace `CHUNK_LENGTH` / `CHUNK_STRIDE`, and `DATA.FS` becomes mandatory:
+  `T = WINDOW_SECONDS x FS`, snapped to a whole frame within 0.01 and refused
+  otherwise with the nearest valid duration named. 150 frames is 5 s of
+  physiology at 30 fps and 1 s at 150 fps, and a frame count alone cannot tell
+  them apart. The loader reads each store's own measured rate and decimates it
+  to `FS` by nearest-index sampling; a genuinely slower store is refused
+  (upsampling duplicates frames, and duplicated frames make DiffNormalized
+  identically zero — a silently dark motion branch). Rates within 1% count as
+  the same nominal rate, which is what the real cache needs: its 332 stores
+  carry 29.9796 and 30.0 mixed *within* single recordings.
+- **Per-signal label normalisation.** `PREPROCESS.LABEL_NORM` is a per-signal
+  map with a new `raw` mode, and it moved out of the `NECKFLIX` block (it is
+  not Neckflix-specific). Defaults come from a signal's *class*, now recorded
+  in `neural_methods/signals.py`: absolute (ABP, CVP, SPO2) load raw in
+  physical units because their level is part of the prediction; shape (PPG,
+  ECG, RESP, EDA) stay per-window z-scored.
+- **Per-signal composite loss.** `neural_methods/loss/PerSignalLoss.py`:
+  `TRAIN.LOSS` becomes a registry of `{TYPE, WEIGHTS}` per trace over the
+  components CCC / MEAN / MAX / MIN / NEGPEARSON / MSE / SPECTRAL, each reduced
+  **per sample** so the masked structure composes and an absent signal
+  contributes exactly 0. Systolic and diastolic come from differentiable soft
+  peaks over the predicted waveform — no separate stats head, so a waveform can
+  never disagree with its own statistics. The soft-peak softness is expressed
+  as a fraction of the window's range, without which `PhysHydraLoss`'s absolute
+  `tau`/`temperature` saturate to a hard argmax on a raw mmHg trace.
+  `MaskedMultiSignalLoss.py` deleted; its structure lives on inside the new
+  module.
+- **Checkpoint-authority channel alignment.** `stack_frames` zero-fills a
+  channel the model expects but the batch lacks instead of raising, so an
+  RGB+IR+depth checkpoint runs on RGB-only data — degraded, not crashed. A
+  batch carrying *none* of the model's channels is still an error.
+- **Absolute-scale guardrails**, in the builder rather than any architecture:
+  each output row's bias starts at its signal's physiological prior (ABP 90
+  mmHg, CVP 8), and the readout is exempt from weight decay, which would
+  otherwise drag raw-unit predictions toward zero as a systematic pressure bias.
+  Models declare their readout via `DictModel.output_layers()` and any window
+  constraint via `temporal_divisor` / `temporal_length`, checked at
+  construction — the legacy trainers' silent batch truncation did not migrate.
+- **Standard plots**, written once in `MultiSignalTrainer` /
+  `evaluation/metrics_report.py`: per-signal and per-component training curves,
+  per-signal waveform overlays, and predicted-vs-true agreement scatters
+  (window mean, systolic, diastolic) for absolute-class signals — the
+  migration-time precursor of the Phase 7 clinical bands.
+- `ModelSpec` collects everything §1 says is derived from the data spec, so a
+  `MODEL` block is `NAME` plus genuinely architectural keys.
+
+### DeepPhys
+- `in_channels` / `out_signals` parameterised, final dense activation-free,
+  both sanctioned head styles (`MODEL.HEAD_STYLE`: `widened` = A, default;
+  `per_signal` = B), `view` replaced with einops. At `3`/`1` with the default
+  head it is the original, layer for layer and name for name.
+- `configs/neckflix/NECKFLIX_DEEPPHYS.yaml` (+ smoke) — the template later
+  migrations copy. `WINDOW_SECONDS: 6.0` reproduces upstream's
+  `CHUNK_LENGTH: 180` at `FS: 30`.
+- `DeepPhysTrainer.py` deleted.
+- **Bug the pilot found:** `in_channels` means different things across model
+  families. DeepPhys splits the stacked `DATA_TYPE` blocks into its motion and
+  appearance branches itself, so its convs take *one* block's width, while
+  PhysMamba consumes the stack whole. `ModelSpec` now names both
+  (`camera_channels`, `in_channels`), and the DeepPhys builder refuses anything
+  but exactly two `DATA_TYPE` entries.
+
+Config friction is recorded in
+[the pilot retro](plans/2026-08-31-deepphys-pilot-retro.md) for Phase 5.
+Validated: full suite green, plus `--limit_windows 8 --test_participants P015`
+smoke runs of both DeepPhys and PhysMamba against the real `rgb128` cache,
+predicting ABP and CVP directly in mmHg.
+
+---
+
 ## 2026-08-31 — Branch: `main` — Overhaul Phases 1–3
 
 Executed per `docs/plans/2026-08-31-overhaul-roadmap.md`:

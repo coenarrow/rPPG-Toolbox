@@ -162,7 +162,8 @@ prediction contract, plots, the per-model recipe) is
 Wave 1 = the 2-D per-frame backbones (near-mechanical via
 `SignalDictWrapper(input_mode='frames2d')`):
 
-1. DeepPhys
+1. DeepPhys — **done 2026-08-31** (the pilot; §7a re-verified on the new
+   schema)
 2. TS-CAN
 3. EfficientPhys
 
@@ -172,21 +173,28 @@ the schema gets designed from friction observed, not speculation.
 
 ## Phase 5 — Config consolidation
 
-With wave 1's usage in hand:
+**Substantially landed 2026-08-31**, pulled forward after the two pilot
+retros converged on the same friction list — see
+[the design](2026-08-31-interface-config-redesign.md). What landed: the
+DATA / INTERFACE / MODEL schema (`config.py` rewritten as typed dataclasses,
+yacs deleted from the tree and from `pyproject.toml`), one `DATA` block +
+per-split `SPLITS` overrides, `INFERENCE` absorbed into `TEST`,
+checkpoint-carried `INTERFACE` with only_test adoption, demand-driven
+delivery in the zarr loader (dataset-agnostic channel fill, zero-coverage
+warnings, opt-in interpolating upsampling), and all seven
+`configs/neckflix/*.yaml` re-pointed (`_SMOKE` = `BASE:` + overrides).
 
-- Delete the dead bulk of `config.py` (712 lines of yacs defaults: face
-  detection, `BEGIN`/`END`, `DO_PREPROCESS`, per-dataset blocks — most already
-  dead after Phase 2).
-- Replace with the typed pattern prototyped in
-  `dataset/data_loader/neckflix_config.py`: dataclass-style schema, validated
-  on load, dataset-specific keys in one namespaced block.
+Still open in this phase:
+
 - One config system: kill the Hydra split (`physhydra_configs/`), delete the
   legacy `configs/train_configs/` + `configs/infer_configs/` piles;
-  `configs/` holds only current-format experiment files.
-- Entry-point loading rebuilt: config → typed object → passed down, no global
-  CN mutation.
-- Re-point the wave-1 configs at the new schema (three files — the cost of
-  migrating models first, accepted deliberately).
+  `configs/` holds only current-format experiment files. (Deferred until the
+  remaining migrations stop needing the legacy configs as the `T_orig`
+  reference — contract §1.)
+- ~~§7a of the migration contract: sub-agent re-verification of the converted
+  DeepPhys and PhysFormer configs.~~ **Done 2026-08-31** — both passed with
+  no architectural discrepancy; the schema gaps found are recorded in the two
+  retros and feed this phase's remaining pass.
 
 ## Phase 6 — Model migration, wave 2
 
@@ -297,5 +305,57 @@ contract.
     predicted waveform), and per-window norm for pressure signals (needs
     test-time ground truth — circular). TS-CAN/EfficientPhys follow the
     pilot rather than accompanying it.
+13. **PhysFormer migrated ahead of its Phase 6 slot**, at the user's
+    explicit direction, alongside (not after) the DeepPhys pilot. Ordering
+    caveat recorded rather than silently absorbed: the contract schedules
+    transformers for Phase 6 precisely so head and tokenization are decided
+    collaboratively, and here they were decided by the migrating agent and
+    written up for review in
+    [the PhysFormer retro](2026-08-31-physformer-migration-retro.md).
+    The decisions: **tokenization unchanged** from the paper (3-D stem then
+    a 4x4x4 tube embedding), **head style A** (widened `Conv1d` readout),
+    and **style B declared unavailable** for this architecture — its head
+    reads a feature whose token grid is already mean-pooled away, so
+    per-signal head copies would each see the identical vector; the
+    equivalent would be a per-signal pooling over the token grid, which is a
+    new head, not a builder flag. PhysFormer's published DLDL frequency/KL
+    loss did **not** migrate: it needs one heart rate per window (undefined
+    for ABP level or CVP) and was hardcoded to CUDA. The frequency term is
+    expressed through the per-signal loss registry's `spectral` component
+    instead — the right slot, but a log-spectrum shape match rather than
+    DLDL's soft classification over a bpm grid, and the one place this
+    migration is knowingly weaker than the paper.
+14. **The Neckflix cache's nominal frame rate is not its exact one.** All
+    332 stores of the local `rgb128` cache carry three distinct per-stream
+    `video.fps` values — 29.97961373390558 (x329), exactly 30.0 (x325) and
+    29.98051282051282 (x1) — mixed within single recordings. Stage 0's
+    first cut refused `FS: 30` outright as an upsample, which blocked every
+    Neckflix config in the repo; the fix is a *relative* nominal-rate
+    tolerance (`same_nominal_rate`), so `FS` names the rate the config
+    intends and the loader reconciles it per store. Consequence to keep in
+    mind when reading configs: "160 frames at 30 fps is 5.333333 s" is a
+    nominal identity, not an arithmetic one.
+
+15. **Stage-0 config surface (the DeepPhys pilot's precedent).** The
+    physical window is `PREPROCESS.WINDOW_SECONDS` / `STRIDE_SECONDS` with
+    the frame count derived and tolerance-snapped; the target rate is the
+    repo's existing `DATA.FS`, made mandatory, rather than a second `FPS`
+    key saying the same thing. `LABEL_NORM` moved out of the `NECKFLIX`
+    block up to `PREPROCESS` (it is not Neckflix-specific) and became a
+    per-signal map; `TRAIN.LOSS` changed from a global base-loss string to a
+    per-signal `{TYPE, WEIGHTS}` registry. Both default from a signal's
+    *class*, newly recorded in `neural_methods/signals.py` — absolute
+    (ABP/CVP/SPO2, loaded raw in physical units, scored with CCC + L1 mean
+    and soft peaks) or shape (PPG/ECG/RESP/EDA, per-window z-scored, scored
+    with negpearson) — so an ordinary config states neither key.
+    `MaskedMultiSignalLoss` was **deleted** rather than kept beside the new
+    `PerSignalLoss`: its masked per-sample structure is retained inside the
+    new module, and two parallel losses with one trainer would have been a
+    second way to say the same thing. `CHUNK_STRIDE` is gone;
+    `CHUNK_LENGTH` survives only as inert legacy yacs bulk that Phase 5
+    deletes. Friction observed is written up in
+    [the DeepPhys pilot retro](2026-08-31-deepphys-pilot-retro.md), whose
+    headline item for Phase 5 is that the four `DATA` blocks are one fact
+    stated four times.
 
 Last updated: 2026-08-31
