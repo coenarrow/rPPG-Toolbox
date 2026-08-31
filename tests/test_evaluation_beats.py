@@ -2,7 +2,7 @@
 import numpy as np
 import pytest
 
-from evaluation.beats import BEAT_STATS, beat_intervals, beat_stats, find_peaks
+from evaluation.beats import BEAT_STATS, beat_intervals, beat_stats, detection_quality, find_peaks
 from neural_methods.signals import beat_labels
 
 FS = 30.0
@@ -48,3 +48,20 @@ def test_beat_labels_are_per_signal():
     assert beat_labels("ABP")["max"] == "systolic"
     assert beat_labels("CVP")["max"] == "peak"
     assert beat_labels("CVP")["mean"] == "mean"
+
+
+def test_detection_quality_is_perfect_on_the_reference_itself():
+    trace = synthetic_abp()
+    quality = detection_quality(trace, trace, FS)
+    assert quality["sensitivity"] == pytest.approx(1.0)
+    assert quality["ppv"] == pytest.approx(1.0)
+    assert quality["ibi_error"] == pytest.approx(0.0, abs=1e-9)
+
+
+def test_noise_scores_no_beats_rather_than_one_per_window():
+    """The amplitude gate is the whole point: NMS alone always finds peaks."""
+    rng = np.random.default_rng(0)
+    noise = 100.0 + 1e-3 * rng.standard_normal(int(FS * SECONDS))
+    quality = detection_quality(noise, synthetic_abp(), FS)
+    assert quality["n_detected"] == 0
+    assert quality["sensitivity"] == pytest.approx(0.0)
