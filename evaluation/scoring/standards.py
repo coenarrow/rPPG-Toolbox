@@ -73,6 +73,12 @@ def provenance_lines() -> list:
         lines.append(
             "WARNING: thresholds have NOT been verified against the standards' "
             "text; treat grades as indicative only")
+        lines.append(
+            "WARNING: the aggregation formulas are equally UNVERIFIED against "
+            "the standards' text — in particular the ISO 81060-3 SD here is a "
+            "BETWEEN-SUBJECT SD of per-subject biases, which is far smaller "
+            "than the SD of paired beat differences an invasive-reference "
+            "standard tests, so the pass verdict is biased toward passing")
     lines.append("Not satisfiable by this dataset: "
                  + "; ".join(STUDY_DESIGN_REQUIREMENTS))
     return lines

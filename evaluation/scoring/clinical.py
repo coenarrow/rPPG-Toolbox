@@ -68,4 +68,11 @@ def iso81060_3_verdict(per_subject_errors) -> dict:
     result["passes"] = bool(
         abs(mean_error) <= standards.ISO_81060_3_MEAN_ERROR_LIMIT
         and sd <= standards.ISO_81060_3_SD_LIMIT)
+    # Computable is not the same as valid: the subject count the standards
+    # require is a study-design requirement this dataset cannot meet, so the
+    # caveat rides with the verdict rather than sitting in a separate document.
+    result["note"] = (
+        f"verdict computed at n = {n_subjects}; this dataset does not meet the "
+        "standards' subject-count requirement (see STUDY_DESIGN_REQUIREMENTS), "
+        "so treat it as indicative only")
     return result
