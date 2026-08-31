@@ -418,9 +418,12 @@ discrepancy, that is a finding to report, not something to quietly fix.
 ## Appendix: legacy settings reference
 
 Distilled 2026-08-31 from `configs/train_configs/`, `configs/infer_configs/`
-and `physhydra_configs/` (132 files), which were **deleted in the Phase 5
+and `physhydra_configs/` (132 files; 141 counting the pre-overhaul hidden
+`.configs/` deleted alongside), which were **deleted in the Phase 5
 close-out** — this table replaces them as the canonical-settings record; git
-history before that commit has the originals. Values are the canonical
+history before that commit has the originals, including per-dataset trivia
+this table deliberately drops (odd batch sizes, epoch counts and rates on
+datasets this repo does not target). Values are the canonical
 (most-common, cross-dataset) settings; per-dataset variants worth knowing are
 in the notes. `WINDOW_SECONDS` is `T_orig / 30` (§1).
 
@@ -446,6 +449,8 @@ Variant notes that survive the deletion:
   ("if use EfficientPhys, should be Raw"), Standardized labels,
   `CHUNK_LENGTH: 160`.
 - **PhysNet never rescaled** its 128 frames regardless of dataset FS.
+- **FactorizePhys `MD_STEPS`** was 3 (not the canonical 4) in the two
+  PURE→iBVP configs.
 - BP4D+ datasets ran at FS 25 (train/valid); PhysDrive TS-CAN used batch 32.
 
 ---
