@@ -6,8 +6,7 @@
 #   uv run python main.py --config_file configs/neckflix/NECKFLIX_UNSUPERVISED.yaml
 MODE: unsupervised_method
 DEVICE: cpu
-LOG:
-  PATH: "runs/neckflix_unsupervised"
+LOG_PATH: "runs/neckflix_unsupervised"
 
 DATA:
   DATASET: Neckflix
@@ -25,17 +24,12 @@ INTERFACE:
   WINDOW_SECONDS: 10.0          # 300 frames at FS 30
   CHANNELS: ['R', 'G', 'B']     # the methods consume raw RGB
   TRACES: ['ABP', 'CVP', 'ECG']
-  RESIZE:
-    H: 128
-    W: 128
+  RESIZE: 128                   # square shorthand for {H: 128, W: 128}
   DATA_TYPE: ['Raw']            # the methods want raw pixels
 
-UNSUPERVISED:
-  METHODS: ["ICA", "POS", "CHROM", "GREEN", "LGI", "PBV", "OMIT"]
+UNSUPERVISED_METHODS: ["ICA", "POS", "CHROM", "GREEN", "LGI", "PBV", "OMIT"]
 
 TEST:
   BATCH_SIZE: 4
   EVALUATION_METHOD: "FFT"      # "FFT" or "peak detection"
-  EVALUATION_WINDOW:
-    USE_SMALLER_WINDOW: False
-    WINDOW_SIZE: 10             # seconds
+  # EVALUATION_WINDOW_SECONDS omitted: 0 = score each window whole

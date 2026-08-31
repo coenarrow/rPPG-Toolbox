@@ -37,7 +37,7 @@ from torch.distributed import destroy_process_group, init_process_group
 from torch.utils.data import DataLoader, Subset
 from torch.utils.data.distributed import DistributedSampler
 
-from config import interface_diff, interface_from_payload, load_config
+from config import RunPaths, interface_diff, interface_from_payload, load_config
 from dataset.data_loader.NeckflixLoader import NeckflixDataset
 from dataset.data_loader.neckflix_config import normalise_participant, zarr_config
 from neural_methods.trainer.MultiSignalTrainer import (
@@ -221,7 +221,11 @@ def adopt_checkpoint_interface(config, is_main=True):
 
 
 def apply_experiment_naming(config, args):
-    """Name the experiment after what actually varies between Neckflix runs."""
+    """Name the experiment after what actually varies between Neckflix runs.
+
+    The derived paths live on ``config.RUN`` (:class:`config.RunPaths`), not
+    in the schema — they are facts about this run, not keys a YAML may write.
+    """
     interface = config.INTERFACE
     channels = ''.join(interface.CHANNELS)
     traces = '-'.join(interface.TRACES)
@@ -235,13 +239,12 @@ def apply_experiment_naming(config, args):
         held_out = '_'.join(normalise_participant(p) for p in args.test_participants)
         exp_name = os.path.join(exp_name, f'tested_on_{held_out}')
 
-    config.LOG.EXP_NAME = exp_name
-    config.TEST.OUTPUT_SAVE_DIR = os.path.join(config.LOG.PATH, exp_name,
-                                               'saved_test_outputs')
-    config.UNSUPERVISED.OUTPUT_SAVE_DIR = os.path.join(config.LOG.PATH, exp_name,
-                                                       'saved_outputs')
-    config.MODEL.MODEL_DIR = os.path.join(config.LOG.PATH, exp_name,
-                                          "PreTrainedModels")
+    outputs = ('saved_outputs' if config.MODE == "unsupervised_method"
+               else 'saved_test_outputs')
+    config.RUN = RunPaths(
+        exp_name=exp_name,
+        model_dir=os.path.join(config.LOG_PATH, exp_name, "PreTrainedModels"),
+        output_dir=os.path.join(config.LOG_PATH, exp_name, outputs))
     return config
 
 
@@ -261,14 +264,14 @@ def run_unsupervised(config, loaders, is_main=True):
     other ranks would duplicate the work and overwrite each other's plots."""
     if not is_main:
         return None
-    if not config.UNSUPERVISED.METHODS:
-        raise ValueError("Please set UNSUPERVISED.METHODS in the yaml!")
-    unknown = [m for m in config.UNSUPERVISED.METHODS if m not in UNSUPERVISED_METHODS]
+    if not config.UNSUPERVISED_METHODS:
+        raise ValueError("Please set UNSUPERVISED_METHODS in the yaml!")
+    unknown = [m for m in config.UNSUPERVISED_METHODS if m not in UNSUPERVISED_METHODS]
     if unknown:
         raise ValueError(f"Not supported unsupervised method(s): {unknown}. "
                          f"Available: {', '.join(UNSUPERVISED_METHODS)}")
     # One pass over the cache scores every configured method.
-    return unsupervised_predict_many(config, loaders, config.UNSUPERVISED.METHODS)
+    return unsupervised_predict_many(config, loaders, config.UNSUPERVISED_METHODS)
 
 
 def main():
@@ -312,9 +315,7 @@ def main():
             print("DEBUG MODE: Running with anomaly detection")
 
     if is_main:
-        output_dir = (config.UNSUPERVISED.OUTPUT_SAVE_DIR
-                      if config.MODE == "unsupervised_method"
-                      else config.TEST.OUTPUT_SAVE_DIR)
+        output_dir = config.RUN.output_dir
         os.makedirs(output_dir, exist_ok=True)
         with open(args.config_file, 'r') as source, \
                 open(os.path.join(output_dir, 'config.yaml'), 'w') as destination:

@@ -51,7 +51,7 @@ class BlandAltman():
             self.CI95 = [self.mean_error + 1.96 * diffs_std, self.mean_error - 1.96 * diffs_std]
 
         # Define save path (one derived experiment name serves every mode)
-        self.save_path = os.path.join(config.LOG.PATH, config.LOG.EXP_NAME,
+        self.save_path = os.path.join(config.LOG_PATH, config.RUN.exp_name,
                                       'bland_altman_plots')
         
         # Make the save path, if needed

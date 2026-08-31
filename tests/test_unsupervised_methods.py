@@ -206,8 +206,7 @@ def _predictor_config(metrics=("MAE", "RMSE", "MACC")):
         INTERFACE=_Cfg(FS=FS),
         TEST=_Cfg(METRICS=list(metrics),
                   EVALUATION_METHOD="FFT",
-                  EVALUATION_WINDOW=_Cfg(USE_SMALLER_WINDOW=False,
-                                         WINDOW_SIZE=10)),
+                  EVALUATION_WINDOW_SECONDS=0.0),
     )
 
 

@@ -28,9 +28,11 @@ def _config(config_file, cache, **test_overrides):
     config.INTERFACE.TRACES = ["ABP", "CVP"]
     for split in config.DATA.SPLITS.values():
         split.STRIDE_SECONDS = 16 / 30
-    # TRACES is narrowed above, so the loss registry has to be narrowed with
-    # it: naming a signal the run does not predict is an error, not a no-op.
+    # TRACES is narrowed above, so the per-signal registries have to be
+    # narrowed with it: naming a signal the run does not predict is an error,
+    # not a no-op (LABEL_NORM is resolved to all traces at load).
     config.TRAIN.LOSS.pop("ECG", None)
+    config.INTERFACE.LABEL_NORM.pop("ECG", None)
     for key, value in test_overrides.items():
         setattr(config.TEST, key, value)
     return config
@@ -110,19 +112,24 @@ def test_experiment_name_records_what_varies(cache):
     config = _config(PHYSMAMBA_CONFIG, cache, USE_LAST_EPOCH=True)
     named = main.apply_experiment_naming(
         config, _args(test_participants=["P015"]))
-    name = named.LOG.EXP_NAME
+    name = named.RUN.exp_name
     assert "TRACES-ABP-CVP" in name
     assert "CHANNELS-RGB" in name
     assert "tested_on_015" in name.replace("\\", "/")
-    assert named.MODEL.MODEL_DIR.endswith("PreTrainedModels")
-    assert named.TEST.OUTPUT_SAVE_DIR.endswith("saved_test_outputs")
-    assert named.UNSUPERVISED.OUTPUT_SAVE_DIR.endswith("saved_outputs")
+    assert named.RUN.model_dir.endswith("PreTrainedModels")
+    assert named.RUN.output_dir.endswith("saved_test_outputs")
+
+
+def test_unsupervised_mode_gets_its_own_output_dir(cache):
+    config = _config(UNSUPERVISED_CONFIG, cache)
+    named = main.apply_experiment_naming(config, _args())
+    assert named.RUN.output_dir.endswith("saved_outputs")
 
 
 # --- unsupervised dispatch -------------------------------------------------
 def test_unknown_unsupervised_method_is_rejected(cache):
     config = _config(UNSUPERVISED_CONFIG, cache)
-    config.UNSUPERVISED.METHODS = ["POS", "MAGIC"]
+    config.UNSUPERVISED_METHODS = ["POS", "MAGIC"]
     with pytest.raises(ValueError, match="Not supported unsupervised method"):
         main.run_unsupervised(config, {"unsupervised": []})
 

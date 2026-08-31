@@ -12,7 +12,7 @@ import pytest
 import torch
 from torch.utils.data import DataLoader
 
-from config import load_config
+from config import RunPaths, load_config
 from dataset.data_loader.NeckflixLoader import NeckflixDataset
 from dataset.data_loader.neckflix_config import zarr_config
 from neural_methods.batch import PREDICTIONS, move_to_device
@@ -50,18 +50,20 @@ def config(cache):
     cfg.INTERFACE.RESIZE.W = FRAME_SIZE
     for split in cfg.DATA.SPLITS.values():
         split.STRIDE_SECONDS = WINDOW / FS
-    # TRACES is narrowed above, so the loss registry has to be narrowed with
-    # it: naming a signal the run does not predict is an error, not a no-op.
+    # TRACES is narrowed above, so the per-signal registries have to be
+    # narrowed with it: naming a signal the run does not predict is an error,
+    # not a no-op (LABEL_NORM is resolved to all traces at load).
     cfg.TRAIN.LOSS.pop("ECG", None)
+    cfg.INTERFACE.LABEL_NORM.pop("ECG", None)
     cfg.TRAIN.EPOCHS = 1
     cfg.TRAIN.BATCH_SIZE = 2
     cfg.TEST.BATCH_SIZE = 2
     cfg.TEST.USE_LAST_EPOCH = True
     cfg.TEST.METRICS = ['MAE', 'RMSE', 'MACC']       # no BA: skip plot writing
-    cfg.LOG.PATH = str(cache / "logs")
-    cfg.LOG.EXP_NAME = "test_exp"
-    cfg.MODEL.MODEL_DIR = str(cache / "models")
-    cfg.TEST.OUTPUT_SAVE_DIR = str(cache / "outputs")
+    cfg.LOG_PATH = str(cache / "logs")
+    cfg.RUN = RunPaths(exp_name="test_exp",
+                       model_dir=str(cache / "models"),
+                       output_dir=str(cache / "outputs"))
     return cfg
 
 

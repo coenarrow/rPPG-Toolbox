@@ -15,7 +15,7 @@ class _Cfg(dict):
 
 def _config(tmp_path):
     return _Cfg(MODE="only_test",
-                LOG=_Cfg(PATH=str(tmp_path), EXP_NAME="exp"))
+                LOG_PATH=str(tmp_path), RUN=_Cfg(exp_name="exp"))
 
 
 def _report(tmp_path, gt, pred, metrics=("MAE", "RMSE", "MAPE", "Pearson", "SNR", "MACC"),

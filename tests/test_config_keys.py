@@ -70,19 +70,20 @@ def test_legacy_schema_keys_point_at_the_design_doc(tmp_path):
 
 def test_base_includes_deep_merge(tmp_path):
     write(tmp_path, "base.yaml", MINIMAL + """\
-LOG: {PATH: runs/base}
-TRAIN: {EPOCHS: 30, LR: 1.0e-3}
+LOG_PATH: runs/base
+TRAIN: {EPOCHS: 30, LR: 1e-3}
 """)
     cfg = load_config(write(tmp_path, "smoke.yaml", """\
 BASE: [base.yaml]
-LOG: {PATH: runs/smoke}
+LOG_PATH: runs/smoke
 TRAIN: {EPOCHS: 1}
-INTERFACE: {RESIZE: {H: 32, W: 32}}
+INTERFACE: {RESIZE: 32}
 """))
-    assert cfg.LOG.PATH == "runs/smoke"          # override wins
+    assert cfg.LOG_PATH == "runs/smoke"          # override wins
     assert cfg.TRAIN.EPOCHS == 1                 # override wins
-    assert cfg.TRAIN.LR == 1e-3                  # inherited
+    assert cfg.TRAIN.LR == 1e-3                  # inherited; YAML 1.2 float
     assert cfg.INTERFACE.CHANNELS == ["R", "G", "B"]   # inherited
+    # RESIZE: 32 is the square shorthand for {H: 32, W: 32}
     assert (cfg.INTERFACE.RESIZE.H, cfg.INTERFACE.RESIZE.W) == (32, 32)
 
 

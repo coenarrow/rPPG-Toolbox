@@ -14,8 +14,7 @@
 #       --test_participants P015
 MODE: train_and_test
 DEVICE: cuda:0
-LOG:
-  PATH: "runs/neckflix_physmamba"
+LOG_PATH: "runs/neckflix_physmamba"
 
 DATA:
   DATASET: Neckflix
@@ -35,9 +34,7 @@ INTERFACE:
   WINDOW_SECONDS: 4.266667      # 128 frames at FS 30 (64/15 s, PhysMamba's T_orig)
   CHANNELS: ['R', 'G', 'B']
   TRACES: ['ABP', 'CVP', 'ECG']
-  RESIZE:
-    H: 128
-    W: 128
+  RESIZE: 128                   # square shorthand for {H: 128, W: 128}
   DATA_TYPE: ['DiffNormalized']
   # LABEL_NORM omitted: ABP/CVP take their class default (raw, mmHg) and ECG
   # takes zscore. Stating them would restate signals.py.

@@ -6,8 +6,7 @@
 #       --config_file configs/neckflix/NECKFLIX_DEEPPHYS_SMOKE.yaml
 BASE: [NECKFLIX_DEEPPHYS.yaml]
 DEVICE: cpu
-LOG:
-  PATH: "runs/neckflix_deepphys_smoke"
+LOG_PATH: "runs/neckflix_deepphys_smoke"
 
 DATA:
   SPLITS:
@@ -16,9 +15,7 @@ DATA:
 
 INTERFACE:
   WINDOW_SECONDS: 2.133333      # 64 frames at FS 30 (smoke; upstream is 6.0)
-  RESIZE:
-    H: 36                       # smoke; upstream DeepPhys is 72
-    W: 36
+  RESIZE: 36                    # smoke; upstream DeepPhys is 72
 
 TRAIN:
   BATCH_SIZE: 2

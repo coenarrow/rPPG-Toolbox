@@ -6,8 +6,7 @@
 #       --config_file configs/neckflix/NECKFLIX_PHYSMAMBA_SMOKE.yaml
 BASE: [NECKFLIX_PHYSMAMBA.yaml]
 DEVICE: cpu
-LOG:
-  PATH: "runs/neckflix_physmamba_smoke"
+LOG_PATH: "runs/neckflix_physmamba_smoke"
 
 DATA:
   SPLITS:
@@ -16,9 +15,7 @@ DATA:
 
 INTERFACE:
   WINDOW_SECONDS: 2.133333      # 64 frames at FS 30 (32/15 s)
-  RESIZE:
-    H: 32
-    W: 32
+  RESIZE: 32
 
 TRAIN:
   BATCH_SIZE: 2

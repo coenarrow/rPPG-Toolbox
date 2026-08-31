@@ -162,6 +162,7 @@ def test_translated_config_drives_a_loso_split(tmp_path):
     config.DATA.CACHED_PATH = str(tmp_path)
     config.INTERFACE.WINDOW_SECONDS = 8 / 30
     config.INTERFACE.TRACES = ["ABP", "CVP"]
+    config.INTERFACE.LABEL_NORM = {}    # narrowed with TRACES
 
     held_out = NeckflixDataset(zarr_config(config, "test",
                                            include_participants=["P015"]))
@@ -181,6 +182,7 @@ def test_posture_filter_from_the_config_reaches_the_loader(tmp_path):
     config.DATA.CACHED_PATH = str(tmp_path)
     config.INTERFACE.WINDOW_SECONDS = 8 / 30
     config.INTERFACE.TRACES = ["ABP"]
+    config.INTERFACE.LABEL_NORM = {}    # narrowed with TRACES
     config.DATA.FILTERS = {"posture": ["45"]}
     dataset = NeckflixDataset(zarr_config(config, "test"))
     assert {rec for rec, _ in dataset.samples} == {"P020_S01_R2_45_D"}

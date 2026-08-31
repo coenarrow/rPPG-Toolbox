@@ -306,7 +306,7 @@ class MultiSignalTrainer:
         self.local_rank = int(os.environ.get('LOCAL_RANK', self.rank))
         self.device = self._select_device()
         self.max_epoch_num = config.TRAIN.EPOCHS
-        self.model_dir = config.MODEL.MODEL_DIR
+        self.model_dir = config.RUN.model_dir
         self.model_file_name = config.TRAIN.MODEL_FILE_NAME
         self.min_valid_loss = None
         self.best_epoch = 0
@@ -470,7 +470,7 @@ class MultiSignalTrainer:
 
         if not self.config.TEST.USE_LAST_EPOCH and self.is_main:
             print(f"best trained epoch: {self.best_epoch}, min_val_loss: {self.min_valid_loss}")
-        if self.config.TRAIN.PLOT_LOSSES_AND_LR and self.is_main:
+        if self.is_main:
             self.plot_losses_and_lrs(mean_training_losses, mean_valid_losses, lrs)
             self.plot_loss_components(component_history)
 
@@ -565,7 +565,7 @@ class MultiSignalTrainer:
                 metrics=self.config.TEST.METRICS, config=self.config,
                 filename_id=self._filename_id(), hr_method=hr_method, scope=signal)
         self.plot_test_windows(windows)
-        if self.config.TEST.OUTPUT_SAVE_DIR:
+        if self.config.RUN.output_dir:
             self.save_dict_outputs(windows)
         return report
 
@@ -630,8 +630,8 @@ class MultiSignalTrainer:
 
     def _plot_dir(self):
         """Where the standard plot set is written, next to the loss curves."""
-        return os.path.join(self.config.LOG.PATH,
-                            self.config.LOG.EXP_NAME, 'plots')
+        return os.path.join(self.config.LOG_PATH,
+                            self.config.RUN.exp_name, 'plots')
 
     def plot_losses_and_lrs(self, train_loss, valid_loss, lrs):
         """Train/valid loss and LR curves (contract §6, plot 1).
@@ -725,7 +725,7 @@ class MultiSignalTrainer:
         ``label_stats``) so downstream analysis can invert the normalisation
         without re-reading the cache.
         """
-        output_dir = self.config.TEST.OUTPUT_SAVE_DIR
+        output_dir = self.config.RUN.output_dir
         os.makedirs(output_dir, exist_ok=True)
         path = os.path.join(output_dir, self._filename_id() + '_outputs.pickle')
         payload = {

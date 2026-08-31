@@ -12,8 +12,7 @@
 #       --test_participants P015
 MODE: train_and_test
 DEVICE: cuda:0
-LOG:
-  PATH: "runs/neckflix_physformer"
+LOG_PATH: "runs/neckflix_physformer"
 
 DATA:
   DATASET: Neckflix
@@ -34,9 +33,8 @@ INTERFACE:
                                 # published T_orig (legacy CHUNK_LENGTH: 160)
   CHANNELS: ['R', 'G', 'B']
   TRACES: ['ABP', 'CVP', 'ECG']
-  RESIZE:
-    H: 128                      # the published tokenization: 8x stem pooling
-    W: 128                      # then 4x4 patches leaves a 4x4 token grid
+  RESIZE: 128                   # the published tokenization: 8x stem pooling
+                                # then 4x4 patches leaves a 4x4 token grid
   DATA_TYPE: ['DiffNormalized']
   # LABEL_NORM omitted: class defaults (ABP/CVP raw mmHg, ECG zscore).
 

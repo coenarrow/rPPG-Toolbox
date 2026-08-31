@@ -11,8 +11,7 @@
 #       --config_file configs/neckflix/NECKFLIX_PHYSFORMER_SMOKE.yaml
 BASE: [NECKFLIX_PHYSFORMER.yaml]
 DEVICE: cpu
-LOG:
-  PATH: "runs/neckflix_physformer_smoke"
+LOG_PATH: "runs/neckflix_physformer_smoke"
 
 DATA:
   SPLITS:
@@ -21,9 +20,7 @@ DATA:
 
 INTERFACE:
   WINDOW_SECONDS: 2.133333      # 64 frames @ 30 fps (32/15 s)
-  RESIZE:
-    H: 64
-    W: 64
+  RESIZE: 64
 
 TRAIN:
   BATCH_SIZE: 2

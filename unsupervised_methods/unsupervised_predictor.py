@@ -95,10 +95,10 @@ def _dict_windows(batch):
 
 def _window_size(config, n_frames):
     """Evaluation window length in frames, clipped to what the clip provides."""
-    window_cfg = config.TEST.EVALUATION_WINDOW
-    if not window_cfg.USE_SMALLER_WINDOW:
+    seconds = config.TEST.EVALUATION_WINDOW_SECONDS
+    if seconds <= 0:            # 0 = score each window whole
         return n_frames
-    return min(int(window_cfg.WINDOW_SIZE * config.INTERFACE.FS), n_frames)
+    return min(int(seconds * config.INTERFACE.FS), n_frames)
 
 
 def _hr_method(config):

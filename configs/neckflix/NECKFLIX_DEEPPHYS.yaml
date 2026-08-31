@@ -18,8 +18,7 @@
 #       --test_participants P015
 MODE: train_and_test
 DEVICE: cuda:0
-LOG:
-  PATH: "runs/neckflix_deepphys"
+LOG_PATH: "runs/neckflix_deepphys"
 
 DATA:
   DATASET: Neckflix
@@ -39,9 +38,8 @@ INTERFACE:
   WINDOW_SECONDS: 6.0           # 180 frames at FS 30 (upstream CHUNK_LENGTH)
   CHANNELS: ['R', 'G', 'B']
   TRACES: ['ABP', 'CVP', 'ECG']
-  RESIZE:
-    H: 72                       # upstream DeepPhys frame size; DeepPhys sizes
-    W: 72                       # its dense layer from it, so 0 is not allowed
+  RESIZE: 72                    # upstream DeepPhys frame size; DeepPhys sizes
+                                # its dense layer from it, so 0 is not allowed
   DATA_TYPE: ['DiffNormalized', 'Standardized']   # DeepPhys splits these into
                                                   # its motion/appearance branches
   # LABEL_NORM omitted: class defaults (ABP/CVP raw mmHg, ECG zscore).

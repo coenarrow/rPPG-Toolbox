@@ -12,10 +12,14 @@ docs/plans/2026-08-31-interface-config-redesign.md:
 * ``MODEL`` states the architecture: name, head style, and per-model
   hyperparameter blocks of arbitrary size.
 
-Everything is a plain dataclass: unknown keys are refused with the full path
-and the block's valid keys, ints coerce to floats (``STRIDE_SECONDS: 0`` is
-legal), and there is no freeze/defrost — derived fields (``LOG.EXP_NAME``,
-``MODEL.MODEL_DIR``, the output dirs) are plainly assigned by ``main.py``.
+Everything is a plain dataclass and the schema holds only keys a YAML file may
+write: unknown keys are refused with the full path, ints coerce to floats
+(``STRIDE_SECONDS: 0`` is legal), and the loader resolves ``9e-3``-style
+floats (YAML 1.2 semantics), so numbers are numbers everywhere — including
+inside the free-form per-signal (``TRAIN.LOSS``) and per-model
+(``MODEL.<NAME>``) blocks. Runtime-derived values (experiment name, model and
+output dirs) live on ``config.RUN`` (:class:`RunPaths`), assigned by
+``main.py``.
 
 ``BASE:`` lists include files (paths relative to the config file), deep-merged
 in order before the file's own keys; scalar and list values override, mappings
@@ -23,6 +27,7 @@ merge. That is what keeps the ``*_SMOKE`` variants to a handful of lines.
 """
 
 import os
+import re
 from dataclasses import asdict, dataclass, field, fields, is_dataclass
 
 import yaml
@@ -121,7 +126,6 @@ class ModelConfig:
     NAME: str = ""
     HEAD_STYLE: str = "widened"
     DROP_RATE: float = 0.0
-    MODEL_DIR: str = ""             # derived by main.py, never written in YAML
 
 
 @dataclass
@@ -132,14 +136,7 @@ class TrainConfig:
     MODEL_FILE_NAME: str = ""
     USE_AMP: bool = True
     AMP_DTYPE: str = "bfloat16"
-    PLOT_LOSSES_AND_LR: bool = True
     LOSS: dict = field(default_factory=dict)    # per-signal registry
-
-
-@dataclass
-class EvaluationWindowConfig:
-    USE_SMALLER_WINDOW: bool = False
-    WINDOW_SIZE: int = 10           # seconds
 
 
 @dataclass
@@ -149,23 +146,9 @@ class TestConfig:
     BATCH_SIZE: int = 4
     METRICS: list = field(default_factory=lambda: list(DEFAULT_METRICS))
     USE_LAST_EPOCH: bool = True
-    EVALUATION_METHOD: str = "FFT"  # 'FFT' or 'peak detection'
-    EVALUATION_WINDOW: EvaluationWindowConfig = field(
-        default_factory=EvaluationWindowConfig)
-    MODEL_PATH: str = ""            # only_test: the checkpoint to load
-    OUTPUT_SAVE_DIR: str = ""       # derived by main.py
-
-
-@dataclass
-class UnsupervisedConfig:
-    METHODS: list = field(default_factory=list)
-    OUTPUT_SAVE_DIR: str = ""       # derived by main.py
-
-
-@dataclass
-class LogConfig:
-    PATH: str = "runs/exp"
-    EXP_NAME: str = ""              # derived by main.py
+    EVALUATION_METHOD: str = "FFT"      # 'FFT' or 'peak detection'
+    EVALUATION_WINDOW_SECONDS: float = 0.0  # 0 = score each window whole
+    MODEL_PATH: str = ""                # only_test: the checkpoint to load
 
 
 @dataclass
@@ -173,13 +156,26 @@ class ExperimentConfig:
     MODE: str = "train_and_test"
     DEVICE: str = "cuda:0"
     DEBUG: bool = False
-    LOG: LogConfig = field(default_factory=LogConfig)
+    LOG_PATH: str = "runs/exp"
+    UNSUPERVISED_METHODS: list = field(default_factory=list)
     DATA: DataConfig = field(default_factory=DataConfig)
     INTERFACE: InterfaceConfig = field(default_factory=InterfaceConfig)
     MODEL: ModelConfig = field(default_factory=ModelConfig)
     TRAIN: TrainConfig = field(default_factory=TrainConfig)
     TEST: TestConfig = field(default_factory=TestConfig)
-    UNSUPERVISED: UnsupervisedConfig = field(default_factory=UnsupervisedConfig)
+
+
+@dataclass
+class RunPaths:
+    """Derived by ``main.py`` at startup; never written in YAML.
+
+    Attached to the loaded config as ``config.RUN`` so every consumer that
+    already holds the config can reach the run's directories.
+    """
+
+    exp_name: str = ""
+    model_dir: str = ""     # checkpoints
+    output_dir: str = ""    # saved prediction outputs (per mode)
 
 
 class ModelBlock:
@@ -207,28 +203,14 @@ class ModelBlock:
 # ---------------------------------------------------------------------------
 def _coerce_scalar(value, target, path):
     if target is float:
-        if isinstance(value, str):
-            # YAML 1.1 resolves '1e-3' (no dot) as a string; accept it anyway.
-            try:
-                value = float(value)
-            except ValueError:
-                pass
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise ConfigError(f"{path} must be a number, got {value!r}")
         return float(value)
     if target is int:
-        if isinstance(value, bool):
+        if isinstance(value, bool) or not isinstance(value, (int, float)) \
+                or (isinstance(value, float) and not value.is_integer()):
             raise ConfigError(f"{path} must be an integer, got {value!r}")
-        if isinstance(value, int):
-            return value
-        if isinstance(value, str):
-            try:
-                value = float(value)
-            except ValueError:
-                pass
-        if isinstance(value, float) and value.is_integer():
-            return int(value)
-        raise ConfigError(f"{path} must be an integer, got {value!r}")
+        return int(value)
     if target is bool:
         if not isinstance(value, bool):
             raise ConfigError(f"{path} must be true/false, got {value!r}")
@@ -336,6 +318,13 @@ def config_from_mapping(mapping: dict) -> ExperimentConfig:
         data_mapping = dict(mapping["DATA"])
         splits_mapping = data_mapping.pop("SPLITS", None)
         mapping["DATA"] = data_mapping
+    if isinstance(mapping.get("INTERFACE"), dict):
+        interface_mapping = dict(mapping["INTERFACE"])
+        resize = interface_mapping.get("RESIZE")
+        if resize is not None and not isinstance(resize, dict):
+            # Square shorthand: RESIZE: 128 == RESIZE: {H: 128, W: 128}
+            interface_mapping["RESIZE"] = {"H": resize, "W": resize}
+        mapping["INTERFACE"] = interface_mapping
     config = _build(ExperimentConfig, mapping, "")
     config.MODEL = _build_model(model_mapping)
     config.DATA.SPLITS = _build_splits(splits_mapping)
@@ -369,9 +358,13 @@ def _validate(config: ExperimentConfig) -> None:
     except ValueError as err:
         raise ConfigError(f"INTERFACE: {err}") from err
     # Validate the per-signal registries early, with the config-side names, so
-    # a typo fails at load rather than after the datasets are built.
+    # a typo fails at load rather than after the datasets are built. The
+    # resolved LABEL_NORM is written back so checkpoints serialize the actual
+    # per-signal modes, not the omission — a later change to a signal's class
+    # default must not reinterpret an existing checkpoint's units.
     from dataset.data_loader.label_transforms import resolve_label_norms
-    resolve_label_norms(interface.TRACES, interface.LABEL_NORM)
+    interface.LABEL_NORM = resolve_label_norms(interface.TRACES,
+                                               interface.LABEL_NORM)
     if config.MODE == "train_and_test":
         from neural_methods.loss.PerSignalLoss import resolve_loss_specs
         resolve_loss_specs(interface.TRACES, config.TRAIN.LOSS)
@@ -380,6 +373,17 @@ def _validate(config: ExperimentConfig) -> None:
 # ---------------------------------------------------------------------------
 # YAML loading (BASE includes, deep merge)
 # ---------------------------------------------------------------------------
+class _ConfigLoader(yaml.SafeLoader):
+    """SafeLoader plus YAML 1.2 float resolution, so ``LR: 9e-3`` is a number
+    (YAML 1.1 resolves dot-less exponents as strings)."""
+
+
+_ConfigLoader.add_implicit_resolver(
+    "tag:yaml.org,2002:float",
+    re.compile(r"^[-+]?(\.[0-9]+|[0-9]+(\.[0-9]*)?)([eE][-+]?[0-9]+)?$"),
+    list("-+0123456789."))
+
+
 def _merge(base: dict, override: dict) -> dict:
     """Deep-merge mappings; scalars and lists override, mappings merge."""
     out = dict(base)
@@ -393,7 +397,7 @@ def _merge(base: dict, override: dict) -> dict:
 
 def _load_yaml_tree(path: str) -> dict:
     with open(path, "r") as handle:
-        raw = yaml.safe_load(handle) or {}
+        raw = yaml.load(handle, Loader=_ConfigLoader) or {}
     if not isinstance(raw, dict):
         raise ConfigError(f"{path} must contain a YAML mapping")
     bases = raw.pop("BASE", []) or []
