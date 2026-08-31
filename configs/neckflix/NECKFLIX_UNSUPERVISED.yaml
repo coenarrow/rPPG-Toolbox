@@ -4,46 +4,38 @@
 # every window is scored separately against whichever of them that recording
 # actually has (label_mask decides). Run with:
 #   uv run python main.py --config_file configs/neckflix/NECKFLIX_UNSUPERVISED.yaml
-BASE: ['']
-TOOLBOX_MODE: "unsupervised_method"
+MODE: unsupervised_method
 DEVICE: cpu
 LOG:
   PATH: "runs/neckflix_unsupervised"
+
+DATA:
+  DATASET: Neckflix
+  CACHED_PATH: "C:/Users/20759193/neckflix_cache/rgb128"
+  FILTERS:
+    posture: ['0', '45', '90']
+  ALLOW_MISSING: True           # recordings carry different trace subsets
+  MIN_CHANNELS: 1
+  MIN_LABELS: 1
+  # SPLITS omitted: the unsupervised mode uses the TEST split policy, whose
+  # defaults (no overlap, deterministic windows) are what evaluation wants.
+
+INTERFACE:
+  FS: 30.0
+  WINDOW_SECONDS: 10.0          # 300 frames at FS 30
+  CHANNELS: ['R', 'G', 'B']     # the methods consume raw RGB
+  TRACES: ['ABP', 'CVP', 'ECG']
+  RESIZE:
+    H: 128
+    W: 128
+  DATA_TYPE: ['Raw']            # the methods want raw pixels
+
 UNSUPERVISED:
-  METHOD: ["ICA", "POS", "CHROM", "GREEN", "LGI", "PBV", "OMIT"]
-  METRICS: ['MAE', 'RMSE', 'MAPE', 'MACC', 'Pearson', 'SNR', 'BA']
-  DATA:
-    FS: 30
-    DATASET: Neckflix
-    DO_PREPROCESS: False
-    DATA_FORMAT: NCDHW
-    DATA_PATH: ""                                        # unused: the zarr cache is authoritative
-    CACHED_PATH: "C:/Users/20759193/neckflix_cache/rgb128"
-    EXP_DATA_NAME: ""
-    PREPROCESS:
-      DATA_TYPE: ['Raw']                                 # the methods want raw pixels
-      LABEL_TYPE: Raw
-      DO_CHUNK: True
-      CHUNK_LENGTH: 300                                  # 10 s windows at 30 fps
-      CHUNK_STRIDE: 300
-      CHANNELS: ['R', 'G', 'B']
-      TRACES: ['ABP', 'CVP', 'ECG']
-      RESIZE:
-        H: 128
-        W: 128
-      NECKFLIX:
-        CHANNELS: ['R', 'G', 'B']
-        TRACES: ['ABP', 'CVP', 'ECG']
-        FILTERS:
-          posture: ['0', '45', '90']
-        RANDOM_CHUNK: False
-        LABEL_NORM: 'zscore'
-        ALLOW_MISSING: True                              # recordings carry different trace subsets
-        MIN_CHANNELS: 1
-        MIN_LABELS: 1
-INFERENCE:
+  METHODS: ["ICA", "POS", "CHROM", "GREEN", "LGI", "PBV", "OMIT"]
+
+TEST:
   BATCH_SIZE: 4
-  EVALUATION_METHOD: "FFT"        # "FFT" or "peak detection"
+  EVALUATION_METHOD: "FFT"      # "FFT" or "peak detection"
   EVALUATION_WINDOW:
     USE_SMALLER_WINDOW: False
-    WINDOW_SIZE: 10               # seconds
+    WINDOW_SIZE: 10             # seconds

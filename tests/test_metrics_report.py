@@ -14,9 +14,8 @@ class _Cfg(dict):
 
 
 def _config(tmp_path):
-    return _Cfg(TOOLBOX_MODE="only_test",
-                LOG=_Cfg(PATH=str(tmp_path)),
-                TEST=_Cfg(DATA=_Cfg(EXP_DATA_NAME="exp")))
+    return _Cfg(MODE="only_test",
+                LOG=_Cfg(PATH=str(tmp_path), EXP_NAME="exp"))
 
 
 def _report(tmp_path, gt, pred, metrics=("MAE", "RMSE", "MAPE", "Pearson", "SNR", "MACC"),

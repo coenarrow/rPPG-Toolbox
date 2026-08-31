@@ -50,13 +50,9 @@ class BlandAltman():
         else:
             self.CI95 = [self.mean_error + 1.96 * diffs_std, self.mean_error - 1.96 * diffs_std]
 
-        # Define save path
-        if config.TOOLBOX_MODE == 'train_and_test' or config.TOOLBOX_MODE == 'only_test':
-            self.save_path  = os.path.join(config.LOG.PATH, config.TEST.DATA.EXP_DATA_NAME, 'bland_altman_plots')
-        elif config.TOOLBOX_MODE == 'unsupervised_method':
-            self.save_path  = os.path.join(config.LOG.PATH, config.UNSUPERVISED.DATA.EXP_DATA_NAME, 'bland_altman_plots')
-        else:
-            raise ValueError('TOOLBOX_MODE only supports train_and_test, only_test, or unsupervised_method!')
+        # Define save path (one derived experiment name serves every mode)
+        self.save_path = os.path.join(config.LOG.PATH, config.LOG.EXP_NAME,
+                                      'bland_altman_plots')
         
         # Make the save path, if needed
         if not os.path.exists(self.save_path):

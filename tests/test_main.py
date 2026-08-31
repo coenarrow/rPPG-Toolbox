@@ -1,11 +1,11 @@
 """Entry-point wiring: split construction, naming, and the misconfiguration guards."""
 import argparse
 
-import numpy as np
 import pytest
 
 import main
-from config import get_config
+from config import load_config
+
 from tests.zarr_fixtures import make_store
 
 PHYSMAMBA_CONFIG = "configs/neckflix/NECKFLIX_PHYSMAMBA_SMOKE.yaml"
@@ -20,19 +20,19 @@ def cache(tmp_path):
     return tmp_path
 
 
-def _config(config_file, cache, **overrides):
-    config = get_config(argparse.Namespace(config_file=config_file))
-    config.defrost()
-    for block in (config.TRAIN.DATA, config.VALID.DATA, config.TEST.DATA,
-                  config.UNSUPERVISED.DATA):
-        block.CACHED_PATH = str(cache)
-        block.PREPROCESS.CHUNK_LENGTH = 16
-        block.PREPROCESS.CHUNK_STRIDE = 16
-        block.PREPROCESS.CHANNELS = ["R", "G", "B"]
-        block.PREPROCESS.TRACES = ["ABP", "CVP"]
-    for key, value in overrides.items():
+def _config(config_file, cache, **test_overrides):
+    config = load_config(config_file)
+    config.DATA.CACHED_PATH = str(cache)
+    config.INTERFACE.WINDOW_SECONDS = 16 / 30      # 16 frames at the fixture rate
+    config.INTERFACE.CHANNELS = ["R", "G", "B"]
+    config.INTERFACE.TRACES = ["ABP", "CVP"]
+    for split in config.DATA.SPLITS.values():
+        split.STRIDE_SECONDS = 16 / 30
+    # TRACES is narrowed above, so the loss registry has to be narrowed with
+    # it: naming a signal the run does not predict is an error, not a no-op.
+    config.TRAIN.LOSS.pop("ECG", None)
+    for key, value in test_overrides.items():
         setattr(config.TEST, key, value)
-    config.freeze()
     return config
 
 
@@ -110,36 +110,19 @@ def test_experiment_name_records_what_varies(cache):
     config = _config(PHYSMAMBA_CONFIG, cache, USE_LAST_EPOCH=True)
     named = main.apply_experiment_naming(
         config, _args(test_participants=["P015"]))
-    name = named.TRAIN.DATA.EXP_DATA_NAME
+    name = named.LOG.EXP_NAME
     assert "TRACES-ABP-CVP" in name
     assert "CHANNELS-RGB" in name
     assert "tested_on_015" in name.replace("\\", "/")
     assert named.MODEL.MODEL_DIR.endswith("PreTrainedModels")
-
-
-def test_unsupervised_naming_uses_the_unsupervised_block(cache):
-    config = _config(UNSUPERVISED_CONFIG, cache)
-    named = main.apply_experiment_naming(
-        config, _args(config_file=UNSUPERVISED_CONFIG))
-    assert "CHANNELS-RGB_" in named.UNSUPERVISED.DATA.EXP_DATA_NAME
+    assert named.TEST.OUTPUT_SAVE_DIR.endswith("saved_test_outputs")
     assert named.UNSUPERVISED.OUTPUT_SAVE_DIR.endswith("saved_outputs")
-
-
-def test_train_test_channel_mismatch_is_rejected(cache):
-    config = _config(PHYSMAMBA_CONFIG, cache, USE_LAST_EPOCH=True)
-    config.defrost()
-    config.TEST.DATA.PREPROCESS.CHANNELS = ["R", "G"]
-    config.freeze()
-    with pytest.raises(ValueError, match="Train and test channels"):
-        main.apply_experiment_naming(config, _args())
 
 
 # --- unsupervised dispatch -------------------------------------------------
 def test_unknown_unsupervised_method_is_rejected(cache):
     config = _config(UNSUPERVISED_CONFIG, cache)
-    config.defrost()
-    config.UNSUPERVISED.METHOD = ["POS", "MAGIC"]
-    config.freeze()
+    config.UNSUPERVISED.METHODS = ["POS", "MAGIC"]
     with pytest.raises(ValueError, match="Not supported unsupervised method"):
         main.run_unsupervised(config, {"unsupervised": []})
 

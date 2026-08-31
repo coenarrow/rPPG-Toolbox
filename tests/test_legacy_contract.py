@@ -6,17 +6,28 @@ Those datasets are not available here, so this drives the real
 ``PhysMambaTrainer`` over a synthetic loader that emits exactly the upstream
 ``(frames, label, filename, chunk_id)`` tuple.
 """
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 import torch
 from torch.utils.data import DataLoader, Dataset
 
-from config import _C
 from neural_methods.trainer.PhysMambaTrainer import PhysMambaTrainer
 
 FS = 30
 FRAMES = 32
 SIZE = 32
+
+
+def _ns(**kwargs):
+    """A nested attribute namespace — the shape the legacy trainers read.
+
+    The yacs tree died with the config redesign; the legacy tuple-contract
+    trainers are dead code on their Phase 6 schedule, so this test hands them
+    exactly the keys they read rather than resurrecting a schema for them.
+    """
+    return SimpleNamespace(**kwargs)
 
 
 class TupleContractDataset(Dataset):
@@ -43,30 +54,31 @@ class TupleContractDataset(Dataset):
 
 @pytest.fixture
 def legacy_config(tmp_path):
-    config = _C.clone()
-    config.defrost()
-    config.TOOLBOX_MODE = "train_and_test"
-    config.DEVICE = "cpu"
-    config.LOG.PATH = str(tmp_path)
-    config.MODEL.NAME = "PhysMamba"
-    config.MODEL.MODEL_DIR = str(tmp_path / "models")
-    config.TRAIN.EPOCHS = 1
-    config.TRAIN.BATCH_SIZE = 2
-    config.TRAIN.LR = 1e-3
-    config.TRAIN.MODEL_FILE_NAME = "legacy_physmamba"
-    config.TRAIN.PLOT_LOSSES_AND_LR = False
-    config.TRAIN.DATA.FS = FS
-    config.TRAIN.DATA.PREPROCESS.LABEL_TYPE = "Standardized"
-    config.TEST.USE_LAST_EPOCH = True
-    config.TEST.METRICS = ["MAE", "RMSE", "MACC"]
-    config.TEST.DATA.FS = FS
-    config.TEST.DATA.EXP_DATA_NAME = "legacy"
-    config.TEST.DATA.PREPROCESS.LABEL_TYPE = "Standardized"
-    config.TEST.OUTPUT_SAVE_DIR = str(tmp_path / "outputs")
-    config.INFERENCE.EVALUATION_METHOD = "FFT"
-    config.INFERENCE.EVALUATION_WINDOW.USE_SMALLER_WINDOW = False
-    config.freeze()
-    return config
+    return _ns(
+        TOOLBOX_MODE="train_and_test",
+        DEVICE="cpu",
+        LOG=_ns(PATH=str(tmp_path)),
+        MODEL=_ns(NAME="PhysMamba", MODEL_DIR=str(tmp_path / "models")),
+        TRAIN=_ns(
+            EPOCHS=1,
+            BATCH_SIZE=2,
+            LR=1e-3,
+            MODEL_FILE_NAME="legacy_physmamba",
+            PLOT_LOSSES_AND_LR=False,
+            DATA=_ns(FS=FS, PREPROCESS=_ns(LABEL_TYPE="Standardized")),
+        ),
+        TEST=_ns(
+            USE_LAST_EPOCH=True,
+            METRICS=["MAE", "RMSE", "MACC"],
+            OUTPUT_SAVE_DIR=str(tmp_path / "outputs"),
+            DATA=_ns(FS=FS, EXP_DATA_NAME="legacy", DATASET="Synthetic",
+                     PREPROCESS=_ns(LABEL_TYPE="Standardized")),
+        ),
+        INFERENCE=_ns(
+            EVALUATION_METHOD="FFT",
+            EVALUATION_WINDOW=_ns(USE_SMALLER_WINDOW=False, WINDOW_SIZE=10),
+        ),
+    )
 
 
 def test_physmamba_still_returns_the_legacy_tensor_shape():

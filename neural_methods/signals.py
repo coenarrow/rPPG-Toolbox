@@ -8,14 +8,35 @@ import numpy as np
 
 CHANNELS = ('R', 'G', 'B', 'I', 'D')
 
+#: The two signal classes the migration contract distinguishes (§3).
+#:
+#: ``absolute`` signals carry meaning in their physical units, so they are fed
+#: to the model un-normalised and scored on level as well as shape.
+#: ``shape`` signals are per-window normalised and only their waveform matters.
+#: The class is what decides a signal's default label normalisation and its
+#: default loss family; nothing else keys off it.
+ABSOLUTE, SHAPE = 'absolute', 'shape'
+
+#: Per signal: the legacy clip range, its class, its physical unit, the
+#: physiological prior an absolute-class output bias is initialised to, and
+#: ``scale`` — the error magnitude (in that unit) an L1 loss component is
+#: divided by, which is where the per-signal scale factor of a multi-signal
+#: objective lives (contract §3: no global normalisation constants).
 SIGNALS = {
-    'PPG':  {'norm': (-3.0, 3.0)},       # a.k.a. BVP; standardized units
-    'ECG':  {'norm': (-1500.0, 1500.0)},
-    'ABP':  {'norm': (0.0, 200.0)},
-    'CVP':  {'norm': (-20.0, 30.0)},
-    'RESP': {'norm': (0.0, 10.0)},       # BP4D Resp_Volts scale; override per dataset
-    'EDA':  {'norm': (0.0, 40.0)},       # microsiemens; override per dataset
-    'SPO2': {'norm': (0.0, 100.0)},
+    'PPG':  {'norm': (-3.0, 3.0),        # a.k.a. BVP; standardized units
+             'class': SHAPE,    'unit': 'a.u.', 'prior': 0.0,  'scale': 1.0},
+    'ECG':  {'norm': (-1500.0, 1500.0),
+             'class': SHAPE,    'unit': 'uV',   'prior': 0.0,  'scale': 1.0},
+    'ABP':  {'norm': (0.0, 200.0),
+             'class': ABSOLUTE, 'unit': 'mmHg', 'prior': 90.0, 'scale': 20.0},
+    'CVP':  {'norm': (-20.0, 30.0),
+             'class': ABSOLUTE, 'unit': 'mmHg', 'prior': 8.0,  'scale': 5.0},
+    'RESP': {'norm': (0.0, 10.0),        # BP4D Resp_Volts scale; override per dataset
+             'class': SHAPE,    'unit': 'V',    'prior': 0.0,  'scale': 1.0},
+    'EDA':  {'norm': (0.0, 40.0),        # microsiemens; override per dataset
+             'class': SHAPE,    'unit': 'uS',   'prior': 0.0,  'scale': 1.0},
+    'SPO2': {'norm': (0.0, 100.0),
+             'class': ABSOLUTE, 'unit': '%',    'prior': 97.0, 'scale': 3.0},
 }
 
 EVAL_ONLY = ('HR',)
@@ -56,6 +77,39 @@ def validate_channels(channels):
     return list(channels)
 
 
+def signal_class(sig) -> str:
+    """``'absolute'`` or ``'shape'`` for a canonical signal name."""
+    return SIGNALS[canonical_signal(sig)]['class']
+
+
+def is_absolute(sig) -> bool:
+    """True for signals whose physical level is part of the prediction."""
+    return signal_class(sig) == ABSOLUTE
+
+
+def signal_unit(sig) -> str:
+    """Physical unit a signal's ``label_stats`` (and raw predictions) are in."""
+    return SIGNALS[canonical_signal(sig)]['unit']
+
+
+def signal_prior(sig) -> float:
+    """Physiological prior an absolute-class output bias starts at.
+
+    Zero for shape-class signals, whose labels are per-window centred anyway.
+    """
+    return float(SIGNALS[canonical_signal(sig)]['prior'])
+
+
+def signal_scale(sig) -> float:
+    """Typical error magnitude, in the signal's own unit.
+
+    An L1 loss component in physical units is weighted by ``1 / scale`` so that
+    ABP (errors O(10 mmHg)), CVP (O(1 mmHg)) and a dimensionless CCC term all
+    reach the optimiser at the same order of magnitude.
+    """
+    return float(SIGNALS[canonical_signal(sig)]['scale'])
+
+
 def norm_range(sig, overrides=None):
     if overrides and sig in overrides:
         lo, hi = overrides[sig]
@@ -76,29 +130,3 @@ def denormalize_signal(x, sig, overrides=None):
     return (np.asarray(x) + 1.0) / 2.0 * (hi - lo) + lo
 
 
-def resolve_channels(config_data):
-    """Global PREPROCESS.CHANNELS, falling back to legacy NECKFLIX.CHANNELS."""
-    chs = list(getattr(config_data.PREPROCESS, 'CHANNELS', []) or [])
-    if not chs:
-        chs = list(config_data.PREPROCESS.NECKFLIX.CHANNELS)
-    return validate_channels(chs)
-
-
-def resolve_traces(config_data):
-    """Global PREPROCESS.TRACES, falling back to legacy NECKFLIX.TRACES."""
-    trs = list(getattr(config_data.PREPROCESS, 'TRACES', []) or [])
-    if not trs:
-        trs = list(config_data.PREPROCESS.NECKFLIX.TRACES)
-    return validate_traces(trs)
-
-
-def signal_norm_overrides(config_data):
-    """Read PREPROCESS.SIGNAL_NORMS (if configured) into {sig: (lo, hi)}."""
-    out = {}
-    norms = getattr(config_data.PREPROCESS, 'SIGNAL_NORMS', None)
-    if norms is not None:
-        for sig in SIGNALS:
-            val = getattr(norms, sig, None)
-            if val:
-                out[sig] = (float(val[0]), float(val[1]))
-    return out

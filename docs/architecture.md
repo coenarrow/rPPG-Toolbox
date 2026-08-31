@@ -38,7 +38,7 @@ Batch dict {frames, labels, label_stats, channel_mask, label_mask, metadata}
 DictModel  -- frame transform (resize + DATA_TYPE) then the architecture
     |         returns the same dict plus "predictions": {signal: (B, T)}
     v
-MaskedMultiSignalLoss / per-signal evaluation
+PerSignalLoss / per-signal evaluation
 ```
 
 See "The Zarr Cache Contract" and "The Batch-Dict Contract" below.
@@ -86,17 +86,15 @@ remote-physiology/
 |   |-- trainer/               Training/validation/testing routines (one per model)
 |   |   |-- BaseTrainer.py     Shared DDP setup, rank management, model unwrapping
 |   |   |-- MultiSignalTrainer.py  One trainer for every dict-contract model
-|   |   |-- DeepPhysTrainer.py
 |   |   |-- PhysMambaTrainer.py
 |   |   |-- PhysHydraTrainer.py
 |   |   |-- ...
 |   |
 |   |-- loss/                  Loss function implementations
 |       |-- NegPearsonLoss.py
-|       |-- PhysFormerLossComputer.py
 |       |-- PhysHydraLoss.py
 |       |-- PhysNetNegPearsonLoss.py
-|       |-- MaskedMultiSignalLoss.py
+|       |-- PerSignalLoss.py
 |       |-- RythmFormerLossComputer.py
 |
 |-- evaluation/
@@ -134,46 +132,59 @@ remote-physiology/
 
 ## Configuration System
 
-All experiments are controlled via YAML configuration files. The `config.py` module parses these files and provides a unified configuration object to the rest of the codebase.
+All experiments are controlled via YAML configuration files in the **DATA /
+INTERFACE / MODEL split** (design:
+`docs/plans/2026-08-31-interface-config-redesign.md`). `config.py` loads them
+(`load_config`) into typed dataclasses: unknown keys are refused with the
+full path, ints coerce to floats, and `BASE: [<file>]` deep-merges include
+files (the `_SMOKE` configs are the real config plus a few overrides).
 
 ### Key Configuration Parameters
 
 **Top-level:**
-- `TOOLBOX_MODE`: Either `train_and_test` (full pipeline) or `only_test` (inference only)
+- `MODE`: `train_and_test`, `only_test`, or `unsupervised_method`
 - `DEVICE`: Target device (e.g., `cuda:0`)
-- `NUM_OF_GPU_TRAIN`: Legacy DataParallel setting; DDP trainers derive GPU count from `--nproc_per_node`
+- `LOG.PATH`: Output directory for runs (default: `runs/exp`)
 
-**Data sections (TRAIN / VALID / TEST / UNSUPERVISED):**
+**`DATA` — which stores participate** (one block; splits differ only via `SPLITS`):
 - `CACHED_PATH`: Path to the zarr cache (one `*.zarr` store per recording)
 - `DATASET`: Dataset identifier (`Neckflix`)
-- `FS`: Sampling frequency in Hz (the evaluation rate; the store's `fps` attr is informational)
+- `FILTERS`: Generic attribute include filters keyed by the store's own root attrs plus the `perspective` pseudo-attr, e.g. `FILTERS: {posture: ['0','45'], light: ['D']}`
+- `PARTICIPANTS`: Include list (normalised ids; LOSO uses `--test_participants`)
+- `ALLOW_MISSING` / `MIN_CHANNELS` / `MIN_LABELS`: Admission thresholds for partial recordings
+- `SPLITS.TRAIN/VALID/TEST`: Per-split policy only — `STRIDE_SECONDS` (`0.0` = no overlap), `RANDOM_WINDOWS`, optional `FILTERS`/`PARTICIPANTS` overrides. Unsupervised runs use the TEST policy
 
-**Preprocessing (nested under PREPROCESS)** -- consumer-side, applied by the model's frame transform:
-- `DATA_TYPE`: Normalization methods (e.g., `['DiffNormalized', 'Standardized']`)
-- `CHANNELS` / `TRACES`: Camera channels to load and signals to predict
-- `CHUNK_LENGTH` / `CHUNK_STRIDE`: Window size and stride in frames
-- `RESIZE`: Target frame dimensions (`H`, `W`) -- need not match the cache resolution
-- `NECKFLIX.*`: `LABEL_NORM`, `ALLOW_MISSING`, `MIN_CHANNELS`, `MIN_LABELS`, `PARTICIPANTS` (normalised ids; LOSO uses `--test_participants`), and `FILTERS` — generic attribute include filters keyed by the store's own root attrs plus the `perspective` pseudo-attr, e.g. `FILTERS: {posture: ['0','45'], light: ['D']}`
+**`INTERFACE` — the model's demand on the data pipeline.** Serialized into
+every checkpoint; at `only_test` the checkpoint's copy is adopted over the
+config's. The loader delivers what it demands — channels/traces the data
+lacks come back as zeros + a False mask (even channels the dataset can never
+provide), with warnings for zero coverage:
+- `FS`: **Mandatory.** The frame rate the model sees, in Hz. Each store's own measured `fps` attr is reconciled against it: a faster store is decimated by nearest-index sampling, a store at the same *nominal* rate (within 1%) is taken as-is, and a genuinely slower one is refused unless `UPSAMPLING: interpolate` opts into linear frame/label blending (duplication would make DiffNormalized identically zero)
+- `WINDOW_SECONDS`: The window as a **duration**. The frame count is derived, `T = WINDOW_SECONDS x FS`, snapped to a whole frame within 0.01 and refused otherwise — a frame count without a rate cannot distinguish 5 s of physiology from 1 s
+- `CHANNELS` / `TRACES`: Camera channels to load and signals to predict; the *order* transfers to `model.channels` / `model.traces`
+- `RESIZE`: Frame dimensions the model sees (`H`, `W`; `0` = keep the cache's) — resizing is consumer-side, so it need not match the cache resolution
+- `DATA_TYPE`: Normalization methods (e.g., `['DiffNormalized', 'Standardized']`), consumer-side, concatenated along channels
+- `LABEL_NORM`: **Per signal**, `{SIG: raw|zscore|minmax}`. Omit a signal for its class default: absolute-class (ABP, CVP) load `raw` in physical units, shape-class (PPG, ECG, RESP) are per-window z-scored
 
-`config.py` still carries the legacy yacs bulk (`DO_PREPROCESS`, `BEGIN`/`END`, face detection, per-dataset blocks); those keys do nothing in the zarr pipeline and die with the Phase 5 config consolidation.
-
-**Model:**
+**`MODEL`:**
 - `NAME`: Model architecture identifier (e.g., `DeepPhys`, `PhysMamba`, `PhysFormer`)
-- Model-specific hyperparameters (e.g., `DROP_RATE`)
+- `HEAD_STYLE` (`widened` default / `per_signal`), `DROP_RATE`, and per-model architecture blocks of any size (`MODEL.PHYSFORMER.*`)
 
-**Training:**
-- `BATCH_SIZE`, `EPOCHS`, `LR`
+**`TRAIN`:**
+- `BATCH_SIZE`, `EPOCHS`, `LR`, `USE_AMP`/`AMP_DTYPE`
 - `MODEL_FILE_NAME`: Checkpoint naming prefix
+- `LOSS`: The per-signal registry (`{SIG: {TYPE, WEIGHTS}}`; omit for class defaults)
 - `PLOT_LOSSES_AND_LR`: Whether to generate loss/LR plots
 
-**Testing / Inference:**
-- `METRICS`: List of metrics to compute (e.g., `['MAE', 'RMSE', 'MAPE', 'Pearson', 'SNR', 'BA']`)
+**`TEST` — scoring, in every mode** (absorbs the old `INFERENCE` block):
+- `BATCH_SIZE`; `METRICS` (omit for the standard set)
 - `USE_LAST_EPOCH`: If false, uses validation-based best epoch selection
 - `EVALUATION_METHOD`: `FFT` or `peak detection` for heart rate derivation
 - `EVALUATION_WINDOW`: Optional sliding window evaluation
+- `MODEL_PATH`: The checkpoint to load at `only_test`
 
-**Logging:**
-- `LOG.PATH`: Output directory for runs (default: `runs/exp`)
+**`UNSUPERVISED`:**
+- `METHODS`: The traditional methods to score (POS, CHROM, ICA, ...)
 
 
 ## Model / Trainer Patterns
@@ -228,7 +239,7 @@ inverse back to physical units, without touching the zarr cache.
 | Datasets | `<Dataset>Loader.py` (class) + `<Dataset>.md` (cache spec) | `NeckflixLoader.py`, `PURE.md` |
 | YAML configs | `configs/neckflix/NECKFLIX_<MODEL>[_<VARIANT>].yaml` | `NECKFLIX_PHYSMAMBA_SMOKE.yaml` |
 | SLURM scripts | `<Dataset>_<Model>_<Options>.slurm` | `Neckflix_PhysMamba_4GPU.slurm` |
-| Loss functions | Descriptive names | `NegPearsonLoss.py`, `MaskedMultiSignalLoss.py` |
+| Loss functions | Descriptive names | `NegPearsonLoss.py`, `PerSignalLoss.py` |
 
 
 ## Extending the Toolbox
@@ -409,9 +420,11 @@ so retrofitting an architecture is a signature change, not a rewrite. `C_in` is 
 MODEL_REGISTRY = {'PhysMamba': _build_physmamba, 'DeepPhys': _build_deepphys}
 ```
 
-Adding a model is a builder function plus a registry line. The trainer owns DDP, AMP, `MaskedMultiSignalLoss` (per-signal masked mean, so a signal absent from a whole batch contributes exactly 0 rather than NaN), checkpointing, and evaluation reported **per predicted signal**.
+Adding a model is a builder function plus a registry line. The builder receives a `ModelSpec` carrying everything derived from the data blocks (channel widths, output width, window `T`, frame size, target rate, per-signal label modes) and `build_model` then applies the shared guardrails: the declared window constraint is checked, and each output row's bias is initialised to its signal's physiological prior (ABP 90 mmHg, CVP 8) so training does not start with a ~90 mmHg systematic error.
 
-Each signal is reported three ways: waveform Pearson/MAE/RMSE in normalised units, the same MAE/RMSE in physical units (mmHg for ABP/CVP -- each window's `label_stats` run back through the exact inverse of its normalisation), and the inherited HR metrics. The physical figure is the error given a perfect estimate of that window's scale, so it measures *shape* expressed in the signal's units; absolute level is a separate problem that per-window normalisation deliberately removes.
+The trainer owns DDP, AMP, `PerSignalLoss` (per-signal composite terms under a masked per-sample mean, so a signal absent from a whole batch contributes exactly 0 rather than NaN), the weight-decay exemption for the output readout, checkpointing, and evaluation reported **per predicted signal**.
+
+Each signal is reported three ways: waveform Pearson/MAE/RMSE in its own prediction space, the same MAE/RMSE in physical units, and the inherited HR metrics. What the physical figure *means* depends on the signal's label mode. For a `raw` signal (ABP, CVP) the inverse is the identity and the mmHg error is genuine absolute-level accuracy. For a per-window normalised signal each window carries its own `label_stats`, so the figure is the error given a perfect estimate of that window's scale — *shape* expressed in the signal's units, with absolute level a question the normalisation deliberately removed.
 
 ### Splits
 

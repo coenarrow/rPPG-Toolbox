@@ -22,12 +22,8 @@ import pandas as pd
 
 sys.path.insert(0, ".")
 
-from dataset.data_loader.label_transforms import (  # noqa: E402
-    minmax_inverse, zscore_inverse,
-)
+from dataset.data_loader.label_transforms import INVERSES as _INVERSES  # noqa: E402
 from evaluation.post_process import calculate_metric_per_video  # noqa: E402
-
-_INVERSES = {"zscore": zscore_inverse, "minmax": minmax_inverse}
 
 #: Shortest window the HR post-processing can filter (filtfilt padlen).
 MIN_HR_WINDOW = 9
@@ -66,13 +62,16 @@ def _safe_pearson(prediction, label):
 def window_table(payload, hr_method="FFT") -> pd.DataFrame:
     """One row per scored window, with per-window metrics recomputed."""
     fs = payload["fs"]
-    label_norm = payload["label_norm"]
+    # Per signal: a raw-mode signal is already in mmHg and inverts by identity,
+    # a z-scored one inverts with the window's own stats.
+    norms = payload["label_norms"]
     rows = []
     for record in payload["windows"]:
         prediction = np.asarray(record["prediction"], dtype=np.float64)
         label = np.asarray(record["label"], dtype=np.float64)
-        physical_pred = _to_physical(prediction, record["label_stats"], label_norm)
-        physical_label = _to_physical(label, record["label_stats"], label_norm)
+        norm = norms[record["signal"]]
+        physical_pred = _to_physical(prediction, record["label_stats"], norm)
+        physical_label = _to_physical(label, record["label_stats"], norm)
         error = physical_pred - physical_label
         row = {
             "signal": record["signal"],
@@ -125,7 +124,7 @@ def main():
     path = find_pickle(args.target)
     payload = pickle.loads(path.read_bytes())
     print(f"{path}\n  traces={payload['traces']}  channels={payload['channels']}  "
-          f"fs={payload['fs']}  label_norm={payload['label_norm']}  "
+          f"fs={payload['fs']}  label_norms={payload['label_norms']}  "
           f"windows={len(payload['windows'])}\n")
 
     table = window_table(payload, hr_method=args.hr_method)

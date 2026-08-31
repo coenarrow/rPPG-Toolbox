@@ -33,12 +33,32 @@ from neural_methods.signals import validate_channels, validate_traces
 class DictModel(nn.Module):
     """Dict in, dict out; subclasses only implement the tensor-level forward."""
 
-    def __init__(self, channels=("R", "G", "B"), traces=("PPG",), frame_transform=None):
+    #: Temporal constraints on the window length T, **declared, never silently
+    #: handled**: a stride/upsample round trip that only closes on a multiple of
+    #: k sets ``temporal_divisor = k``; an architecturally fixed length sets
+    #: ``temporal_length``. The builder checks the config's derived T against
+    #: these at construction time, which is where a bad window should fail —
+    #: the legacy trainers truncated the batch instead, and a silently shortened
+    #: window is a silently different experiment.
+    temporal_divisor = 1
+    temporal_length = None
+
+    def __init__(self, channels=("R", "G", "B"), traces=("PPG",), frame_transform=None,
+                 fs=0.0):
         super().__init__()
         self.channels = tuple(validate_channels(list(channels)))
         self.traces = tuple(validate_traces(list(traces)))
         self.frame_transform = frame_transform if frame_transform is not None \
             else FrameTransform(("Raw",))
+        # A buffer, not a plain attribute, so the rate rides in the state dict:
+        # a checkpoint knows what it was trained at, and at inference the data
+        # is decimated to the model's rate rather than the other way round.
+        self.register_buffer("_fs", torch.tensor(float(fs)))
+
+    @property
+    def fs(self) -> float:
+        """Frame rate this model's dynamics were learned at, in Hz."""
+        return float(self._fs)
 
     @property
     def in_channels(self) -> int:
@@ -48,6 +68,18 @@ class DictModel(nn.Module):
     @property
     def out_signals(self) -> int:
         return len(self.traces)
+
+    def output_layers(self):
+        """The activation-free readout module(s), in ``self.traces`` order.
+
+        Either one layer whose output width is ``S`` (head style A, the
+        default) or ``S`` per-signal copies (style B). Exactly two pieces of
+        trainer-side machinery need to find them: the physiological bias
+        initialisation, and the weight-decay exemption that stops decay from
+        dragging a raw-mmHg prediction toward zero. Returning ``()`` opts a
+        model out of both.
+        """
+        return ()
 
     def prepare_frames(self, batch) -> torch.Tensor:
         """``batch['frames']`` -> the transformed ``(B, C_in, T, H, W)`` tensor."""

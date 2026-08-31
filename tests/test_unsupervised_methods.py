@@ -201,12 +201,13 @@ class _Cfg(dict):
 
 def _predictor_config(metrics=("MAE", "RMSE", "MACC")):
     return _Cfg(
-        TOOLBOX_MODE="unsupervised_method",
-        UNSUPERVISED=_Cfg(METRICS=list(metrics),
-                          DATA=_Cfg(FS=FS, DATASET="Neckflix")),
-        INFERENCE=_Cfg(EVALUATION_METHOD="FFT",
-                       EVALUATION_WINDOW=_Cfg(USE_SMALLER_WINDOW=False,
-                                              WINDOW_SIZE=10)),
+        MODE="unsupervised_method",
+        DATA=_Cfg(DATASET="Neckflix"),
+        INTERFACE=_Cfg(FS=FS),
+        TEST=_Cfg(METRICS=list(metrics),
+                  EVALUATION_METHOD="FFT",
+                  EVALUATION_WINDOW=_Cfg(USE_SMALLER_WINDOW=False,
+                                         WINDOW_SIZE=10)),
     )
 
 
@@ -245,10 +246,10 @@ def test_predict_many_matches_running_each_method_alone():
         assert together[method]["ABP"] == pytest.approx(alone["ABP"])
 
 
-def test_predictor_rejects_a_non_unsupervised_toolbox_mode():
+def test_predictor_rejects_a_non_unsupervised_mode():
     from unsupervised_methods.unsupervised_predictor import unsupervised_predict
     config = _predictor_config()
-    config["TOOLBOX_MODE"] = "train_and_test"
+    config["MODE"] = "train_and_test"
     batches = [default_collate([_neckflix_sample(t=256)])]
     with pytest.raises(ValueError, match="only supports unsupervised_method"):
         unsupervised_predict(config, {"unsupervised": batches}, "GREEN")

@@ -25,12 +25,19 @@ class SignalDictWrapper(DictModel):
     ``(B, S, T)`` itself.
     """
 
-    def __init__(self, backbone, channels, traces, input_mode, frame_transform=None):
-        super().__init__(channels=channels, traces=traces, frame_transform=frame_transform)
+    def __init__(self, backbone, channels, traces, input_mode, frame_transform=None,
+                 fs=0.0):
+        super().__init__(channels=channels, traces=traces,
+                         frame_transform=frame_transform, fs=fs)
         if input_mode not in INPUT_MODES:
             raise ValueError(f"Unknown input_mode {input_mode!r}; known: {INPUT_MODES}")
         self.backbone = backbone
         self.input_mode = input_mode
+
+    def output_layers(self):
+        """Whatever the wrapped backbone declares — the readout is its, not ours."""
+        declared = getattr(self.backbone, "output_layers", None)
+        return declared() if callable(declared) else ()
 
     def forward_video(self, video):
         if self.input_mode == 'frames2d':

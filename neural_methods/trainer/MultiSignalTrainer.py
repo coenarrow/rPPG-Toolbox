@@ -16,7 +16,11 @@ counted for that signal (``label_mask``).
 import os
 import pickle
 from collections import defaultdict
+from dataclasses import dataclass
 
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.distributed as dist
@@ -24,58 +28,258 @@ import torch.optim as optim
 from torch.nn.parallel import DistributedDataParallel as DDP
 from tqdm import tqdm
 
-from dataset.data_loader.label_transforms import minmax_inverse, zscore_inverse
-from dataset.data_loader.neckflix_config import frame_size
-from evaluation.metrics_report import report_hr_metrics
+from config import interface_payload
+from dataset.data_loader.label_transforms import INVERSES
+from dataset.data_loader.neckflix_config import (
+    frame_size, label_norms, window_frames,
+)
+from evaluation.metrics_report import (
+    plot_absolute_agreement, plot_waveform_overlays, report_hr_metrics,
+)
 from evaluation.post_process import calculate_metric_per_video
 from neural_methods.batch import (
     LABEL_MASK, LABEL_STATS, LABELS, METADATA, PREDICTIONS,
     detach_to_cpu, iter_samples, move_to_device,
 )
 from neural_methods.frame_transforms import FrameTransform
-from neural_methods.loss.MaskedMultiSignalLoss import MaskedMultiSignalLoss
-from neural_methods.signals import resolve_channels, resolve_traces
-from neural_methods.trainer.BaseTrainer import BaseTrainer
+from neural_methods.loss.PerSignalLoss import PerSignalLoss
+from neural_methods.signals import signal_prior, signal_unit
 
 NCOLS = 80
 
 #: Shortest window the HR post-processing can filter (filtfilt padlen).
 MIN_HR_WINDOW = 9
 
-#: Per-window label normalisations and the exact inverse of each.
-_INVERSES = {'zscore': zscore_inverse, 'minmax': minmax_inverse}
-
-#: Units the physical-scale report is in, per canonical signal.
-SIGNAL_UNITS = {'ABP': 'mmHg', 'CVP': 'mmHg', 'ECG': 'uV', 'PPG': 'a.u.',
-                'RESP': 'V', 'EDA': 'uS', 'SPO2': '%'}
+#: Weight decay applied to everything except the output readout, which is
+#: exempt (see :func:`_parameter_groups`).
+WEIGHT_DECAY = 5e-4
 
 
-def _build_physmamba(config, channels, traces, transform):
+# ---------------------------------------------------------------------------
+# What a builder gets
+# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class ModelSpec:
+    """The ``INTERFACE`` block, resolved once into what a builder consumes.
+
+    A ``MODEL`` config block carries ``NAME`` plus genuinely architectural
+    hyperparameters and nothing else; every width below is computed from the
+    rate, window, channels, traces and resize the interface states, so nothing
+    is said in two places. Builders read this rather than digging through the
+    config themselves.
+    """
+
+    channels: tuple
+    traces: tuple
+    transform: FrameTransform
+    fs: float
+    window: int
+    resize: tuple
+    head_style: str
+    label_norms: dict
+
+    @property
+    def camera_channels(self) -> int:
+        """``len(channels)`` — the width of *one* ``DATA_TYPE`` block.
+
+        This is the first-layer width for an architecture that splits the
+        stacked blocks apart itself (DeepPhys and TS-CAN slice ``[:C]`` into the
+        motion branch and ``[C:2C]`` into the appearance branch, exactly as
+        upstream did with 3). Using the full stacked width there leaves the
+        second branch with zero channels.
+        """
+        return len(self.channels)
+
+    @property
+    def in_channels(self) -> int:
+        """``len(channels) x DATA_TYPE blocks`` — the width of the whole tensor.
+
+        The first-layer width for an architecture that consumes the stacked
+        blocks as one input (PhysMamba). See :attr:`camera_channels` for the
+        models that split them.
+        """
+        return len(self.channels) * self.transform.channel_multiplier
+
+    @property
+    def out_signals(self) -> int:
+        """One output row per trace — the final readout's width."""
+        return len(self.traces)
+
+    @property
+    def img_size(self) -> tuple:
+        """``(H, W)`` the backbone sees; an error if the config left it open."""
+        if self.resize is None:
+            raise ValueError(
+                "INTERFACE.RESIZE.H/W must be set: this architecture sizes its "
+                "dense layers from the frame size, so it cannot be built against "
+                "'whatever the cache happens to be'.")
+        return self.resize
+
+    @property
+    def priors(self) -> list:
+        """Per-trace output-bias prior, in the units that trace is predicted in.
+
+        A physiological prior only means something where the model predicts
+        physical units; a per-window normalised label is centred already, so its
+        prior is 0 and the initialisation is a no-op for it.
+        """
+        return [signal_prior(sig) if self.label_norms[sig] == 'raw' else 0.0
+                for sig in self.traces]
+
+
+def model_spec(config) -> ModelSpec:
+    """Resolve the ``INTERFACE`` block (the model's demand) into a spec."""
+    interface = config.INTERFACE
+    fps = float(interface.FS)
+    data_types = [t for t in interface.DATA_TYPE if t] or ['Standardized']
+    size = frame_size(interface)
+    return ModelSpec(
+        channels=tuple(interface.CHANNELS),
+        traces=tuple(interface.TRACES),
+        transform=FrameTransform(data_types, size=size),
+        fs=fps,
+        window=window_frames(interface.WINDOW_SECONDS, fps),
+        resize=size,
+        head_style=str(config.MODEL.HEAD_STYLE or 'widened'),
+        label_norms=label_norms(interface),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Builders
+# ---------------------------------------------------------------------------
+def _build_physmamba(config, spec):
     from neural_methods.model.PhysMamba import PhysMamba
-    return PhysMamba(channels=channels, traces=traces, frame_transform=transform)
+    return PhysMamba(channels=spec.channels, traces=spec.traces,
+                     frame_transform=spec.transform, fs=spec.fs)
 
 
-def _build_deepphys(config, channels, traces, transform):
+def _build_deepphys(config, spec):
     from neural_methods.model.DeepPhys import DeepPhys
     from neural_methods.model.SignalDictWrapper import SignalDictWrapper
-    size = transform.size or (config.TRAIN.DATA.PREPROCESS.RESIZE.H,
-                              config.TRAIN.DATA.PREPROCESS.RESIZE.W)
-    backbone = DeepPhys(in_channels=len(channels), out_signals=len(traces),
-                        img_size=size[0])
-    return SignalDictWrapper(backbone, channels=channels, traces=traces,
-                             input_mode='frames2d', frame_transform=transform)
+    height, width = spec.img_size
+    if height != width:
+        raise ValueError(f"DeepPhys wants square frames; RESIZE is {height}x{width}")
+    # DeepPhys is a two-branch network: it slices the stacked DATA_TYPE blocks
+    # into a motion branch and an appearance branch itself, so it needs exactly
+    # two of them and each conv is built for one block's width.
+    if spec.transform.channel_multiplier != 2:
+        raise ValueError(
+            "DeepPhys needs exactly two DATA_TYPE entries — the motion branch "
+            "takes the first block and the appearance branch the second. Use "
+            "DATA_TYPE: ['DiffNormalized', 'Standardized']; got "
+            f"{list(spec.transform.data_types)}.")
+    backbone = DeepPhys(in_channels=spec.camera_channels, out_signals=spec.out_signals,
+                        img_size=height, head_style=spec.head_style)
+    return SignalDictWrapper(backbone, channels=spec.channels, traces=spec.traces,
+                             input_mode='frames2d', frame_transform=spec.transform,
+                             fs=spec.fs)
+
+
+def _build_physformer(config, spec):
+    from neural_methods.model.PhysFormer import PhysFormer
+    if spec.head_style != 'widened':
+        raise ValueError(
+            "PhysFormer implements head style A (a widened readout) only. Its "
+            "readout reads a feature whose token grid has already been averaged "
+            "away, so per-signal head copies would every one of them see the "
+            "identical vector; the style-B idea of a per-signal spatial "
+            "weighting would mean moving the pooling into the head — a design "
+            f"change, not a builder option. Got HEAD_STYLE {spec.head_style!r}.")
+    block = config.MODEL.PHYSFORMER
+    height, width = spec.img_size
+    return PhysFormer(
+        channels=spec.channels, traces=spec.traces, frame_transform=spec.transform,
+        fs=spec.fs, image_size=(spec.window, height, width),
+        patches=int(block.PATCH_SIZE), dim=int(block.DIM), ff_dim=int(block.FF_DIM),
+        num_heads=int(block.NUM_HEADS), num_layers=int(block.NUM_LAYERS),
+        theta=float(block.THETA), dropout_rate=float(config.MODEL.DROP_RATE))
 
 
 #: Architectures that speak the batch-dict contract. Add a builder here to make
-#: a model available to ``TOOLBOX_MODE: train_and_test`` on Neckflix.
+#: a model available to ``MODE: train_and_test`` on Neckflix.
 MODEL_REGISTRY = {
     'PhysMamba': _build_physmamba,
     'DeepPhys': _build_deepphys,
+    'PhysFormer': _build_physformer,
 }
 
 
-def build_model(config, data_config):
-    """Construct the configured dict-contract model from a config pair."""
+# ---------------------------------------------------------------------------
+# Construction-time checks and the absolute-scale guardrails
+# ---------------------------------------------------------------------------
+def check_window(model, spec):
+    """Refuse a window the architecture cannot process, naming the fix.
+
+    The error is in seconds, not frames, because seconds is what the config
+    says: telling someone "T must be a multiple of 4" when they wrote
+    ``WINDOW_SECONDS: 4.3`` leaves them to do the conversion themselves.
+    """
+    fixed = getattr(model, 'temporal_length', None)
+    divisor = getattr(model, 'temporal_divisor', 1) or 1
+    if fixed and spec.window != fixed:
+        raise ValueError(
+            f"{type(model).__name__} is built for exactly {fixed} frames, but "
+            f"WINDOW_SECONDS gives {spec.window}. Use "
+            f"WINDOW_SECONDS: {fixed / spec.fs:.6f} at FS={spec.fs:g}.")
+    if spec.window % divisor:
+        nearest = max(round(spec.window / divisor), 1) * divisor
+        raise ValueError(
+            f"{type(model).__name__} needs a window length divisible by "
+            f"{divisor}, but WINDOW_SECONDS gives {spec.window} frames. Use "
+            f"WINDOW_SECONDS: {nearest / spec.fs:.6f} for {nearest} frames at "
+            f"FS={spec.fs:g}.")
+
+
+def init_output_bias(model, spec):
+    """Start each output row at its signal's physiological prior.
+
+    Without this an absolute-class model begins training predicting ~0 mmHg —
+    a ~90 mmHg systematic error the first epochs spend themselves removing.
+    Costs one tensor assignment and removes it up front.
+    """
+    layers = list(model.output_layers())
+    priors = spec.priors
+    if not layers or not any(priors):
+        return
+    with torch.no_grad():
+        if len(layers) == 1:                       # style A: one widened readout
+            bias = layers[0].bias
+            if bias is None or bias.numel() != len(priors):
+                raise ValueError(
+                    f"{type(model).__name__}.output_layers() has "
+                    f"{None if bias is None else bias.numel()} bias entries for "
+                    f"{len(priors)} traces; a widened readout needs one each.")
+            bias.copy_(torch.tensor(priors, dtype=bias.dtype, device=bias.device))
+        elif len(layers) == len(priors):            # style B: one head per signal
+            for layer, prior in zip(layers, priors):
+                layer.bias.fill_(prior)
+        else:
+            raise ValueError(
+                f"{type(model).__name__}.output_layers() returned {len(layers)} "
+                f"layers for {len(priors)} traces; expected 1 (widened) or "
+                f"{len(priors)} (per-signal).")
+
+
+def _parameter_groups(model, readout):
+    """Split parameters so the output readout is exempt from weight decay.
+
+    Decay on a readout that emits raw mmHg pulls every prediction toward zero —
+    a systematic pressure bias dressed up as regularisation. Everything else
+    decays as it always did.
+    """
+    exempt = {id(p) for layer in readout for p in layer.parameters()}
+    decayed, undecayed = [], []
+    for parameter in model.parameters():
+        (undecayed if id(parameter) in exempt else decayed).append(parameter)
+    groups = [{'params': decayed, 'weight_decay': WEIGHT_DECAY}]
+    if undecayed:
+        groups.append({'params': undecayed, 'weight_decay': 0.0})
+    return groups
+
+
+def build_model(config):
+    """Construct the configured dict-contract model from the experiment config."""
     name = config.MODEL.NAME
     builder = MODEL_REGISTRY.get(name)
     if builder is None:
@@ -83,18 +287,21 @@ def build_model(config, data_config):
             f"Model {name!r} does not speak the Neckflix dict contract yet. "
             f"Available: {', '.join(sorted(MODEL_REGISTRY))}"
         )
-    channels = resolve_channels(data_config)
-    traces = resolve_traces(data_config)
-    data_types = [t for t in data_config.PREPROCESS.DATA_TYPE if t] or ['Standardized']
-    transform = FrameTransform(data_types, size=frame_size(data_config))
-    return builder(config, channels, traces, transform)
+    spec = model_spec(config)
+    model = builder(config, spec)
+    check_window(model, spec)
+    init_output_bias(model, spec)
+    return model
 
 
-class MultiSignalTrainer(BaseTrainer):
+class MultiSignalTrainer:
     """Train/validate/test any :class:`DictModel` on the Neckflix zarr cache."""
 
-    def __init__(self, config, data_loader, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self, config, data_loader, *, rank=0, world_size=1, debug=False):
+        self.rank = rank
+        self.world_size = world_size
+        self.is_main = (rank == 0)
+        self.debug = debug
         self.config = config
         self.local_rank = int(os.environ.get('LOCAL_RANK', self.rank))
         self.device = self._select_device()
@@ -104,25 +311,34 @@ class MultiSignalTrainer(BaseTrainer):
         self.min_valid_loss = None
         self.best_epoch = 0
 
-        data_config = (config.TRAIN.DATA if config.TOOLBOX_MODE == "train_and_test"
-                       else config.TEST.DATA)
-        self.traces = resolve_traces(data_config)
-        self.channels = resolve_channels(data_config)
-        self.frame_rate = config.TEST.DATA.FS or config.TRAIN.DATA.FS
-        self.label_norm = config.TEST.DATA.PREPROCESS.NECKFLIX.LABEL_NORM
-        if self.label_norm not in _INVERSES:
-            raise ValueError(f"Unknown LABEL_NORM {self.label_norm!r}; "
-                             f"known: {sorted(_INVERSES)}")
+        # Everything identity-shaped comes from the one INTERFACE block — the
+        # model's demand, which main.py has already reconciled with the
+        # checkpoint's copy in only_test mode.
+        interface = config.INTERFACE
+        self.traces = list(interface.TRACES)
+        self.channels = list(interface.CHANNELS)
+        # The rate the model is trained and evaluated at, which the loader has
+        # already resampled every store to. It flows into the spectral loss
+        # term and the HR post-processing alike; neither hardcodes it.
+        self.frame_rate = float(interface.FS)
+        # Per signal, because an absolute-class signal is predicted in mmHg and
+        # a shape-class one in its normalised space; the report has to invert
+        # each with its own inverse.
+        self.label_norms = label_norms(interface)
 
-        model = build_model(config, data_config).to(self.device)
+        model = build_model(config).to(self.device)
+        readout = list(model.output_layers())
         if self.world_size > 1:
             device_ids = [self.local_rank] if self.device.type == 'cuda' else None
             model = DDP(model, device_ids=device_ids,
                         output_device=self.local_rank if device_ids else None)
         self.model = model
 
-        self.criterion = MaskedMultiSignalLoss(
-            self.traces, base=getattr(config.TRAIN, 'LOSS', 'negpearson'))
+        self.criterion = PerSignalLoss(
+            self.traces, specs=getattr(config.TRAIN, 'LOSS', None),
+            fs=self.frame_rate)
+        if self.is_main:
+            print(f"Loss per signal:\n{self.criterion.extra_repr()}")
 
         self.use_amp = bool(getattr(config.TRAIN, 'USE_AMP', False)) and self.device.type == 'cuda'
         self.amp_dtype = torch.float16 if getattr(config.TRAIN, 'AMP_DTYPE', '') == 'float16' \
@@ -132,19 +348,23 @@ class MultiSignalTrainer(BaseTrainer):
         self.optimizer = None
         self.scheduler = None
         self.train_sampler = None
-        if config.TOOLBOX_MODE == "train_and_test":
+        if config.MODE == "train_and_test":
             if data_loader.get("train") is None:
                 raise ValueError("train_and_test needs a train dataloader")
             self.num_train_batches = len(data_loader["train"])
-            self.optimizer = optim.Adam(self.model.parameters(), lr=config.TRAIN.LR,
-                                        weight_decay=0.0005)
+            self.optimizer = optim.Adam(_parameter_groups(self.model, readout),
+                                        lr=config.TRAIN.LR)
             self.scheduler = torch.optim.lr_scheduler.OneCycleLR(
                 self.optimizer, max_lr=config.TRAIN.LR, epochs=config.TRAIN.EPOCHS,
                 steps_per_epoch=max(self.num_train_batches, 1))
             if self.world_size > 1:
                 self.train_sampler = data_loader["train"].sampler
-        elif config.TOOLBOX_MODE != "only_test":
-            raise ValueError("MultiSignalTrainer initialized in incorrect toolbox mode!")
+        elif config.MODE != "only_test":
+            raise ValueError("MultiSignalTrainer initialized in incorrect mode!")
+
+    def _unwrap_model(self):
+        """The underlying model, unwrapping DDP if necessary."""
+        return self.model.module if isinstance(self.model, DDP) else self.model
 
     # --- setup helpers ---------------------------------------------------
     def _select_device(self):
@@ -170,9 +390,18 @@ class MultiSignalTrainer(BaseTrainer):
 
     # --- training --------------------------------------------------------
     def _loss_for(self, batch):
-        """Forward one batch and reduce it to the masked multi-signal loss."""
+        """Forward one batch and reduce it to the per-signal composite loss."""
         out = self.model(batch)
-        return self.criterion(out[PREDICTIONS], batch[LABELS], batch[LABEL_MASK]), out
+        loss, breakdown = self.criterion(out[PREDICTIONS], batch[LABELS],
+                                         batch[LABEL_MASK])
+        return loss, breakdown, out
+
+    @staticmethod
+    def _accumulate(totals, breakdown):
+        """Fold one batch's ``{signal: {component: value}}`` into running sums."""
+        for signal, terms in breakdown.items():
+            for component, value in terms.items():
+                totals[(signal, component)].append(value)
 
     def train(self, data_loader):
         if data_loader.get("train") is None:
@@ -181,6 +410,10 @@ class MultiSignalTrainer(BaseTrainer):
             dist.barrier()
 
         mean_training_losses, mean_valid_losses, lrs = [], [], []
+        # Per epoch, the mean of every loss component of every signal. Which
+        # term dominates is the first thing debugging a multi-signal run needs,
+        # and a single scalar curve cannot answer it.
+        component_history = []
         for epoch in range(self.max_epoch_num):
             if self.train_sampler is not None:
                 self.train_sampler.set_epoch(epoch)
@@ -188,12 +421,13 @@ class MultiSignalTrainer(BaseTrainer):
                 print(f"\n====Training Epoch: {epoch}====")
             self.model.train()
             train_loss = []
+            components = defaultdict(list)
             tbar = tqdm(data_loader["train"], ncols=NCOLS) if self.is_main else data_loader["train"]
             for batch in tbar:
                 batch = move_to_device(batch, self.device)
                 self.optimizer.zero_grad(set_to_none=True)
                 with self._autocast():
-                    loss, _ = self._loss_for(batch)
+                    loss, breakdown, _ = self._loss_for(batch)
                 if self.scaler is not None:
                     self.scaler.scale(loss).backward()
                     self.scaler.step(self.optimizer)
@@ -204,16 +438,22 @@ class MultiSignalTrainer(BaseTrainer):
                 lrs.append(self.scheduler.get_last_lr())
                 self.scheduler.step()
                 train_loss.append(loss.item())
+                self._accumulate(components, breakdown)
                 if self.is_main:
                     tbar.set_description(f"Train epoch {epoch}")
                     tbar.set_postfix(loss=loss.item())
 
             epoch_loss = self._reduce_mean(train_loss)
             mean_training_losses.append(epoch_loss)
+            component_history.append(
+                {key: float(np.mean(values)) for key, values in components.items()})
             if self.is_main:
                 # The progress bar only ever showed the last batch; the epoch
                 # mean is what tells you whether training is going anywhere.
                 print(f"mean training loss: {epoch_loss:.4f}")
+                print("  " + "  ".join(
+                    f"{signal}={component_history[-1][(signal, 'total')]:.4f}"
+                    for signal in self.traces if (signal, 'total') in component_history[-1]))
             self.save_model(epoch)
 
             if not self.config.TEST.USE_LAST_EPOCH and data_loader.get("valid") is not None:
@@ -231,7 +471,8 @@ class MultiSignalTrainer(BaseTrainer):
         if not self.config.TEST.USE_LAST_EPOCH and self.is_main:
             print(f"best trained epoch: {self.best_epoch}, min_val_loss: {self.min_valid_loss}")
         if self.config.TRAIN.PLOT_LOSSES_AND_LR and self.is_main:
-            self.plot_losses_and_lrs(mean_training_losses, mean_valid_losses, lrs, self.config)
+            self.plot_losses_and_lrs(mean_training_losses, mean_valid_losses, lrs)
+            self.plot_loss_components(component_history)
 
     def valid(self, data_loader):
         if data_loader.get("valid") is None:
@@ -245,7 +486,7 @@ class MultiSignalTrainer(BaseTrainer):
             for batch in vbar:
                 batch = move_to_device(batch, self.device)
                 with self._autocast():
-                    loss, _ = self._loss_for(batch)
+                    loss, _, _ = self._loss_for(batch)
                 valid_loss.append(loss.item())
                 if self.is_main:
                     vbar.set_description("Validation")
@@ -264,10 +505,10 @@ class MultiSignalTrainer(BaseTrainer):
     # --- testing ---------------------------------------------------------
     def _load_weights_for_test(self):
         model = self._unwrap_model()
-        if self.config.TOOLBOX_MODE == "only_test":
-            path = self.config.INFERENCE.MODEL_PATH
+        if self.config.MODE == "only_test":
+            path = self.config.TEST.MODEL_PATH
             if not os.path.exists(path):
-                raise ValueError("Inference model path error! Please check INFERENCE.MODEL_PATH in your yaml.")
+                raise ValueError("Inference model path error! Please check TEST.MODEL_PATH in your yaml.")
             print("Testing uses pretrained model!\n" + path)
         elif self.config.TEST.USE_LAST_EPOCH:
             path = os.path.join(self.model_dir,
@@ -277,7 +518,7 @@ class MultiSignalTrainer(BaseTrainer):
             path = os.path.join(self.model_dir,
                                 f"{self.model_file_name}_Epoch{self.best_epoch}.pth")
             print("Testing uses best epoch selected using model selection as non-pretrained model!\n" + path)
-        model.load_state_dict(torch.load(path, map_location=self.device))
+        model.load_state_dict(load_checkpoint_state(path, map_location=self.device))
 
     def test(self, data_loader):
         """Run inference and report metrics per predicted signal."""
@@ -303,24 +544,27 @@ class MultiSignalTrainer(BaseTrainer):
 
         print('')
         report = {}
-        hr_method = 'Peak' if self.config.INFERENCE.EVALUATION_METHOD == "peak detection" else 'FFT'
+        hr_method = 'Peak' if self.config.TEST.EVALUATION_METHOD == "peak detection" else 'FFT'
         for signal in self.traces:
             group = stats.get(signal)
             if not group:
                 print(f"[{signal}] no windows carried this label — skipped")
                 continue
             print(f"--- {signal}: {len(group['gt_hr'])} windows ---")
-            unit = SIGNAL_UNITS.get(signal, 'physical units')
+            unit = signal_unit(signal)
+            scope = ("physical units, predicted directly"
+                     if self.label_norms[signal] == 'raw'
+                     else "at the window's own scale")
             print(f"[{signal}] waveform Pearson: {np.mean(group['pearson']):.4f}  "
                   f"MAE: {np.mean(group['mae']):.4f}  RMSE: {np.mean(group['rmse']):.4f} "
-                  "(normalised units)")
+                  f"({self.label_norms[signal]} units)")
             print(f"[{signal}] waveform MAE: {np.mean(group['mae_physical']):.4f}  "
-                  f"RMSE: {np.mean(group['rmse_physical']):.4f} ({unit}, at the "
-                  "window's own scale)")
+                  f"RMSE: {np.mean(group['rmse_physical']):.4f} ({unit}, {scope})")
             report[signal] = report_hr_metrics(
                 group['gt_hr'], group['pred_hr'], group['snr'], group['macc'],
                 metrics=self.config.TEST.METRICS, config=self.config,
                 filename_id=self._filename_id(), hr_method=hr_method, scope=signal)
+        self.plot_test_windows(windows)
         if self.config.TEST.OUTPUT_SAVE_DIR:
             self.save_dict_outputs(windows)
         return report
@@ -328,7 +572,7 @@ class MultiSignalTrainer(BaseTrainer):
     def _score_sample(self, sample, stats):
         """Accumulate one window's per-signal metrics; return its saveable records."""
         metadata = sample[METADATA]
-        hr_method = 'Peak' if self.config.INFERENCE.EVALUATION_METHOD == "peak detection" else 'FFT'
+        hr_method = 'Peak' if self.config.TEST.EVALUATION_METHOD == "peak detection" else 'FFT'
         records = []
         for signal in self.traces:
             if not bool(sample[LABEL_MASK][signal]):
@@ -341,12 +585,13 @@ class MultiSignalTrainer(BaseTrainer):
             group['pearson'].append(_safe_pearson(prediction, label))
 
             # Physical units, via the exact inverse of the normalisation the
-            # loader applied. Each window carries its own stats, so this is the
-            # error you would see given a perfect estimate of that window's
-            # scale -- it measures shape, expressed in mmHg (or whatever the
-            # signal's units are), not absolute-level accuracy. Absolute level
-            # is a separate problem the per-window normalisation deliberately
-            # removes.
+            # loader applied to *this* signal. For a `raw` signal the inverse is
+            # the identity and the error is genuine absolute-level accuracy in
+            # mmHg. For a per-window normalised signal each window carries its
+            # own stats, so this is instead the error you would see given a
+            # perfect estimate of that window's scale -- shape, expressed in
+            # physical units; absolute level is a question the per-window
+            # normalisation deliberately removed.
             physical_pred, physical_label = self._to_physical(sample, signal)
             error = physical_pred - physical_label
             group['mae_physical'].append(float(np.mean(np.abs(error))))
@@ -371,17 +616,107 @@ class MultiSignalTrainer(BaseTrainer):
         return records
 
     def _to_physical(self, sample, signal):
-        """Prediction and label for one signal back in physical units."""
-        inverse = _INVERSES[self.label_norm]
+        """Prediction and label for one signal back in physical units.
+
+        Each signal inverts with its own normalisation: for a ``raw`` signal
+        this is the identity and the numbers were already mmHg; for a z-scored
+        one it is that window's own std and mean, so the result measures shape
+        expressed in physical units, not absolute level.
+        """
+        inverse = INVERSES[self.label_norms[signal]]
         stats = sample[LABEL_STATS][signal]
         return (inverse(sample[PREDICTIONS][signal].float(), stats).numpy(),
                 inverse(sample[LABELS][signal].float(), stats).numpy())
 
+    def _plot_dir(self):
+        """Where the standard plot set is written, next to the loss curves."""
+        return os.path.join(self.config.LOG.PATH,
+                            self.config.LOG.EXP_NAME, 'plots')
+
+    def plot_losses_and_lrs(self, train_loss, valid_loss, lrs):
+        """Train/valid loss and LR curves (contract §6, plot 1).
+
+        Formerly inherited from ``BaseTrainer``; absorbed here when the trainer
+        stopped reading the legacy config tree.
+        """
+        output_dir = self._plot_dir()
+        os.makedirs(output_dir, exist_ok=True)
+        filename_id = self._filename_id()
+
+        figure = plt.figure(figsize=(10, 6))
+        epochs = range(len(train_loss))
+        plt.plot(epochs, train_loss, label='Training Loss')
+        if valid_loss:
+            plt.plot(epochs, valid_loss, label='Validation Loss')
+        plt.xlabel('Epoch')
+        plt.ylabel('Loss')
+        plt.title(f'{filename_id} Losses')
+        plt.legend()
+        figure.savefig(os.path.join(output_dir, f'{filename_id}_losses.pdf'), dpi=300)
+        plt.close(figure)
+
+        figure = plt.figure(figsize=(6, 4))
+        plt.plot(range(len(lrs)), lrs, label='Learning Rate')
+        plt.xlabel('Scheduler Step')
+        plt.ylabel('Learning Rate')
+        plt.title(f'{filename_id} LR Schedule')
+        plt.legend()
+        figure.savefig(os.path.join(output_dir, f'{filename_id}_learning_rates.pdf'),
+                       bbox_inches='tight', dpi=300)
+        plt.close(figure)
+        print('Saving plots of losses and learning rates to:', output_dir)
+
+    def plot_loss_components(self, history):
+        """Per-signal and per-component training curves (contract §6, plot 1).
+
+        The scalar loss curve says whether training is going anywhere; these say
+        *which signal* and *which term* is responsible, which is the first
+        question any multi-signal run raises.
+        """
+        if not history:
+            return
+        signals = sorted({signal for epoch in history for signal, _ in epoch})
+        if not signals:
+            return
+        epochs = range(len(history))
+        figure, axes = plt.subplots(1, len(signals), figsize=(5 * len(signals), 4),
+                                    squeeze=False)
+        for axis, signal in zip(axes[0], signals):
+            components = sorted({component for epoch in history
+                                 for sig, component in epoch if sig == signal})
+            for component in components:
+                values = [epoch.get((signal, component), np.nan) for epoch in history]
+                axis.plot(epochs, values, label=component,
+                          linewidth=2.0 if component == 'total' else 1.2,
+                          linestyle='-' if component == 'total' else '--')
+            axis.set_title(f"{signal} ({self.criterion.specs[signal]['type']})",
+                           fontsize=10)
+            axis.set_xlabel('Epoch')
+            axis.set_ylabel('Masked mean loss')
+            axis.legend(fontsize=7)
+        figure.suptitle(f"{self._filename_id()} — loss components", fontsize=11)
+        figure.tight_layout()
+        output_dir = self._plot_dir()
+        os.makedirs(output_dir, exist_ok=True)
+        path = os.path.join(output_dir, f"{self._filename_id()}_loss_components.pdf")
+        figure.savefig(path, bbox_inches='tight', dpi=200)
+        plt.close(figure)
+        print('Saving per-signal loss component curves to:', path)
+
+    def plot_test_windows(self, windows):
+        """The waveform overlays and agreement scatters (contract §6, plots 3-4)."""
+        if not windows:
+            return
+        plot_waveform_overlays(windows, self.label_norms, output_dir=self._plot_dir(),
+                               filename_id=self._filename_id(), fs=self.frame_rate)
+        plot_absolute_agreement(windows, self.label_norms, output_dir=self._plot_dir(),
+                                filename_id=self._filename_id())
+
     def _filename_id(self):
-        if self.config.TOOLBOX_MODE == 'train_and_test':
+        if self.config.MODE == 'train_and_test':
             return self.model_file_name
-        root = os.path.basename(self.config.INFERENCE.MODEL_PATH).split(".pth")[0]
-        return f"{root}_{self.config.TEST.DATA.DATASET}"
+        root = os.path.basename(self.config.TEST.MODEL_PATH).split(".pth")[0]
+        return f"{root}_{self.config.DATA.DATASET}"
 
     def save_dict_outputs(self, windows):
         """Persist every scored window, keyed by signal and recording.
@@ -398,7 +733,9 @@ class MultiSignalTrainer(BaseTrainer):
             'traces': list(self.traces),
             'channels': list(self.channels),
             'fs': self.frame_rate,
-            'label_norm': self.config.TEST.DATA.PREPROCESS.NECKFLIX.LABEL_NORM,
+            # Per signal, so downstream tooling can invert each one correctly
+            # without knowing anything about the model that produced it.
+            'label_norms': dict(self.label_norms),
         }
         with open(path, 'wb') as handle:
             pickle.dump(payload, handle, protocol=pickle.HIGHEST_PROTOCOL)
@@ -409,8 +746,42 @@ class MultiSignalTrainer(BaseTrainer):
             return
         os.makedirs(self.model_dir, exist_ok=True)
         path = os.path.join(self.model_dir, f"{self.model_file_name}_Epoch{index}.pth")
-        torch.save(self._unwrap_model().state_dict(), path)
+        # The checkpoint carries the interface it was trained against, so at
+        # only_test the loaders can be pointed at what the model actually
+        # demands rather than what a config happens to restate.
+        torch.save({
+            "state_dict": self._unwrap_model().state_dict(),
+            "interface": interface_payload(self.config.INTERFACE),
+            "model_name": self.config.MODEL.NAME,
+        }, path)
         print('Saved Model Path: ', path)
+
+
+def load_checkpoint_state(path, map_location=None):
+    """The ``state_dict`` from a checkpoint, whichever format it is in.
+
+    Checkpoints written since the interface redesign are
+    ``{"state_dict", "interface", "model_name"}`` — the interface is the
+    model's demand on the data pipeline and the authority at only_test. A bare
+    ``state_dict`` (the pre-redesign format) still loads, with a warning that
+    the config's INTERFACE block is being trusted blind.
+    """
+    payload = torch.load(path, map_location=map_location)
+    if isinstance(payload, dict) and "state_dict" in payload:
+        return payload["state_dict"]
+    import warnings
+    warnings.warn(
+        f"{os.path.basename(path)} carries no interface metadata (pre-redesign "
+        "checkpoint); the config's INTERFACE block is being trusted blind.")
+    return payload
+
+
+def checkpoint_interface(path):
+    """The interface payload a checkpoint carries, or ``None`` for a bare one."""
+    payload = torch.load(path, map_location='cpu')
+    if isinstance(payload, dict) and "interface" in payload:
+        return payload["interface"]
+    return None
 
 
 def _safe_pearson(prediction, label):

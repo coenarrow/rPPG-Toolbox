@@ -1,708 +1,433 @@
-# --------------------------------------------------------
-# Swin Transformer
-# Copyright (c) 2021 Microsoft
-# Licensed under The MIT License [see LICENSE for details]
-# Written by Ze Liu
-# --------------------------------------------------------'
+"""Typed experiment configuration for the zarr pipeline.
 
-import os, re
+The schema is the DATA / INTERFACE / MODEL split designed in
+docs/plans/2026-08-31-interface-config-redesign.md:
+
+* ``DATA`` states which stores participate (cache path, filters, participants,
+  admission thresholds) plus per-split sampling policy (``SPLITS``);
+* ``INTERFACE`` states the model's demand on the data pipeline (rate, window,
+  channels, traces, resize, ``DATA_TYPE``, per-signal label norm) — it is
+  serialized into every checkpoint, and at ``only_test`` the checkpoint's copy
+  is the authority;
+* ``MODEL`` states the architecture: name, head style, and per-model
+  hyperparameter blocks of arbitrary size.
+
+Everything is a plain dataclass: unknown keys are refused with the full path
+and the block's valid keys, ints coerce to floats (``STRIDE_SECONDS: 0`` is
+legal), and there is no freeze/defrost — derived fields (``LOG.EXP_NAME``,
+``MODEL.MODEL_DIR``, the output dirs) are plainly assigned by ``main.py``.
+
+``BASE:`` lists include files (paths relative to the config file), deep-merged
+in order before the file's own keys; scalar and list values override, mappings
+merge. That is what keeps the ``*_SMOKE`` variants to a handful of lines.
+"""
+
+import os
+from dataclasses import asdict, dataclass, field, fields, is_dataclass
+
 import yaml
-from yacs.config import CfgNode as CN
-from neural_methods.signals import SIGNALS as _SIGNAL_REGISTRY
 
-_C = CN()
+MODES = ("train_and_test", "only_test", "unsupervised_method")
+UPSAMPLING_MODES = ("refuse", "interpolate")
+SPLIT_NAMES = ("TRAIN", "VALID", "TEST")
 
-# Base config files
-_C.BASE = ['']
-_C.DEBUG = False
-# -----------------------------------------------------------------------------
-# Train settings
-# -----------------------------------------------------------------------------\
-_C.TOOLBOX_MODE = ""
-_C.TRAIN = CN()
-_C.TRAIN.USE_AMP = True
-_C.TRAIN.AMP_DTYPE = 'bfloat16'
-# Base loss for the masked multi-signal (dict-contract) trainer:
-# 'negpearson' (waveform shape) or 'mse' (pointwise).
-_C.TRAIN.LOSS = 'negpearson'
-_C.TRAIN.EPOCHS = 50
-_C.TRAIN.BATCH_SIZE = 4
-_C.TRAIN.LR = 1e-4
-# Optimizer
-_C.TRAIN.OPTIMIZER = CN()
-# Optimizer Epsilon
-_C.TRAIN.OPTIMIZER.EPS = 1e-4
-# Optimizer Betas
-_C.TRAIN.OPTIMIZER.BETAS = (0.9, 0.999)
-# SGD momentum
-_C.TRAIN.OPTIMIZER.MOMENTUM = 0.9
-_C.TRAIN.MODEL_FILE_NAME = ''
-_C.TRAIN.PLOT_LOSSES_AND_LR = True
-# Train.Data settings
-_C.TRAIN.DATA = CN()
-_C.TRAIN.DATA.INFO = CN()
-_C.TRAIN.DATA.INFO.LIGHT = ['']
-_C.TRAIN.DATA.INFO.MOTION = ['']
-_C.TRAIN.DATA.INFO.EXERCISE = [True]
-_C.TRAIN.DATA.INFO.SKIN_COLOR = [1]
-_C.TRAIN.DATA.INFO.GENDER = ['']
-_C.TRAIN.DATA.INFO.GLASSER = [True]
-_C.TRAIN.DATA.INFO.HAIR_COVER = [True]
-_C.TRAIN.DATA.INFO.MAKEUP = [True]
-_C.TRAIN.DATA.FILTERING = CN()
-_C.TRAIN.DATA.FILTERING.USE_EXCLUSION_LIST = False
-_C.TRAIN.DATA.FILTERING.EXCLUSION_LIST = ['']
-_C.TRAIN.DATA.FILTERING.SELECT_TASKS = False
-_C.TRAIN.DATA.FILTERING.TASK_LIST = ['']
-_C.TRAIN.DATA.FS = 0
-_C.TRAIN.DATA.DATA_PATH = ''
-_C.TRAIN.DATA.EXP_DATA_NAME = ''
-_C.TRAIN.DATA.CACHED_PATH = 'PreprocessedData'
-_C.TRAIN.DATA.FILE_LIST_PATH = os.path.join(_C.TRAIN.DATA.CACHED_PATH, 'DataFileLists')
-_C.TRAIN.DATA.DATASET = ''
-_C.TRAIN.DATA.DO_PREPROCESS = False
-_C.TRAIN.DATA.DATA_FORMAT = 'NDCHW'
-_C.TRAIN.DATA.BEGIN = 0.0
-_C.TRAIN.DATA.END = 1.0
-_C.TRAIN.DATA.FOLD = CN()
-_C.TRAIN.DATA.FOLD.FOLD_NAME = ''
-_C.TRAIN.DATA.FOLD.FOLD_PATH = ''
-# Train Data preprocessing
-_C.TRAIN.DATA.PREPROCESS = CN()
-_C.TRAIN.DATA.PREPROCESS.USE_PSUEDO_PPG_LABEL = False
-_C.TRAIN.DATA.PREPROCESS.DATA_TYPE = ['']
-_C.TRAIN.DATA.PREPROCESS.DATA_AUG = ['None']
-_C.TRAIN.DATA.PREPROCESS.LABEL_TYPE = ''
-_C.TRAIN.DATA.PREPROCESS.DO_CHUNK = True
-_C.TRAIN.DATA.PREPROCESS.CHUNK_LENGTH = 180
-_C.TRAIN.DATA.PREPROCESS.CROP_FACE = CN()
-_C.TRAIN.DATA.PREPROCESS.CROP_FACE.DO_CROP_FACE = True
-_C.TRAIN.DATA.PREPROCESS.CROP_FACE.BACKEND = 'HC'
-_C.TRAIN.DATA.PREPROCESS.CROP_FACE.USE_LARGE_FACE_BOX = True
-_C.TRAIN.DATA.PREPROCESS.CROP_FACE.LARGE_BOX_COEF = 1.5
-_C.TRAIN.DATA.PREPROCESS.CROP_FACE.DETECTION = CN()
-_C.TRAIN.DATA.PREPROCESS.CROP_FACE.DETECTION.DO_DYNAMIC_DETECTION = False
-_C.TRAIN.DATA.PREPROCESS.CROP_FACE.DETECTION.DYNAMIC_DETECTION_FREQUENCY = 30
-_C.TRAIN.DATA.PREPROCESS.CROP_FACE.DETECTION.USE_MEDIAN_FACE_BOX = False
-_C.TRAIN.DATA.PREPROCESS.RESIZE = CN()
-_C.TRAIN.DATA.PREPROCESS.RESIZE.W = 128
-_C.TRAIN.DATA.PREPROCESS.RESIZE.H = 128
-_C.TRAIN.DATA.PREPROCESS.BIGSMALL = CN()
-_C.TRAIN.DATA.PREPROCESS.BIGSMALL.BIG_DATA_TYPE = ['']
-_C.TRAIN.DATA.PREPROCESS.BIGSMALL.SMALL_DATA_TYPE = ['']
-_C.TRAIN.DATA.PREPROCESS.BIGSMALL.RESIZE = CN()
-_C.TRAIN.DATA.PREPROCESS.BIGSMALL.RESIZE.BIG_W = 144
-_C.TRAIN.DATA.PREPROCESS.BIGSMALL.RESIZE.BIG_H = 144
-_C.TRAIN.DATA.PREPROCESS.BIGSMALL.RESIZE.SMALL_W = 9
-_C.TRAIN.DATA.PREPROCESS.BIGSMALL.RESIZE.SMALL_H = 9
-_C.TRAIN.DATA.PREPROCESS.IBVP = CN()
-_C.TRAIN.DATA.PREPROCESS.IBVP.DATA_MODE = 'RGB'
-_C.TRAIN.DATA.PREPROCESS.CHANNELS = []      # global channel slots (subset of R,G,B,I,D); [] -> legacy NECKFLIX.CHANNELS
-_C.TRAIN.DATA.PREPROCESS.TRACES = []        # global signal targets; [] -> legacy NECKFLIX.TRACES
-_C.TRAIN.DATA.PREPROCESS.SIGNAL_NORMS = CN()
-for _sig, _meta in _SIGNAL_REGISTRY.items():
-    _C.TRAIN.DATA.PREPROCESS.SIGNAL_NORMS[_sig] = list(_meta['norm'])
-_C.TRAIN.DATA.PREPROCESS.NECKFLIX = CN()
-_C.TRAIN.DATA.PREPROCESS.NECKFLIX.CHANNELS = ['R','G','B','I','D']
-_C.TRAIN.DATA.PREPROCESS.NECKFLIX.TRACES= ['CVP','ABP','ECG']
-_C.TRAIN.DATA.PREPROCESS.NECKFLIX.CVP_NORM= [-20,30]
-_C.TRAIN.DATA.PREPROCESS.NECKFLIX.ABP_NORM= [0,200]
-_C.TRAIN.DATA.PREPROCESS.NECKFLIX.ECG_NORM= [-1500,1500]
-_C.TRAIN.DATA.PREPROCESS.NECKFLIX.RANDOM_CHUNK = True
+#: Blocks and keys of the pre-redesign schema, recognised only to point at the
+#: design doc instead of printing a bare "unknown key".
+_LEGACY_TOP_KEYS = ("TOOLBOX_MODE", "INFERENCE", "VALID", "NUM_OF_GPU_TRAIN")
+
+DEFAULT_METRICS = ("MAE", "RMSE", "MAPE", "MACC", "Pearson", "SNR", "BA")
 
 
-# -----------------------------------------------------------------------------
-# Valid settings
-# -----------------------------------------------------------------------------\
-_C.VALID = CN()
-# Valid.Data settings
-_C.VALID.DATA = CN()
-_C.VALID.DATA.INFO = CN()
-_C.VALID.DATA.INFO.LIGHT = ['']
-_C.VALID.DATA.INFO.MOTION = ['']
-_C.VALID.DATA.INFO.EXERCISE = [True]
-_C.VALID.DATA.INFO.SKIN_COLOR = [1]
-_C.VALID.DATA.INFO.GENDER = ['']
-_C.VALID.DATA.INFO.GLASSER = [True]
-_C.VALID.DATA.INFO.HAIR_COVER = [True]
-_C.VALID.DATA.INFO.MAKEUP = [True]
-_C.VALID.DATA.FILTERING = CN()
-_C.VALID.DATA.FILTERING.USE_EXCLUSION_LIST = False
-_C.VALID.DATA.FILTERING.EXCLUSION_LIST = ['']
-_C.VALID.DATA.FILTERING.SELECT_TASKS = False
-_C.VALID.DATA.FILTERING.TASK_LIST = ['']
-_C.VALID.DATA.FS = 0
-_C.VALID.DATA.DATA_PATH = ''
-_C.VALID.DATA.EXP_DATA_NAME = ''
-_C.VALID.DATA.CACHED_PATH = 'PreprocessedData'
-_C.VALID.DATA.FILE_LIST_PATH = os.path.join(_C.VALID.DATA.CACHED_PATH, 'DataFileLists')
-_C.VALID.DATA.DATASET = ''
-_C.VALID.DATA.DO_PREPROCESS = False
-_C.VALID.DATA.DATA_FORMAT = 'NDCHW'
-_C.VALID.DATA.BEGIN = 0.0
-_C.VALID.DATA.END = 1.0
-_C.VALID.DATA.FOLD = CN()
-_C.VALID.DATA.FOLD.FOLD_NAME = ''
-_C.VALID.DATA.FOLD.FOLD_PATH = ''
-# Valid Data preprocessing
-_C.VALID.DATA.PREPROCESS = CN()
-_C.VALID.DATA.PREPROCESS.USE_PSUEDO_PPG_LABEL = False
-_C.VALID.DATA.PREPROCESS.DATA_TYPE = ['']
-_C.VALID.DATA.PREPROCESS.DATA_AUG = ['None']
-_C.VALID.DATA.PREPROCESS.LABEL_TYPE = ''
-_C.VALID.DATA.PREPROCESS.DO_CHUNK = True
-_C.VALID.DATA.PREPROCESS.CHUNK_LENGTH = 180
-_C.VALID.DATA.PREPROCESS.CROP_FACE = CN()
-_C.VALID.DATA.PREPROCESS.CROP_FACE.DO_CROP_FACE = True
-_C.VALID.DATA.PREPROCESS.CROP_FACE.BACKEND = 'HC'
-_C.VALID.DATA.PREPROCESS.CROP_FACE.USE_LARGE_FACE_BOX = True
-_C.VALID.DATA.PREPROCESS.CROP_FACE.LARGE_BOX_COEF = 1.5
-_C.VALID.DATA.PREPROCESS.CROP_FACE.DETECTION = CN()
-_C.VALID.DATA.PREPROCESS.CROP_FACE.DETECTION.DO_DYNAMIC_DETECTION = False
-_C.VALID.DATA.PREPROCESS.CROP_FACE.DETECTION.DYNAMIC_DETECTION_FREQUENCY = 30
-_C.VALID.DATA.PREPROCESS.CROP_FACE.DETECTION.USE_MEDIAN_FACE_BOX = False
-_C.VALID.DATA.PREPROCESS.RESIZE = CN()
-_C.VALID.DATA.PREPROCESS.RESIZE.W = 128
-_C.VALID.DATA.PREPROCESS.RESIZE.H = 128
-_C.VALID.DATA.PREPROCESS.BIGSMALL = CN()
-_C.VALID.DATA.PREPROCESS.BIGSMALL.BIG_DATA_TYPE = ['']
-_C.VALID.DATA.PREPROCESS.BIGSMALL.SMALL_DATA_TYPE = ['']
-_C.VALID.DATA.PREPROCESS.BIGSMALL.RESIZE = CN()
-_C.VALID.DATA.PREPROCESS.BIGSMALL.RESIZE.BIG_W = 144
-_C.VALID.DATA.PREPROCESS.BIGSMALL.RESIZE.BIG_H = 144
-_C.VALID.DATA.PREPROCESS.BIGSMALL.RESIZE.SMALL_W = 9
-_C.VALID.DATA.PREPROCESS.BIGSMALL.RESIZE.SMALL_H = 9
-_C.VALID.DATA.PREPROCESS.IBVP = CN()
-_C.VALID.DATA.PREPROCESS.IBVP.DATA_MODE = 'RGB'
-_C.VALID.DATA.PREPROCESS.CHANNELS = []      # global channel slots (subset of R,G,B,I,D); [] -> legacy NECKFLIX.CHANNELS
-_C.VALID.DATA.PREPROCESS.TRACES = []        # global signal targets; [] -> legacy NECKFLIX.TRACES
-_C.VALID.DATA.PREPROCESS.SIGNAL_NORMS = CN()
-for _sig, _meta in _SIGNAL_REGISTRY.items():
-    _C.VALID.DATA.PREPROCESS.SIGNAL_NORMS[_sig] = list(_meta['norm'])
-_C.VALID.DATA.PREPROCESS.NECKFLIX = CN()
-_C.VALID.DATA.PREPROCESS.NECKFLIX.CHANNELS = ['R','G','B','I','D']
-_C.VALID.DATA.PREPROCESS.NECKFLIX.TRACES= ['CVP','ABP','ECG']
-_C.VALID.DATA.PREPROCESS.NECKFLIX.CVP_NORM= [-20,30]
-_C.VALID.DATA.PREPROCESS.NECKFLIX.ABP_NORM= [0,200]
-_C.VALID.DATA.PREPROCESS.NECKFLIX.ECG_NORM= [-1500,1500]
-_C.VALID.DATA.PREPROCESS.NECKFLIX.RANDOM_CHUNK = True
-
-# -----------------------------------------------------------------------------
-# Test settings
-# -----------------------------------------------------------------------------\
-_C.TEST = CN()
-_C.TEST.OUTPUT_SAVE_DIR = ''
-_C.TEST.METRICS = []
-_C.TEST.USE_LAST_EPOCH = True
-# Test.Data settings
-_C.TEST.DATA = CN()
-_C.TEST.DATA.INFO = CN()
-_C.TEST.DATA.INFO.LIGHT = ['']
-_C.TEST.DATA.INFO.MOTION = ['']
-_C.TEST.DATA.INFO.EXERCISE = [True]
-_C.TEST.DATA.INFO.SKIN_COLOR = [1]
-_C.TEST.DATA.INFO.GENDER = ['']
-_C.TEST.DATA.INFO.GLASSER = [True]
-_C.TEST.DATA.INFO.HAIR_COVER = [True]
-_C.TEST.DATA.INFO.MAKEUP = [True]
-_C.TEST.DATA.FILTERING = CN()
-_C.TEST.DATA.FILTERING.USE_EXCLUSION_LIST = False
-_C.TEST.DATA.FILTERING.EXCLUSION_LIST = ['']
-_C.TEST.DATA.FILTERING.SELECT_TASKS = False
-_C.TEST.DATA.FILTERING.TASK_LIST = ['']
-_C.TEST.DATA.FS = 0
-_C.TEST.DATA.DATA_PATH = ''
-_C.TEST.DATA.EXP_DATA_NAME = ''
-_C.TEST.DATA.CACHED_PATH = 'PreprocessedData'
-_C.TEST.DATA.FILE_LIST_PATH = os.path.join(_C.TEST.DATA.CACHED_PATH, 'DataFileLists')
-_C.TEST.DATA.DATASET = ''
-_C.TEST.DATA.DO_PREPROCESS = False
-_C.TEST.DATA.DATA_FORMAT = 'NDCHW'
-_C.TEST.DATA.BEGIN = 0.0
-_C.TEST.DATA.END = 1.0
-_C.TEST.DATA.FOLD = CN()
-_C.TEST.DATA.FOLD.FOLD_NAME = ''
-_C.TEST.DATA.FOLD.FOLD_PATH = ''
-# Test Data preprocessing
-_C.TEST.DATA.PREPROCESS = CN()
-_C.TEST.DATA.PREPROCESS.USE_PSUEDO_PPG_LABEL = False
-_C.TEST.DATA.PREPROCESS.DATA_TYPE = ['']
-_C.TEST.DATA.PREPROCESS.DATA_AUG = ['None']
-_C.TEST.DATA.PREPROCESS.LABEL_TYPE = ''
-_C.TEST.DATA.PREPROCESS.DO_CHUNK = True
-_C.TEST.DATA.PREPROCESS.CHUNK_LENGTH = 180
-_C.TEST.DATA.PREPROCESS.CROP_FACE = CN()
-_C.TEST.DATA.PREPROCESS.CROP_FACE.DO_CROP_FACE = True
-_C.TEST.DATA.PREPROCESS.CROP_FACE.BACKEND = 'HC'
-_C.TEST.DATA.PREPROCESS.CROP_FACE.USE_LARGE_FACE_BOX = True
-_C.TEST.DATA.PREPROCESS.CROP_FACE.LARGE_BOX_COEF = 1.5
-_C.TEST.DATA.PREPROCESS.CROP_FACE.DETECTION = CN()
-_C.TEST.DATA.PREPROCESS.CROP_FACE.DETECTION.DO_DYNAMIC_DETECTION = False
-_C.TEST.DATA.PREPROCESS.CROP_FACE.DETECTION.DYNAMIC_DETECTION_FREQUENCY = 30
-_C.TEST.DATA.PREPROCESS.CROP_FACE.DETECTION.USE_MEDIAN_FACE_BOX = False
-_C.TEST.DATA.PREPROCESS.RESIZE = CN()
-_C.TEST.DATA.PREPROCESS.RESIZE.W = 128
-_C.TEST.DATA.PREPROCESS.RESIZE.H = 128
-_C.TEST.DATA.PREPROCESS.BIGSMALL = CN()
-_C.TEST.DATA.PREPROCESS.BIGSMALL.BIG_DATA_TYPE = ['']
-_C.TEST.DATA.PREPROCESS.BIGSMALL.SMALL_DATA_TYPE = ['']
-_C.TEST.DATA.PREPROCESS.BIGSMALL.RESIZE = CN()
-_C.TEST.DATA.PREPROCESS.BIGSMALL.RESIZE.BIG_W = 144
-_C.TEST.DATA.PREPROCESS.BIGSMALL.RESIZE.BIG_H = 144
-_C.TEST.DATA.PREPROCESS.BIGSMALL.RESIZE.SMALL_W = 9
-_C.TEST.DATA.PREPROCESS.BIGSMALL.RESIZE.SMALL_H = 9
-_C.TEST.DATA.PREPROCESS.IBVP = CN()
-_C.TEST.DATA.PREPROCESS.IBVP.DATA_MODE = 'RGB'
-_C.TEST.DATA.PREPROCESS.CHANNELS = []      # global channel slots (subset of R,G,B,I,D); [] -> legacy NECKFLIX.CHANNELS
-_C.TEST.DATA.PREPROCESS.TRACES = []        # global signal targets; [] -> legacy NECKFLIX.TRACES
-_C.TEST.DATA.PREPROCESS.SIGNAL_NORMS = CN()
-for _sig, _meta in _SIGNAL_REGISTRY.items():
-    _C.TEST.DATA.PREPROCESS.SIGNAL_NORMS[_sig] = list(_meta['norm'])
-_C.TEST.DATA.PREPROCESS.NECKFLIX = CN()
-_C.TEST.DATA.PREPROCESS.NECKFLIX.CHANNELS = ['R','G','B','I','D']
-_C.TEST.DATA.PREPROCESS.NECKFLIX.TRACES= ['CVP','ABP','ECG']
-_C.TEST.DATA.PREPROCESS.NECKFLIX.CVP_NORM= [-20,30]
-_C.TEST.DATA.PREPROCESS.NECKFLIX.ABP_NORM= [0,200]
-_C.TEST.DATA.PREPROCESS.NECKFLIX.ECG_NORM= [-1500,1500]
-_C.TEST.DATA.PREPROCESS.NECKFLIX.RANDOM_CHUNK = False
-# -----------------------------------------------------------------------------
-# Unsupervised method settings
-# -----------------------------------------------------------------------------\
-_C.UNSUPERVISED = CN()
-_C.UNSUPERVISED.METHOD = []
-_C.UNSUPERVISED.OUTPUT_SAVE_DIR = ''
-_C.UNSUPERVISED.METRICS = []
-# Unsupervised.Data settings
-_C.UNSUPERVISED.DATA = CN()
-_C.UNSUPERVISED.DATA.INFO = CN()
-_C.UNSUPERVISED.DATA.INFO.LIGHT = ['']
-_C.UNSUPERVISED.DATA.INFO.MOTION = ['']
-_C.UNSUPERVISED.DATA.INFO.EXERCISE = [True]
-_C.UNSUPERVISED.DATA.INFO.SKIN_COLOR = [1]
-_C.UNSUPERVISED.DATA.INFO.GENDER = ['']
-_C.UNSUPERVISED.DATA.INFO.GLASSER = [True]
-_C.UNSUPERVISED.DATA.INFO.HAIR_COVER = [True]
-_C.UNSUPERVISED.DATA.INFO.MAKEUP = [True]
-_C.UNSUPERVISED.DATA.FILTERING = CN()
-_C.UNSUPERVISED.DATA.FILTERING.USE_EXCLUSION_LIST = False
-_C.UNSUPERVISED.DATA.FILTERING.EXCLUSION_LIST = ['']
-_C.UNSUPERVISED.DATA.FILTERING.SELECT_TASKS = False
-_C.UNSUPERVISED.DATA.FILTERING.TASK_LIST = ['']
-_C.UNSUPERVISED.DATA.FS = 0
-_C.UNSUPERVISED.DATA.DATA_PATH = ''
-_C.UNSUPERVISED.DATA.EXP_DATA_NAME = ''
-_C.UNSUPERVISED.DATA.CACHED_PATH = 'PreprocessedData'
-_C.UNSUPERVISED.DATA.FILE_LIST_PATH = os.path.join(_C.UNSUPERVISED.DATA.CACHED_PATH, 'DataFileLists')
-_C.UNSUPERVISED.DATA.DATASET = ''
-_C.UNSUPERVISED.DATA.DO_PREPROCESS = False
-_C.UNSUPERVISED.DATA.DATA_FORMAT = 'NDCHW'
-_C.UNSUPERVISED.DATA.BEGIN = 0.0
-_C.UNSUPERVISED.DATA.END = 1.0
-_C.UNSUPERVISED.DATA.FOLD = CN()
-_C.UNSUPERVISED.DATA.FOLD.FOLD_NAME = ''
-_C.UNSUPERVISED.DATA.FOLD.FOLD_PATH = ''
-# Unsupervised Data preprocessing
-_C.UNSUPERVISED.DATA.PREPROCESS = CN()
-_C.UNSUPERVISED.DATA.PREPROCESS.USE_PSUEDO_PPG_LABEL = False
-_C.UNSUPERVISED.DATA.PREPROCESS.DATA_TYPE = ['']
-_C.UNSUPERVISED.DATA.PREPROCESS.DATA_AUG = ['None']
-_C.UNSUPERVISED.DATA.PREPROCESS.LABEL_TYPE = ''
-_C.UNSUPERVISED.DATA.PREPROCESS.DO_CHUNK = True
-_C.UNSUPERVISED.DATA.PREPROCESS.CHUNK_LENGTH = 180
-_C.UNSUPERVISED.DATA.PREPROCESS.CROP_FACE = CN()
-_C.UNSUPERVISED.DATA.PREPROCESS.CROP_FACE.DO_CROP_FACE = True
-_C.UNSUPERVISED.DATA.PREPROCESS.CROP_FACE.BACKEND = 'HC'
-_C.UNSUPERVISED.DATA.PREPROCESS.CROP_FACE.USE_LARGE_FACE_BOX = True
-_C.UNSUPERVISED.DATA.PREPROCESS.CROP_FACE.LARGE_BOX_COEF = 1.5
-_C.UNSUPERVISED.DATA.PREPROCESS.CROP_FACE.DETECTION = CN()
-_C.UNSUPERVISED.DATA.PREPROCESS.CROP_FACE.DETECTION.DO_DYNAMIC_DETECTION = False
-_C.UNSUPERVISED.DATA.PREPROCESS.CROP_FACE.DETECTION.DYNAMIC_DETECTION_FREQUENCY = 30
-_C.UNSUPERVISED.DATA.PREPROCESS.CROP_FACE.DETECTION.USE_MEDIAN_FACE_BOX = False
-_C.UNSUPERVISED.DATA.PREPROCESS.RESIZE = CN()
-_C.UNSUPERVISED.DATA.PREPROCESS.RESIZE.W = 128
-_C.UNSUPERVISED.DATA.PREPROCESS.RESIZE.H = 128
-_C.UNSUPERVISED.DATA.PREPROCESS.IBVP = CN()
-_C.UNSUPERVISED.DATA.PREPROCESS.IBVP.DATA_MODE = 'RGB'
-_C.UNSUPERVISED.DATA.PREPROCESS.NECKFLIX = CN()
-_C.UNSUPERVISED.DATA.PREPROCESS.NECKFLIX.CHANNELS = ['R','G','B','I','D']
-_C.UNSUPERVISED.DATA.PREPROCESS.NECKFLIX.TRACES= ['CVP','ABP','ECG']
-_C.UNSUPERVISED.DATA.PREPROCESS.NECKFLIX.CVP_NORM= [-20,30]
-_C.UNSUPERVISED.DATA.PREPROCESS.NECKFLIX.ABP_NORM= [0,200]
-_C.UNSUPERVISED.DATA.PREPROCESS.NECKFLIX.ECG_NORM= [-1500,1500]
-_C.UNSUPERVISED.DATA.PREPROCESS.NECKFLIX.RANDOM_CHUNK = False
-
-# -----------------------------------------------------------------------------
-# Keys the zarr-backed Neckflix loader needs, added uniformly to every data
-# block so TRAIN/VALID/TEST/UNSUPERVISED cannot drift apart. Defined here in one
-# pass rather than repeated four times above; see
-# dataset/data_loader/neckflix_config.py for how each is consumed.
-# -----------------------------------------------------------------------------
-def _add_neckflix_zarr_keys(preprocess):
-    """Give one ``DATA.PREPROCESS`` node the zarr-loader keys it may lack."""
-    if 'CHANNELS' not in preprocess:
-        preprocess.CHANNELS = []        # global channel slots; [] -> legacy NECKFLIX.CHANNELS
-    if 'TRACES' not in preprocess:
-        preprocess.TRACES = []          # global signal targets; [] -> legacy NECKFLIX.TRACES
-    if 'SIGNAL_NORMS' not in preprocess:
-        preprocess.SIGNAL_NORMS = CN()
-        for _s, _m in _SIGNAL_REGISTRY.items():
-            preprocess.SIGNAL_NORMS[_s] = list(_m['norm'])
-    # Window stride in frames; 0 means "stride by a whole window" (no overlap).
-    preprocess.CHUNK_STRIDE = 0
-    neckflix = preprocess.NECKFLIX
-    # Per-window label normalisation: 'zscore' or 'minmax'.
-    neckflix.LABEL_NORM = 'zscore'
-    # Keep samples that are missing some configured streams/labels.
-    neckflix.ALLOW_MISSING = True
-    neckflix.MIN_CHANNELS = 1
-    neckflix.MIN_LABELS = 1
-    # Store-attribute include filters, keyed by the attr as the store spells it
-    # (plus the 'perspective' pseudo-attr): FILTERS: {posture: ['0','45'], light:
-    # ['D']}. new_allowed, so a YAML can filter on any attr its cache carries.
-    neckflix.FILTERS = CN(new_allowed=True)
-    neckflix.PARTICIPANTS = []      # explicit include list; LOSO uses --test_participants
+class ConfigError(ValueError):
+    """A config file said something the schema cannot accept."""
 
 
-for _preprocess in (_C.TRAIN.DATA.PREPROCESS, _C.VALID.DATA.PREPROCESS,
-                    _C.TEST.DATA.PREPROCESS, _C.UNSUPERVISED.DATA.PREPROCESS):
-    _add_neckflix_zarr_keys(_preprocess)
-
-### -----------------------------------------------------------------------------
-# Model settings
-# -----------------------------------------------------------------------------
-_C.MODEL = CN()
-# Model name
-_C.MODEL.NAME = ''
-# Checkpoint to resume, could be overwritten by command line argument
-_C.MODEL.RESUME = ''
-# Dropout rate
-_C.MODEL.DROP_RATE = 0.0
-_C.MODEL.MODEL_DIR = 'PreTrainedModels'
-
-# Specific parameters for physnet parameters
-_C.MODEL.PHYSNET = CN()
-_C.MODEL.PHYSNET.FRAME_NUM = 64
-
-# -----------------------------------------------------------------------------
-# Specific parameters for iBVPNet parameters
-# -----------------------------------------------------------------------------
-_C.MODEL.iBVPNet = CN()
-_C.MODEL.iBVPNet.FRAME_NUM = 160
-_C.MODEL.iBVPNet.CHANNELS = 3
-# -----------------------------------------------------------------------------
-# Specific parameters for FactorizePhys parameters
-# -----------------------------------------------------------------------------
-_C.MODEL.FactorizePhys = CN()
-_C.MODEL.FactorizePhys.FRAME_NUM = 160
-_C.MODEL.FactorizePhys.CHANNELS = 3
-_C.MODEL.FactorizePhys.TYPE = "Standard"
-_C.MODEL.FactorizePhys.MD_FSAM = False
-_C.MODEL.FactorizePhys.MD_TYPE = 'NMF'
-_C.MODEL.FactorizePhys.MD_TRANSFORM = 'T_KAB'
-_C.MODEL.FactorizePhys.MD_R = 1
-_C.MODEL.FactorizePhys.MD_S = 1
-_C.MODEL.FactorizePhys.MD_STEPS = 4
-_C.MODEL.FactorizePhys.MD_INFERENCE = True
-_C.MODEL.FactorizePhys.MD_RESIDUAL = True
-
-# -----------------------------------------------------------------------------
-# Model Settings for TS-CAN
-# -----------------------------------------------------------------------------
-_C.MODEL.TSCAN = CN()
-_C.MODEL.TSCAN.FRAME_DEPTH = 10
-
-# -----------------------------------------------------------------------------
-# Model Settings for EfficientPhys
-# -----------------------------------------------------------------------------
-_C.MODEL.EFFICIENTPHYS = CN()
-_C.MODEL.EFFICIENTPHYS.FRAME_DEPTH = 10
-
-# -----------------------------------------------------------------------------
-# Model Settings for BigSmall
-# -----------------------------------------------------------------------------
-_C.MODEL.BIGSMALL = CN()
-_C.MODEL.BIGSMALL.FRAME_DEPTH = 3
-
-# -----------------------------------------------------------------------------
-# Model Settings for PhysFormer
-# -----------------------------------------------------------------------------
-_C.MODEL.PHYSFORMER = CN()
-_C.MODEL.PHYSFORMER.PATCH_SIZE = 4
-_C.MODEL.PHYSFORMER.DIM = 96
-_C.MODEL.PHYSFORMER.FF_DIM = 144
-_C.MODEL.PHYSFORMER.NUM_HEADS = 4
-_C.MODEL.PHYSFORMER.NUM_LAYERS = 12
-_C.MODEL.PHYSFORMER.THETA = 0.7
-
-# -----------------------------------------------------------------------------
-# Model Settings for PhysHydra
-# -----------------------------------------------------------------------------
-_C.MODEL.PHYSHYDRA = CN()
-_C.MODEL.PHYSHYDRA.NUM_CHANNELS = 3
-_C.MODEL.PHYSHYDRA.NUM_LABELS = 1
-_C.MODEL.PHYSHYDRA.INTERPRETABLE = True
-_C.MODEL.PHYSHYDRA.PRESERVE_CHANNELS = True
-_C.MODEL.PHYSHYDRA.LAMBDA_SPARSITY = 0.01
-_C.MODEL.PHYSHYDRA.LAMBDA_SMOOTHNESS = 0.001
-_C.MODEL.PHYSHYDRA.SAVE_ATTENTION_MAPS = True
-_C.MODEL.PHYSHYDRA.W_CCC = 0.25
-_C.MODEL.PHYSHYDRA.W_MEAN = 0.1
-_C.MODEL.PHYSHYDRA.W_MAX = 0.2
-_C.MODEL.PHYSHYDRA.W_MIN = 0.2
-_C.MODEL.PHYSHYDRA.W_SPEC = 0.25
+# ---------------------------------------------------------------------------
+# Schema
+# ---------------------------------------------------------------------------
+@dataclass
+class ResizeConfig:
+    H: int = 0          # 0 = keep the cache's own size
+    W: int = 0
 
 
-# -----------------------------------------------------------------------------
-# Inference settings
-# -----------------------------------------------------------------------------
-_C.INFERENCE = CN()
-_C.INFERENCE.BATCH_SIZE = 4
-_C.INFERENCE.EVALUATION_METHOD = 'FFT'
-_C.INFERENCE.EVALUATION_WINDOW = CN()
-_C.INFERENCE.EVALUATION_WINDOW.USE_SMALLER_WINDOW = False
-_C.INFERENCE.EVALUATION_WINDOW.WINDOW_SIZE = 10
-_C.INFERENCE.MODEL_PATH = ''
+@dataclass
+class SplitConfig:
+    """What genuinely differs between splits — nothing else may.
 
-# -----------------------------------------------------------------------------
-# Device settings
-# -----------------------------------------------------------------------------
-_C.DEVICE = "cuda:0"
-_C.NUM_OF_GPU_TRAIN = 1
+    ``FILTERS`` / ``PARTICIPANTS`` default to ``None`` meaning "inherit the
+    ``DATA`` block's"; stating them (even empty) overrides.
+    """
 
-# -----------------------------------------------------------------------------
-# Log settings
-# -----------------------------------------------------------------------------
-_C.LOG = CN()
-_C.LOG.PATH = "runs/exp"
+    STRIDE_SECONDS: float = 0.0     # 0 = stride by a whole window (no overlap)
+    RANDOM_WINDOWS: bool = False
+    FILTERS: dict = None
+    PARTICIPANTS: list = None
 
 
-def _update_config_from_file(config, cfg_file):
-    config.defrost()
-    with open(cfg_file, 'r') as f:
-        yaml_cfg = yaml.load(f, Loader=yaml.FullLoader)
+@dataclass
+class DataConfig:
+    """Which stores participate. Facts about the data, not about the model."""
 
-    for cfg in yaml_cfg.setdefault('BASE', ['']):
-        if cfg:
-            _update_config_from_file(
-                config, os.path.join(os.path.dirname(cfg_file), cfg)
-            )
-    print('=> Merging a config file from {}'.format(cfg_file))
-    config.merge_from_file(cfg_file)
-    config.freeze()
+    DATASET: str = "Neckflix"
+    CACHED_PATH: str = ""
+    FILTERS: dict = field(default_factory=dict)
+    PARTICIPANTS: list = field(default_factory=list)
+    ALLOW_MISSING: bool = True
+    MIN_CHANNELS: int = 1
+    MIN_LABELS: int = 1
+    SPLITS: dict = field(default_factory=dict)   # {TRAIN/VALID/TEST: SplitConfig}
+
+    def split(self, name: str) -> SplitConfig:
+        """The resolved policy for one split; unsupervised runs use TEST's."""
+        key = str(name).upper()
+        if key == "UNSUPERVISED":
+            key = "TEST"
+        if key not in SPLIT_NAMES:
+            raise ConfigError(
+                f"Unknown split {name!r}; valid: {list(SPLIT_NAMES)} (the "
+                "unsupervised mode uses the TEST split policy)")
+        return self.SPLITS.get(key, SplitConfig())
 
 
-def update_config(config, args):
+@dataclass
+class InterfaceConfig:
+    """The model's demand on the data pipeline.
 
-    # store default file list path for checking against later
-    default_TRAIN_FILE_LIST_PATH = config.TRAIN.DATA.FILE_LIST_PATH
-    default_VALID_FILE_LIST_PATH = config.VALID.DATA.FILE_LIST_PATH
-    default_TEST_FILE_LIST_PATH = config.TEST.DATA.FILE_LIST_PATH
-    default_UNSUPERVISED_FILE_LIST_PATH = config.UNSUPERVISED.DATA.FILE_LIST_PATH
+    Serialized into every checkpoint (:func:`interface_payload`); the loader's
+    job is to satisfy it — zero-fill + mask what the data cannot provide,
+    resample time, resize space — or refuse with an error naming the fix.
+    """
 
-    # update flag from config file
-    _update_config_from_file(config, args.config_file)
-    config.defrost()
-    
-    # UPDATE TRAIN PATHS
-    if config.TRAIN.DATA.FILE_LIST_PATH == default_TRAIN_FILE_LIST_PATH:
-        config.TRAIN.DATA.FILE_LIST_PATH = os.path.join(config.TRAIN.DATA.CACHED_PATH, 'DataFileLists')
+    FS: float = 0.0                 # model-facing rate, mandatory
+    WINDOW_SECONDS: float = 0.0     # T = WINDOW_SECONDS x FS, mandatory
+    CHANNELS: list = field(default_factory=list)
+    TRACES: list = field(default_factory=list)
+    RESIZE: ResizeConfig = field(default_factory=ResizeConfig)
+    DATA_TYPE: list = field(default_factory=lambda: ["Standardized"])
+    LABEL_NORM: dict = field(default_factory=dict)
+    UPSAMPLING: str = "refuse"      # 'interpolate' opts into linear upsampling
 
-    if config.TRAIN.DATA.EXP_DATA_NAME == '':
-        config.TRAIN.DATA.EXP_DATA_NAME = "_".join([config.TRAIN.DATA.DATASET, "SizeW{0}".format(
-            str(config.TRAIN.DATA.PREPROCESS.RESIZE.W)), "SizeH{0}".format(str(config.TRAIN.DATA.PREPROCESS.RESIZE.W)), "ClipLength{0}".format(
-            str(config.TRAIN.DATA.PREPROCESS.CHUNK_LENGTH)), "DataType{0}".format("_".join(config.TRAIN.DATA.PREPROCESS.DATA_TYPE)),
-                                      "DataAug{0}".format("_".join(config.TRAIN.DATA.PREPROCESS.DATA_AUG)),
-                                      "LabelType{0}".format(config.TRAIN.DATA.PREPROCESS.LABEL_TYPE),
-                                      "Crop_face{0}".format(config.TRAIN.DATA.PREPROCESS.CROP_FACE.DO_CROP_FACE),
-                                      "Backend{0}".format(config.TRAIN.DATA.PREPROCESS.CROP_FACE.BACKEND),
-                                      "Large_box{0}".format(config.TRAIN.DATA.PREPROCESS.CROP_FACE.USE_LARGE_FACE_BOX),
-                                      "Large_size{0}".format(config.TRAIN.DATA.PREPROCESS.CROP_FACE.LARGE_BOX_COEF),
-                                      "Dyamic_Det{0}".format(config.TRAIN.DATA.PREPROCESS.CROP_FACE.DETECTION.DO_DYNAMIC_DETECTION),
-                                        "det_len{0}".format(config.TRAIN.DATA.PREPROCESS.CROP_FACE.DETECTION.DYNAMIC_DETECTION_FREQUENCY),
-                                        "Median_face_box{0}".format(config.TRAIN.DATA.PREPROCESS.CROP_FACE.DETECTION.USE_MEDIAN_FACE_BOX)
-                                              ])
-    # config.TRAIN.DATA.CACHED_PATH = os.path.join(config.TRAIN.DATA.CACHED_PATH, config.TRAIN.DATA.EXP_DATA_NAME)
 
-    name, ext = os.path.splitext(config.TRAIN.DATA.FILE_LIST_PATH)
-    if not ext: # no file extension
-        FOLD_STR = '_' + config.TRAIN.DATA.FOLD.FOLD_NAME if config.TRAIN.DATA.FOLD.FOLD_NAME else ''
-        config.TRAIN.DATA.FILE_LIST_PATH = os.path.join(config.TRAIN.DATA.FILE_LIST_PATH, \
-                                                        config.TRAIN.DATA.EXP_DATA_NAME + '_' + \
-                                                        str(config.TRAIN.DATA.BEGIN) + '_' + \
-                                                        str(config.TRAIN.DATA.END) + \
-                                                        FOLD_STR + '.csv')
-    elif ext != '.csv':
-        raise ValueError('TRAIN dataset FILE_LIST_PATH must either be a directory path or a .csv file name')
-    
-    if ext == '.csv' and config.TRAIN.DATA.DO_PREPROCESS:
-        raise ValueError('User specified TRAIN dataset FILE_LIST_PATH .csv file already exists. \
-                         Please turn DO_PREPROCESS to False or delete existing TRAIN dataset FILE_LIST_PATH .csv file.')
+@dataclass
+class ModelConfig:
+    """Architecture identity plus per-model blocks (``MODEL.<NAME>.<KEY>``).
 
-    if not config.TEST.USE_LAST_EPOCH and config.VALID.DATA.DATASET is not None:
-        # UPDATE VALID PATHS
-        if config.VALID.DATA.FILE_LIST_PATH == default_VALID_FILE_LIST_PATH:
-            config.VALID.DATA.FILE_LIST_PATH = os.path.join(config.VALID.DATA.CACHED_PATH, 'DataFileLists')
+    Any mapping under an unknown key becomes an attribute namespace, so
+    ``config.MODEL.PHYSFORMER.PATCH_SIZE`` works without the schema having to
+    enumerate every architecture's hyperparameters (PhysFormer retro item 1).
+    """
 
-        if config.VALID.DATA.EXP_DATA_NAME == '':
-            config.VALID.DATA.EXP_DATA_NAME = "_".join([config.VALID.DATA.DATASET, "SizeW{0}".format(
-                str(config.VALID.DATA.PREPROCESS.RESIZE.W)), "SizeH{0}".format(str(config.VALID.DATA.PREPROCESS.RESIZE.W)), "ClipLength{0}".format(
-                str(config.VALID.DATA.PREPROCESS.CHUNK_LENGTH)), "DataType{0}".format("_".join(config.VALID.DATA.PREPROCESS.DATA_TYPE)),
-                                        "DataAug{0}".format("_".join(config.VALID.DATA.PREPROCESS.DATA_AUG)),
-                                        "LabelType{0}".format(config.VALID.DATA.PREPROCESS.LABEL_TYPE),
-                                        "Crop_face{0}".format(config.VALID.DATA.PREPROCESS.CROP_FACE.DO_CROP_FACE),
-                                        "Backend{0}".format(config.VALID.DATA.PREPROCESS.CROP_FACE.BACKEND),
-                                        "Large_box{0}".format(config.VALID.DATA.PREPROCESS.CROP_FACE.USE_LARGE_FACE_BOX),
-                                        "Large_size{0}".format(config.VALID.DATA.PREPROCESS.CROP_FACE.LARGE_BOX_COEF),
-                                        "Dyamic_Det{0}".format(config.VALID.DATA.PREPROCESS.CROP_FACE.DETECTION.DO_DYNAMIC_DETECTION),
-                                          "det_len{0}".format(config.VALID.DATA.PREPROCESS.CROP_FACE.DETECTION.DYNAMIC_DETECTION_FREQUENCY),
-                                          "Median_face_box{0}".format(config.VALID.DATA.PREPROCESS.CROP_FACE.DETECTION.USE_MEDIAN_FACE_BOX)
-                                                ])
-        # config.VALID.DATA.CACHED_PATH = os.path.join(config.VALID.DATA.CACHED_PATH, config.VALID.DATA.EXP_DATA_NAME)
+    NAME: str = ""
+    HEAD_STYLE: str = "widened"
+    DROP_RATE: float = 0.0
+    MODEL_DIR: str = ""             # derived by main.py, never written in YAML
 
-        name, ext = os.path.splitext(config.VALID.DATA.FILE_LIST_PATH)
-        if not ext:  # no file extension
-            FOLD_STR = '_' + config.VALID.DATA.FOLD.FOLD_NAME if config.VALID.DATA.FOLD.FOLD_NAME else ''
-            config.VALID.DATA.FILE_LIST_PATH = os.path.join(config.VALID.DATA.FILE_LIST_PATH, \
-                                                            config.VALID.DATA.EXP_DATA_NAME + '_' + \
-                                                            str(config.VALID.DATA.BEGIN) + '_' + \
-                                                            str(config.VALID.DATA.END) + \
-                                                            FOLD_STR + '.csv')
-        elif ext != '.csv':
-            raise ValueError('VALIDATION dataset FILE_LIST_PATH must either be a directory path or a .csv file name')
 
-        if ext == '.csv' and config.VALID.DATA.DO_PREPROCESS:
-            raise ValueError('User specified VALIDATION dataset FILE_LIST_PATH .csv file already exists. \
-                            Please turn DO_PREPROCESS to False or delete existing VALIDATION dataset FILE_LIST_PATH .csv file.')
-    elif not config.TEST.USE_LAST_EPOCH and config.VALID.DATA.DATASET is None:
-        raise ValueError('VALIDATION dataset is not provided despite USE_LAST_EPOCH being False!')
+@dataclass
+class TrainConfig:
+    EPOCHS: int = 1
+    BATCH_SIZE: int = 4
+    LR: float = 1e-4
+    MODEL_FILE_NAME: str = ""
+    USE_AMP: bool = True
+    AMP_DTYPE: str = "bfloat16"
+    PLOT_LOSSES_AND_LR: bool = True
+    LOSS: dict = field(default_factory=dict)    # per-signal registry
 
-    # UPDATE TEST PATHS
-    if config.TEST.DATA.FILE_LIST_PATH == default_TEST_FILE_LIST_PATH:
-        config.TEST.DATA.FILE_LIST_PATH = os.path.join(config.TEST.DATA.CACHED_PATH, 'DataFileLists')
 
-    if config.TEST.DATA.EXP_DATA_NAME == '':
-        config.TEST.DATA.EXP_DATA_NAME = "_".join([config.TEST.DATA.DATASET, "SizeW{0}".format(
-            str(config.TEST.DATA.PREPROCESS.RESIZE.W)), "SizeH{0}".format(str(config.TEST.DATA.PREPROCESS.RESIZE.H)), "ClipLength{0}".format(
-            str(config.TEST.DATA.PREPROCESS.CHUNK_LENGTH)), "DataType{0}".format("_".join(config.TEST.DATA.PREPROCESS.DATA_TYPE)),
-                                      "DataAug{0}".format("_".join(config.TEST.DATA.PREPROCESS.DATA_AUG)),
-                                      "LabelType{0}".format(config.TEST.DATA.PREPROCESS.LABEL_TYPE),
-                                      "Crop_face{0}".format(config.TEST.DATA.PREPROCESS.CROP_FACE.DO_CROP_FACE),
-                                      "Backend{0}".format(config.TEST.DATA.PREPROCESS.CROP_FACE.BACKEND),
-                                      "Large_box{0}".format(config.TEST.DATA.PREPROCESS.CROP_FACE.USE_LARGE_FACE_BOX),
-                                      "Large_size{0}".format(config.TEST.DATA.PREPROCESS.CROP_FACE.LARGE_BOX_COEF),
-                                      "Dyamic_Det{0}".format(config.TEST.DATA.PREPROCESS.CROP_FACE.DETECTION.DO_DYNAMIC_DETECTION),
-                                        "det_len{0}".format(config.TEST.DATA.PREPROCESS.CROP_FACE.DETECTION.DYNAMIC_DETECTION_FREQUENCY),
-                                        "Median_face_box{0}".format(config.TEST.DATA.PREPROCESS.CROP_FACE.DETECTION.USE_MEDIAN_FACE_BOX)
-                                              ])
-    # config.TEST.DATA.CACHED_PATH = os.path.join(config.TEST.DATA.CACHED_PATH, config.TEST.DATA.EXP_DATA_NAME)
+@dataclass
+class EvaluationWindowConfig:
+    USE_SMALLER_WINDOW: bool = False
+    WINDOW_SIZE: int = 10           # seconds
 
-    name, ext = os.path.splitext(config.TEST.DATA.FILE_LIST_PATH)
-    if not ext: # no file extension
-        FOLD_STR = '_' + config.TEST.DATA.FOLD.FOLD_NAME if config.TEST.DATA.FOLD.FOLD_NAME else ''
-        config.TEST.DATA.FILE_LIST_PATH = os.path.join(config.TEST.DATA.FILE_LIST_PATH, \
-                                                       config.TEST.DATA.EXP_DATA_NAME + '_' + \
-                                                       str(config.TEST.DATA.BEGIN) + '_' + \
-                                                       str(config.TEST.DATA.END) + \
-                                                       FOLD_STR + '.csv')
-    elif ext != '.csv':
-        raise ValueError('TEST dataset FILE_LIST_PATH must either be a directory path or a .csv file name')
 
-    if ext == '.csv' and config.TEST.DATA.DO_PREPROCESS:
-        raise ValueError('User specified TEST dataset FILE_LIST_PATH .csv file already exists. \
-                         Please turn DO_PREPROCESS to False or delete existing TEST dataset FILE_LIST_PATH .csv file.')
-    
+@dataclass
+class TestConfig:
+    """How predictions are scored — shared by every mode."""
 
-    # UPDATE MODEL_FILE_NAME IF NEEDED
-    if any(aug != 'None' for aug in config.TRAIN.DATA.PREPROCESS.DATA_AUG + config.VALID.DATA.PREPROCESS.DATA_AUG + config.TEST.DATA.PREPROCESS.DATA_AUG):
-        # Check if the initial MODEL_FILE_NAME follows the expected pattern
-        if re.match(r'^[^_]+(_[^_]+)?(_[^_]+)?_[^_]+$', config.TRAIN.MODEL_FILE_NAME):
-            model_file_name_parts = config.TRAIN.MODEL_FILE_NAME.split('_')
-            if model_file_name_parts[2] == config.TEST.DATA.DATASET:
-                train_name_idx = 0
-                valid_name_idx = 1
-                test_name_idx = 2
-            else:
-                train_name_idx = 0
-                valid_name_idx = None
-                test_name_idx = 1
-            if 'Motion' in config.TRAIN.DATA.PREPROCESS.DATA_AUG:
-                model_file_name_parts = config.TRAIN.MODEL_FILE_NAME.split('_')
-                model_file_name_parts[train_name_idx] = 'MA-' + model_file_name_parts[train_name_idx]
-                config.TRAIN.MODEL_FILE_NAME = '_'.join(model_file_name_parts)
-            if 'Motion' in config.VALID.DATA.PREPROCESS.DATA_AUG:
-                model_file_name_parts = config.TRAIN.MODEL_FILE_NAME.split('_')
-                model_file_name_parts[valid_name_idx] = 'MA-' + model_file_name_parts[valid_name_idx]
-                config.TRAIN.MODEL_FILE_NAME = '_'.join(model_file_name_parts)
-            if 'Motion' in config.TEST.DATA.PREPROCESS.DATA_AUG:
-                model_file_name_parts = config.TRAIN.MODEL_FILE_NAME.split('_')
-                model_file_name_parts[test_name_idx] = 'MA-' + model_file_name_parts[test_name_idx]
-                config.TRAIN.MODEL_FILE_NAME = '_'.join(model_file_name_parts)
+    BATCH_SIZE: int = 4
+    METRICS: list = field(default_factory=lambda: list(DEFAULT_METRICS))
+    USE_LAST_EPOCH: bool = True
+    EVALUATION_METHOD: str = "FFT"  # 'FFT' or 'peak detection'
+    EVALUATION_WINDOW: EvaluationWindowConfig = field(
+        default_factory=EvaluationWindowConfig)
+    MODEL_PATH: str = ""            # only_test: the checkpoint to load
+    OUTPUT_SAVE_DIR: str = ""       # derived by main.py
+
+
+@dataclass
+class UnsupervisedConfig:
+    METHODS: list = field(default_factory=list)
+    OUTPUT_SAVE_DIR: str = ""       # derived by main.py
+
+
+@dataclass
+class LogConfig:
+    PATH: str = "runs/exp"
+    EXP_NAME: str = ""              # derived by main.py
+
+
+@dataclass
+class ExperimentConfig:
+    MODE: str = "train_and_test"
+    DEVICE: str = "cuda:0"
+    DEBUG: bool = False
+    LOG: LogConfig = field(default_factory=LogConfig)
+    DATA: DataConfig = field(default_factory=DataConfig)
+    INTERFACE: InterfaceConfig = field(default_factory=InterfaceConfig)
+    MODEL: ModelConfig = field(default_factory=ModelConfig)
+    TRAIN: TrainConfig = field(default_factory=TrainConfig)
+    TEST: TestConfig = field(default_factory=TestConfig)
+    UNSUPERVISED: UnsupervisedConfig = field(default_factory=UnsupervisedConfig)
+
+
+class ModelBlock:
+    """Read-only-ish attribute view of one per-model architecture mapping."""
+
+    def __init__(self, mapping: dict, path: str):
+        self._path = path
+        for key, value in mapping.items():
+            setattr(self, str(key),
+                    ModelBlock(value, f"{path}.{key}")
+                    if isinstance(value, dict) else value)
+
+    def __getattr__(self, name):
+        raise AttributeError(
+            f"{self._path} has no key {name!r}; it carries "
+            f"{sorted(k for k in vars(self) if not k.startswith('_'))}")
+
+    def __repr__(self):
+        entries = {k: v for k, v in vars(self).items() if not k.startswith("_")}
+        return f"ModelBlock({self._path}: {entries})"
+
+
+# ---------------------------------------------------------------------------
+# Building the schema from a YAML mapping
+# ---------------------------------------------------------------------------
+def _coerce_scalar(value, target, path):
+    if target is float:
+        if isinstance(value, str):
+            # YAML 1.1 resolves '1e-3' (no dot) as a string; accept it anyway.
+            try:
+                value = float(value)
+            except ValueError:
+                pass
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ConfigError(f"{path} must be a number, got {value!r}")
+        return float(value)
+    if target is int:
+        if isinstance(value, bool):
+            raise ConfigError(f"{path} must be an integer, got {value!r}")
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str):
+            try:
+                value = float(value)
+            except ValueError:
+                pass
+        if isinstance(value, float) and value.is_integer():
+            return int(value)
+        raise ConfigError(f"{path} must be an integer, got {value!r}")
+    if target is bool:
+        if not isinstance(value, bool):
+            raise ConfigError(f"{path} must be true/false, got {value!r}")
+        return value
+    if target is str:
+        if value is None:
+            return ""
+        if isinstance(value, (str, int, float)):
+            return str(value)
+        raise ConfigError(f"{path} must be a string, got {value!r}")
+    return value
+
+
+def _build(cls, mapping, path):
+    """One dataclass block from one YAML mapping, refusing unknown keys."""
+    if mapping is None:
+        mapping = {}
+    if not isinstance(mapping, dict):
+        raise ConfigError(f"{path} must be a mapping, got {mapping!r}")
+    known = {f.name: f for f in fields(cls)}
+    unknown = sorted(str(k) for k in mapping if k not in known)
+    if unknown:
+        raise ConfigError(
+            f"{path or 'config'} has unknown key(s) {unknown}; "
+            f"valid keys: {sorted(known)}")
+    kwargs = {}
+    for name, f in known.items():
+        if name not in mapping:
+            continue
+        value = mapping[name]
+        sub = f"{path}.{name}" if path else name
+        if is_dataclass(f.type):
+            kwargs[name] = _build(f.type, value, sub)
+        elif f.type is dict:
+            if value is None:
+                value = {}
+            if not isinstance(value, dict):
+                raise ConfigError(f"{sub} must be a mapping, got {value!r}")
+            kwargs[name] = dict(value)
+        elif f.type is list:
+            if value is None:
+                value = []
+            if not isinstance(value, list):
+                raise ConfigError(f"{sub} must be a list, got {value!r}")
+            kwargs[name] = list(value)
         else:
-            raise ValueError(f'MODEL_FILE_NAME does not follow expected naming pattern of [TRAIN_SET]_[VALID_SET]_[TEST_SET]! \
-                             \nReceived {config.TRAIN.MODEL_FILE_NAME}.')
+            kwargs[name] = _coerce_scalar(value, f.type, sub)
+    return cls(**kwargs)
 
-    # ENSURE USE_PSEUDO_LABELS IS NOT TRUE FOR UNSUPERVISED METHODS
-    if config.TOOLBOX_MODE == 'unsupervised_method' and config.UNSUPERVISED.DATA.PREPROCESS.USE_PSUEDO_PPG_LABEL == True:
-        raise ValueError('Pseudo PPG labels are NOT supported for unsupervised methods.')
 
-    # UPDATE UNSUPERVISED PATHS
-    if config.UNSUPERVISED.DATA.FILE_LIST_PATH == default_UNSUPERVISED_FILE_LIST_PATH:
-        config.UNSUPERVISED.DATA.FILE_LIST_PATH = os.path.join(config.UNSUPERVISED.DATA.CACHED_PATH, 'DataFileLists')
+def _build_model(mapping):
+    """``MODEL``: known fields via the schema, mappings become model blocks."""
+    if mapping is None:
+        mapping = {}
+    if not isinstance(mapping, dict):
+        raise ConfigError(f"MODEL must be a mapping, got {mapping!r}")
+    known = {f.name for f in fields(ModelConfig)}
+    plain = {k: v for k, v in mapping.items() if k in known}
+    extras = {k: v for k, v in mapping.items() if k not in known}
+    for key, value in extras.items():
+        if not isinstance(value, dict):
+            raise ConfigError(
+                f"MODEL.{key} is not a schema key, so it must be a per-model "
+                f"architecture block (a mapping); got {value!r}. "
+                f"Schema keys: {sorted(known)}")
+    model = _build(ModelConfig, plain, "MODEL")
+    for key, value in extras.items():
+        setattr(model, str(key), ModelBlock(value, f"MODEL.{key}"))
+    return model
 
-    if config.UNSUPERVISED.DATA.EXP_DATA_NAME == '':
-        config.UNSUPERVISED.DATA.EXP_DATA_NAME = "_".join([config.UNSUPERVISED.DATA.DATASET, "SizeW{0}".format(
-            str(config.UNSUPERVISED.DATA.PREPROCESS.RESIZE.W)), "SizeH{0}".format(str(config.UNSUPERVISED.DATA.PREPROCESS.RESIZE.W)), "ClipLength{0}".format(
-            str(config.UNSUPERVISED.DATA.PREPROCESS.CHUNK_LENGTH)), "DataType{0}".format("_".join(config.UNSUPERVISED.DATA.PREPROCESS.DATA_TYPE)),
-                                      "DataAug{0}".format("_".join(config.UNSUPERVISED.DATA.PREPROCESS.DATA_AUG)),
-                                      "LabelType{0}".format(config.UNSUPERVISED.DATA.PREPROCESS.LABEL_TYPE),
-                                      "Crop_face{0}".format(config.UNSUPERVISED.DATA.PREPROCESS.CROP_FACE.DO_CROP_FACE),
-                                      "Backend{0}".format(config.UNSUPERVISED.DATA.PREPROCESS.CROP_FACE.BACKEND),
-                                      "Large_box{0}".format(config.UNSUPERVISED.DATA.PREPROCESS.CROP_FACE.USE_LARGE_FACE_BOX),
-                                      "Large_size{0}".format(config.UNSUPERVISED.DATA.PREPROCESS.CROP_FACE.LARGE_BOX_COEF),
-                                      "Dyamic_Det{0}".format(config.UNSUPERVISED.DATA.PREPROCESS.CROP_FACE.DETECTION.DO_DYNAMIC_DETECTION),
-                                        "det_len{0}".format(config.UNSUPERVISED.DATA.PREPROCESS.CROP_FACE.DETECTION.DYNAMIC_DETECTION_FREQUENCY),
-                                        "Median_face_box{0}".format(config.UNSUPERVISED.DATA.PREPROCESS.CROP_FACE.DETECTION.USE_MEDIAN_FACE_BOX),
-                                        "unsupervised"
-                                              ])
-    # config.UNSUPERVISED.DATA.CACHED_PATH = os.path.join(config.UNSUPERVISED.DATA.CACHED_PATH, config.UNSUPERVISED.DATA.EXP_DATA_NAME)
 
-    name, ext = os.path.splitext(config.UNSUPERVISED.DATA.FILE_LIST_PATH)
-    if not ext: # no file extension
-        FOLD_STR = '_' + config.UNSUPERVISED.DATA.FOLD.FOLD_NAME if config.UNSUPERVISED.DATA.FOLD.FOLD_NAME else ''
-        config.UNSUPERVISED.DATA.FILE_LIST_PATH = os.path.join(config.UNSUPERVISED.DATA.FILE_LIST_PATH, \
-                                                        config.UNSUPERVISED.DATA.EXP_DATA_NAME + '_' + \
-                                                        str(config.UNSUPERVISED.DATA.BEGIN) + '_' + \
-                                                        str(config.UNSUPERVISED.DATA.END) + \
-                                                        FOLD_STR + '.csv')
-    elif ext != '.csv':
-        raise ValueError('UNSUPERVISED dataset FILE_LIST_PATH must either be a directory path or a .csv file name')
+def _build_splits(mapping):
+    if mapping is None:
+        mapping = {}
+    splits = {}
+    for name, value in mapping.items():
+        key = str(name).upper()
+        if key not in SPLIT_NAMES:
+            raise ConfigError(
+                f"DATA.SPLITS names unknown split {name!r}; valid: "
+                f"{list(SPLIT_NAMES)} (the unsupervised mode uses TEST's policy)")
+        split = _build(SplitConfig, value, f"DATA.SPLITS.{key}")
+        if split.FILTERS is not None:
+            split.FILTERS = dict(split.FILTERS)
+        if split.PARTICIPANTS is not None:
+            split.PARTICIPANTS = list(split.PARTICIPANTS)
+        splits[key] = split
+    return splits
 
-    if ext == '.csv' and config.UNSUPERVISED.DATA.DO_PREPROCESS:
-        raise ValueError('User specified UNSUPERVISED dataset FILE_LIST_PATH .csv file already exists. \
-                         Please turn DO_PREPROCESS to False or delete existing UNSUPERVISED dataset FILE_LIST_PATH .csv file.')
 
-    # Establish the directory to hold pre-trained models from a given experiment inside 
-    # the configured log directory (runs/exp by default)
-    config.MODEL.MODEL_DIR = os.path.join(config.LOG.PATH, config.TRAIN.DATA.EXP_DATA_NAME, config.MODEL.MODEL_DIR)
-
-    # Establish the directory to hold outputs saved during testing inside the
-    # configured log directory (runs/exp by default)
-    if config.TOOLBOX_MODE == 'train_and_test' or config.TOOLBOX_MODE == 'only_test':
-        config.TEST.OUTPUT_SAVE_DIR = os.path.join(config.LOG.PATH, config.TEST.DATA.EXP_DATA_NAME, 'saved_test_outputs')
-    elif config.TOOLBOX_MODE == 'unsupervised_method':
-        config.UNSUPERVISED.OUTPUT_SAVE_DIR = os.path.join(config.LOG.PATH, config.UNSUPERVISED.DATA.EXP_DATA_NAME, 'saved_outputs')
-    else:
-        raise ValueError('TOOLBOX_MODE only supports train_and_test, only_test, or unsupervised_method!')
-
-    config.freeze()
-    return
-
-def get_config(args):
-    # Return a clone so that the defaults will not be altered
-    # This is for the "local variable" use pattern
-    config = _C.clone()
-    update_config(config, args)
-
+def config_from_mapping(mapping: dict) -> ExperimentConfig:
+    """A validated :class:`ExperimentConfig` from one merged YAML mapping."""
+    if not isinstance(mapping, dict):
+        raise ConfigError(f"The config root must be a mapping, got {mapping!r}")
+    legacy = sorted(k for k in mapping if k in _LEGACY_TOP_KEYS)
+    if legacy:
+        raise ConfigError(
+            f"Key(s) {legacy} belong to the pre-redesign schema. The current "
+            "one is the DATA / INTERFACE / MODEL split — see "
+            "docs/plans/2026-08-31-interface-config-redesign.md")
+    mapping = dict(mapping)
+    model_mapping = mapping.pop("MODEL", None)
+    splits_mapping = None
+    if isinstance(mapping.get("DATA"), dict):
+        data_mapping = dict(mapping["DATA"])
+        splits_mapping = data_mapping.pop("SPLITS", None)
+        mapping["DATA"] = data_mapping
+    config = _build(ExperimentConfig, mapping, "")
+    config.MODEL = _build_model(model_mapping)
+    config.DATA.SPLITS = _build_splits(splits_mapping)
+    _validate(config)
     return config
 
 
+def _validate(config: ExperimentConfig) -> None:
+    from neural_methods.signals import validate_channels, validate_traces
+
+    if config.MODE not in MODES:
+        raise ConfigError(f"MODE must be one of {list(MODES)}, got {config.MODE!r}")
+    interface = config.INTERFACE
+    if interface.FS <= 0:
+        raise ConfigError(
+            "INTERFACE.FS must be set to the frame rate the model should see "
+            "(e.g. FS: 30). It is the rate WINDOW_SECONDS is converted at and "
+            "the rate the loader resamples each store's native fps to.")
+    if interface.WINDOW_SECONDS <= 0:
+        raise ConfigError(
+            "INTERFACE.WINDOW_SECONDS must be a positive duration; the frame "
+            f"count is derived from it (T = WINDOW_SECONDS x FS), got "
+            f"{interface.WINDOW_SECONDS!r}")
+    if interface.UPSAMPLING not in UPSAMPLING_MODES:
+        raise ConfigError(
+            f"INTERFACE.UPSAMPLING must be one of {list(UPSAMPLING_MODES)}, "
+            f"got {interface.UPSAMPLING!r}")
+    try:
+        interface.CHANNELS = validate_channels(interface.CHANNELS)
+        interface.TRACES = validate_traces(interface.TRACES)
+    except ValueError as err:
+        raise ConfigError(f"INTERFACE: {err}") from err
+    # Validate the per-signal registries early, with the config-side names, so
+    # a typo fails at load rather than after the datasets are built.
+    from dataset.data_loader.label_transforms import resolve_label_norms
+    resolve_label_norms(interface.TRACES, interface.LABEL_NORM)
+    if config.MODE == "train_and_test":
+        from neural_methods.loss.PerSignalLoss import resolve_loss_specs
+        resolve_loss_specs(interface.TRACES, config.TRAIN.LOSS)
+
+
+# ---------------------------------------------------------------------------
+# YAML loading (BASE includes, deep merge)
+# ---------------------------------------------------------------------------
+def _merge(base: dict, override: dict) -> dict:
+    """Deep-merge mappings; scalars and lists override, mappings merge."""
+    out = dict(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(out.get(key), dict):
+            out[key] = _merge(out[key], value)
+        else:
+            out[key] = value
+    return out
+
+
+def _load_yaml_tree(path: str) -> dict:
+    with open(path, "r") as handle:
+        raw = yaml.safe_load(handle) or {}
+    if not isinstance(raw, dict):
+        raise ConfigError(f"{path} must contain a YAML mapping")
+    bases = raw.pop("BASE", []) or []
+    if isinstance(bases, str):
+        bases = [bases]
+    merged: dict = {}
+    for base in bases:
+        if not base:
+            continue
+        merged = _merge(merged,
+                        _load_yaml_tree(os.path.join(os.path.dirname(path), base)))
+    return _merge(merged, raw)
+
+
+def load_config(config_file: str) -> ExperimentConfig:
+    """Load, merge (``BASE``) and validate one experiment config file."""
+    return config_from_mapping(_load_yaml_tree(config_file))
+
+
+# ---------------------------------------------------------------------------
+# The interface as checkpoint metadata
+# ---------------------------------------------------------------------------
+def interface_payload(interface: InterfaceConfig) -> dict:
+    """The interface as a plain dict, the form checkpoints carry it in."""
+    return asdict(interface)
+
+
+def interface_from_payload(payload: dict) -> InterfaceConfig:
+    """Rebuild a checkpoint's interface; the same schema validation applies."""
+    return _build(InterfaceConfig, payload, "checkpoint interface")
+
+
+def interface_diff(config_side: InterfaceConfig, checkpoint_side: InterfaceConfig):
+    """Human-readable differences, for the only_test adoption notice."""
+    left, right = asdict(config_side), asdict(checkpoint_side)
+    return [f"INTERFACE.{key}: config={left[key]!r} checkpoint={right[key]!r}"
+            for key in left if left[key] != right[key]]

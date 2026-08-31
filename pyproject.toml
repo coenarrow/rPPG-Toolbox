@@ -39,17 +39,17 @@ dependencies = [
     # live import; transitive-only packages (transformers, huggingface-hub,
     # fsspec, ...) are not repeated here. ----
     "einops>=0.8.2",
-    "h5py>=3.16",          # PhysHydraTrainer only; leaves in Phase 6
+    "h5py>=3.16", # PhysHydraTrainer only; leaves in Phase 6
     "matplotlib>=3.11",
     "numpy>=2.5",
     "pandas>=3",
     "pyyaml>=6.0.3",
-    "scikit-learn>=1.9",   # bigsmall_multitask_metrics only; leaves in Phase 6
+    "scikit-learn>=1.9", # bigsmall_multitask_metrics only; leaves in Phase 6
     "scipy>=1.18",
     "timm>=1.0.29",
-    "tqdm>=4.70",
-    "yacs>=0.1.8",         # legacy config machinery; dies in Phase 5
+    "tqdm>=4.70", # legacy config machinery; dies in Phase 5
     "zarr>=3.3",
+    "pillow>=12.3.0",
 ]
 
 [dependency-groups]

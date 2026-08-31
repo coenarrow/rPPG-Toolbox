@@ -4,120 +4,27 @@
 #
 #   uv run python main.py --limit_windows 8 --test_participants P015 \
 #       --config_file configs/neckflix/NECKFLIX_PHYSMAMBA_SMOKE.yaml
-BASE: ['']
-TOOLBOX_MODE: "train_and_test"
+BASE: [NECKFLIX_PHYSMAMBA.yaml]
 DEVICE: cpu
 LOG:
   PATH: "runs/neckflix_physmamba_smoke"
 
+DATA:
+  SPLITS:
+    TRAIN:
+      STRIDE_SECONDS: 1.066667
+
+INTERFACE:
+  WINDOW_SECONDS: 2.133333      # 64 frames at FS 30 (32/15 s)
+  RESIZE:
+    H: 32
+    W: 32
+
 TRAIN:
   BATCH_SIZE: 2
   EPOCHS: 1
-  LR: 1e-3
-  LOSS: 'negpearson'            # waveform shape; 'mse' for pointwise
   USE_AMP: False
-  AMP_DTYPE: 'bfloat16'
   MODEL_FILE_NAME: neckflix_physmamba_smoke
-  PLOT_LOSSES_AND_LR: True
-  DATA:
-    FS: 30
-    DATASET: Neckflix
-    DATA_FORMAT: NCDHW
-    DATA_PATH: ""                                          # unused: the zarr cache is authoritative
-    CACHED_PATH: "C:/Users/20759193/neckflix_cache/rgb128"
-    EXP_DATA_NAME: ""
-    PREPROCESS:
-      DATA_TYPE: ['DiffNormalized']
-      LABEL_TYPE: Raw                                      # the loader z-scores each window
-      DO_CHUNK: True
-      CHUNK_LENGTH: 64
-      CHUNK_STRIDE: 32                                     # 50% overlap between training windows
-      CHANNELS: ['R', 'G', 'B']
-      TRACES: ['ABP', 'CVP', 'ECG']
-      RESIZE:
-        H: 32
-        W: 32
-      NECKFLIX:
-        CHANNELS: ['R', 'G', 'B']
-        TRACES: ['ABP', 'CVP', 'ECG']
-        FILTERS:
-          posture: ['0', '45', '90']
-        RANDOM_CHUNK: False
-        LABEL_NORM: 'zscore'
-        ALLOW_MISSING: True
-        MIN_CHANNELS: 1
-        MIN_LABELS: 1
-
-VALID:
-  DATA:
-    FS: 30
-    DATASET: Neckflix
-    DATA_FORMAT: NCDHW
-    DATA_PATH: ""
-    CACHED_PATH: "C:/Users/20759193/neckflix_cache/rgb128"
-    EXP_DATA_NAME: ""
-    PREPROCESS:
-      DATA_TYPE: ['DiffNormalized']
-      LABEL_TYPE: Raw
-      DO_CHUNK: True
-      CHUNK_LENGTH: 64
-      CHUNK_STRIDE: 128
-      CHANNELS: ['R', 'G', 'B']
-      TRACES: ['ABP', 'CVP', 'ECG']
-      RESIZE:
-        H: 32
-        W: 32
-      NECKFLIX:
-        CHANNELS: ['R', 'G', 'B']
-        TRACES: ['ABP', 'CVP', 'ECG']
-        FILTERS:
-          posture: ['0', '45', '90']
-        RANDOM_CHUNK: False
-        LABEL_NORM: 'zscore'
-        ALLOW_MISSING: True
-        MIN_CHANNELS: 1
-        MIN_LABELS: 1
 
 TEST:
-  METRICS: ['MAE', 'RMSE', 'MAPE', 'MACC', 'Pearson', 'SNR', 'BA']
-  USE_LAST_EPOCH: True          # set False and pass --valid_participants for model selection
-  DATA:
-    FS: 30
-    DATASET: Neckflix
-    DO_PREPROCESS: False
-    DATA_FORMAT: NCDHW
-    DATA_PATH: ""
-    CACHED_PATH: "C:/Users/20759193/neckflix_cache/rgb128"
-    EXP_DATA_NAME: ""
-    PREPROCESS:
-      DATA_TYPE: ['DiffNormalized']
-      LABEL_TYPE: Raw
-      DO_CHUNK: True
-      CHUNK_LENGTH: 64
-      CHUNK_STRIDE: 128         # non-overlapping windows at evaluation time
-      CHANNELS: ['R', 'G', 'B']
-      TRACES: ['ABP', 'CVP', 'ECG']
-      RESIZE:
-        H: 32
-        W: 32
-      NECKFLIX:
-        CHANNELS: ['R', 'G', 'B']
-        TRACES: ['ABP', 'CVP', 'ECG']
-        FILTERS:
-          posture: ['0', '45', '90']
-        RANDOM_CHUNK: False
-        LABEL_NORM: 'zscore'
-        ALLOW_MISSING: True
-        MIN_CHANNELS: 1
-        MIN_LABELS: 1
-
-MODEL:
-  NAME: PhysMamba
-  DROP_RATE: 0.2
-
-INFERENCE:
   BATCH_SIZE: 2
-  EVALUATION_METHOD: "FFT"
-  EVALUATION_WINDOW:
-    USE_SMALLER_WINDOW: False
-    WINDOW_SIZE: 10

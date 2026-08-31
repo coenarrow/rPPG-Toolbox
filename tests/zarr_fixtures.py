@@ -51,6 +51,7 @@ def make_store(
     traces=("abp", "cvp"),
     num_frames=12,
     hw=(8, 8),
+    fps=30.0,
     frame_fill=None,
     trace_values=None,
     trace_lengths=None,
@@ -99,9 +100,10 @@ def make_store(
                 data = np.full((n_ch, t, h, w), fill, dtype=dtype)
             video.create_array("frames", data=data)
             video.create_array(
-                "timestamps_us", data=(np.arange(t) * 33_333).astype(np.int64)
+                "timestamps_us",
+                data=(np.arange(t) * round(1e6 / fps)).astype(np.int64),
             )
-            video.attrs.update({"fps": 30.0, "num_frames": int(t)})
+            video.attrs.update({"fps": float(fps), "num_frames": int(t)})
             for trace in traces:
                 length = (trace_lengths or {}).get((persp, stream, trace), t)
                 values = (trace_values or {}).get((persp, stream, trace))
@@ -137,14 +139,27 @@ def base_cfg(cache_dir, **overrides):
         "cache_dir": str(cache_dir),
         "channels": ["R", "G", "B", "I", "D"],
         "labels": ["ABP", "CVP"],
+        "target_fps": 30.0,
+        "window_seconds": 4 / 30,
+        "stride_seconds": 4 / 30,
         "window_size": 4,
         "window_stride": 4,
         "random_windows": False,
         "filters": {},
-        "label_norm": "zscore",
+        "label_norms": {"ABP": "zscore", "CVP": "zscore"},
         "allow_missing": False,
         "min_channels": 1,
         "min_labels": 1,
     }
     cfg.update(overrides)
+    # Keep the physical window and the frame count consistent: tests set
+    # window_size (the readable quantity here), and the seconds follow from it
+    # at the fixture rate, exactly as the config translation would derive them.
+    fps = cfg["target_fps"]
+    if "window_seconds" not in overrides:
+        cfg["window_seconds"] = cfg["window_size"] / fps
+    if "stride_seconds" not in overrides:
+        cfg["stride_seconds"] = cfg["window_stride"] / fps
+    if "label_norms" not in overrides:
+        cfg["label_norms"] = {label: "zscore" for label in cfg["labels"]}
     return cfg

@@ -90,3 +90,31 @@ def test_wrapper_gradients_reach_the_backbone():
     model(batch)[PREDICTIONS]["ABP"].sum().backward()
     grads = [p.grad for p in model.backbone.parameters() if p.grad is not None]
     assert grads and any(g.abs().sum() > 0 for g in grads)
+
+
+# --- head styles and the readout hook -----------------------------------
+def test_per_signal_head_style_matches_widened_output_shape():
+    """Style B: one copy of the original dense head per signal, same trunk."""
+    shared = DeepPhys(in_channels=3, out_signals=3, img_size=36)
+    per_signal = DeepPhys(in_channels=3, out_signals=3, img_size=36,
+                          head_style='per_signal')
+    x = torch.randn(4, 6, 36, 36)
+    assert shared(x).shape == per_signal(x).shape == (4, 3)
+    # S copies of the head cost S x the head parameters; the trunk is identical.
+    assert (sum(p.numel() for p in per_signal.parameters())
+            > sum(p.numel() for p in shared.parameters()))
+    assert (per_signal.motion_conv1.weight.shape
+            == shared.motion_conv1.weight.shape)
+
+
+def test_output_layers_are_the_activation_free_readout():
+    """One widened layer for style A, S per-signal ones for style B."""
+    assert len(DeepPhys(out_signals=3, img_size=36).output_layers()) == 1
+    assert DeepPhys(out_signals=3, img_size=36).output_layers()[0].bias.numel() == 3
+    assert len(DeepPhys(out_signals=3, img_size=36,
+                        head_style='per_signal').output_layers()) == 3
+
+
+def test_unknown_head_style_is_refused():
+    with pytest.raises(ValueError, match="Unknown head_style"):
+        DeepPhys(head_style='attention')

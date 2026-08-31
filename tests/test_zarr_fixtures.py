@@ -55,4 +55,7 @@ def test_base_cfg_shape(tmp_path):
     assert cfg["cache_dir"] == str(tmp_path)
     assert cfg["window_size"] == 8
     assert cfg["labels"] == ["ABP"]
-    assert cfg["label_norm"] == "zscore"
+    # The physical window follows the frame count at the fixture rate, and the
+    # norm map covers exactly the configured labels.
+    assert cfg["window_seconds"] == 8 / 30
+    assert cfg["label_norms"] == {"ABP": "zscore"}

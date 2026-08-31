@@ -15,10 +15,25 @@ import numpy as np
 import torch
 import zarr
 
-from dataset.data_loader.label_transforms import STAT_NAMES, apply_norm, finite_stats
+from dataset.data_loader.label_transforms import (
+    STAT_NAMES, apply_norm, finite_stats, resolve_label_norms,
+)
 
 # Sentinel for root attrs absent from a store.
 _MISSING = object()
+
+#: How far two frame rates may differ and still count as the same *nominal*
+#: rate. The preprocessor writes a measured rate (frames over elapsed time), not
+#: the camera's nameplate one, so a nominally 30 fps Neckflix capture is written
+#: as 29.9796 in one stream and 30.0 in another — the same camera, timed twice.
+#: 1% separates that jitter from a genuinely different rate (30 vs 60, 15 vs 30),
+#: which is the only thing worth refusing or decimating over.
+FPS_NOMINAL_TOLERANCE = 0.01
+
+
+def same_nominal_rate(left: float, right: float) -> bool:
+    """True when two measured rates are the same nominal rate."""
+    return abs(left - right) <= FPS_NOMINAL_TOLERANCE * max(left, right)
 
 
 def _validate_filters(filters):
@@ -33,6 +48,36 @@ def _validate_filters(filters):
             raise ValueError(
                 f"Overlapping include/exclude for '{attribute}': {overlap}"
             )
+
+
+def _sample(array: np.ndarray, offsets: np.ndarray, *, axis: int) -> np.ndarray:
+    """Take ``offsets`` along ``axis``, skipping the copy when they are a no-op.
+
+    Decimation is the exception, not the rule: most caches are already at the
+    target rate, and there the offsets are a plain arange over the full span.
+    """
+    if offsets.shape[0] == array.shape[axis] and offsets[-1] == offsets.shape[0] - 1:
+        return array
+    return np.take(array, offsets, axis=axis)
+
+
+def _sample_window(array: np.ndarray, offsets, weights, *, axis: int) -> np.ndarray:
+    """Resample one window along ``axis`` per the window plan.
+
+    ``weights is None`` is the integer path (identity or decimation, via
+    :func:`_sample`); otherwise ``offsets`` is the plan's ``(lo, hi)`` pair and
+    the result is the linear blend ``(1 - w) * a[lo] + w * a[hi]`` — the
+    upsampling path, float-valued by construction.
+    """
+    if weights is None:
+        return _sample(array, offsets, axis=axis)
+    lo, hi = offsets
+    low = np.take(array, lo, axis=axis).astype(np.float32)
+    high = np.take(array, hi, axis=axis).astype(np.float32)
+    shape = [1] * low.ndim
+    shape[axis] = -1
+    blend = weights.reshape(shape)
+    return low + (high - low) * blend
 
 
 class BaseZarrDataset(ABC, torch.utils.data.Dataset):
@@ -52,13 +97,27 @@ class BaseZarrDataset(ABC, torch.utils.data.Dataset):
         ...
 
     def _resolve_streams(self, channels):
-        """Map config channel names through ``channel_map``, preserving order."""
+        """Map channel names through ``channel_map``; unknown -> ``None`` (zero-fill).
+
+        A demanded channel this dataset can never provide is not an error: it
+        is delivered as zeros with ``channel_mask=False`` — the convention the
+        loader already uses for a stream a store happens to lack, extended to
+        "this *dataset* has no such stream". That is what lets a checkpoint
+        pretrained on RGBID run on an RGB-only dataset. One warning at
+        construction; the per-sample masks carry the truth from there.
+        """
         cmap = self.channel_map
-        plan = []
-        for ch in channels:
-            if ch not in cmap:
-                raise ValueError(f"Unknown channel: {ch}. Valid: {list(cmap)}")
-            plan.append(cmap[ch])
+        plan = [cmap.get(ch) for ch in channels]
+        unknown = [ch for ch, entry in zip(channels, plan) if entry is None]
+        if len(unknown) == len(list(channels)):
+            raise ValueError(
+                f"None of the demanded channels {list(channels)} exist in this "
+                f"dataset (channel_map covers {list(cmap)}).")
+        if unknown:
+            warnings.warn(
+                f"Channel(s) {unknown} are not provided by {type(self).__name__} "
+                f"(channel_map covers {list(cmap)}); they will be delivered as "
+                "zeros with channel_mask=False.")
         return plan
 
     def __init__(self, cfg: dict) -> None:
@@ -66,19 +125,32 @@ class BaseZarrDataset(ABC, torch.utils.data.Dataset):
         self.cache_root = Path(cfg["cache_dir"])
         self.channels = cfg["channels"]
         self.labels = cfg["labels"]
+        # The window is physical (duration + target rate); the frame count is
+        # what those two derive, and only holds at the target rate. A store
+        # recorded faster is decimated down to it, per sample.
+        self.target_fps = float(cfg["target_fps"])
+        self.window_seconds = float(cfg["window_seconds"])
+        self.stride_seconds = float(cfg.get("stride_seconds") or self.window_seconds)
         self.window_size = cfg["window_size"]
         self.window_stride = cfg.get("window_stride", self.window_size)
         self.random_windows = cfg.get("random_windows", False)
         self.filters = cfg.get("filters", {})
-        self.label_norm = cfg.get("label_norm", "zscore")
-        if self.label_norm not in ("zscore", "minmax"):
+        self.label_norms = resolve_label_norms(self.labels, cfg.get("label_norms"))
+        # 'refuse' (default) keeps the historical behaviour: a store slower
+        # than the target rate is an error. 'interpolate' opts into linear
+        # frame/label blending — interpolation, never duplication, because
+        # duplicated frames make DiffNormalized identically zero.
+        self.upsampling = str(cfg.get("upsampling", "refuse"))
+        if self.upsampling not in ("refuse", "interpolate"):
             raise ValueError(
-                f"label_norm must be 'zscore' or 'minmax', got {self.label_norm!r}"
-            )
+                f"upsampling must be 'refuse' or 'interpolate', got "
+                f"{self.upsampling!r}")
+        self._native_fps_cache: dict[tuple[str, str], float] = {}
         _validate_filters(self.filters)
 
         self.stream_plan = self._resolve_streams(self.channels)
-        self.required_streams = sorted({s[0].lower() for s in self.stream_plan})
+        self.required_streams = sorted(
+            {s[0].lower() for s in self.stream_plan if s is not None})
 
         self.allow_missing = cfg.get("allow_missing", False)
         self.min_channels = cfg.get("min_channels", 1)
@@ -92,6 +164,7 @@ class BaseZarrDataset(ABC, torch.utils.data.Dataset):
         self.samples = self.discover_samples()
         self._filter_by_attribute(self.filters)
         self._load_windows()
+        self._warn_zero_coverage()
 
     def _scan_cache(self) -> dict:
         """Walk external zarr stores in ``cache_root`` into the recording dict.
@@ -296,25 +369,153 @@ class BaseZarrDataset(ABC, torch.utils.data.Dataset):
         assert length is not None, f"no streams for {recording_name}/{perspective}"
         return int(length)
 
-    def _load_windows(self) -> None:
-        """Build the window index from samples (frame units).
+    def _native_fps(self, recording_name: str, perspective: str) -> float:
+        """The store's own frame rate for one sample, from the stream video attrs.
 
-        Strided mode emits ``range(0, frame_count - window_size + 1,
-        window_stride)`` starts; random mode emits a single ``None``-start
-        entry per sample (start chosen at access time). Samples shorter than
-        ``window_size`` are skipped in both modes.
+        The rate is a fact about the data, so it is read rather than
+        configured. Streams within a perspective are index-aligned by the
+        preprocessor, so they must agree on the *nominal* rate — but not on the
+        measured one: the same 30 fps capture is written as 29.9796 by one
+        stream and 30.0 by another, and 320 of the 332 stores in the current
+        Neckflix cache disagree with themselves that way. Only a disagreement wider than the
+        jitter band means the alignment the cache contract rests on is untrue,
+        and that is refused loudly. The slowest stream is taken as the sample's
+        rate, matching ``_get_frame_count``, which already takes the shortest.
+        """
+        key = (recording_name, str(perspective))
+        if key in self._native_fps_cache:
+            return self._native_fps_cache[key]
+
+        store_path = self.cache_root / f"{recording_name}.zarr"
+        cam = zarr.open_group(str(store_path), mode="r")[str(perspective)]
+        rates: dict[str, float] = {}
+        for stream_name in self._sample_streams(recording_name, str(perspective)):
+            try:
+                rates[stream_name] = float(cam[stream_name]["video"].attrs["fps"])
+            except KeyError as err:
+                raise RuntimeError(
+                    f"{store_path.name}/{perspective}/{stream_name}: missing the "
+                    "'fps' video attr, so the window duration cannot be converted "
+                    "to frames; regenerate this store with the dataset's "
+                    "preprocessor."
+                ) from err
+        slowest, fastest = min(rates.values()), max(rates.values())
+        if not same_nominal_rate(slowest, fastest):
+            raise RuntimeError(
+                f"{store_path.name}/{perspective}: streams are at genuinely "
+                f"different frame rates ({rates}), but the cache contract says "
+                "their frames are index-aligned; regenerate this store."
+            )
+        native = slowest
+        if (native < self.target_fps
+                and not same_nominal_rate(native, self.target_fps)
+                and self.upsampling != "interpolate"):
+            raise ValueError(
+                f"{store_path.name}/{perspective} was recorded at {native} fps but "
+                f"the config asks for FS={self.target_fps}. Refusing to upsample "
+                "by default: duplicated frames make DiffNormalized inputs "
+                "identically zero — a silently dark motion branch. Either lower "
+                "INTERFACE.FS to the cache's native rate, or opt into linear "
+                "interpolation with INTERFACE.UPSAMPLING: interpolate."
+            )
+        self._native_fps_cache[key] = native
+        return native
+
+    def _window_plan(self, recording_name: str, perspective: str):
+        """``(span, stride, offsets, weights)`` in the store's own frame units.
+
+        ``span`` is how many native frames one ``WINDOW_SECONDS`` window covers
+        and ``offsets`` picks ``window_size`` of them at the target rate.
+        ``weights`` is ``None`` for the identity and decimation paths (integer
+        nearest-index take); for an upsampled store (opted in via
+        ``upsampling: interpolate``) ``offsets`` is a ``(lo, hi)`` index pair
+        and ``weights`` the linear blend between them — interpolation, never
+        frame duplication.
+
+        A store at the target's *nominal* rate is taken to be at exactly the
+        target rate: the sub-percent gap between a measured 29.9796 and a
+        configured 30 is timing jitter, and resampling on it would jitter the
+        window contents for nothing. So the whole current Neckflix cache takes
+        the identity path — a plain contiguous slice, exactly as before — and
+        resampling engages only across a genuinely different rate.
+
+        Sampling (rather than filtering) is what keeps ``DATA_TYPE`` honest:
+        the consumer-side transforms run on the emitted window, so a diff is
+        taken between successive *sampled* frames and DiffNormalized keeps its
+        1/target-fps meaning by construction.
+        """
+        native = self._native_fps(recording_name, perspective)
+        if same_nominal_rate(native, self.target_fps):
+            return (self.window_size, max(self.window_stride, 1),
+                    np.arange(self.window_size), None)
+        ratio = native / self.target_fps
+        if ratio < 1.0:                    # slower store: linear interpolation
+            span = max(int(round(self.window_seconds * native)), 2)
+            stride = max(int(round(self.stride_seconds * native)), 1)
+            positions = np.arange(self.window_size) * ratio
+            lo = np.clip(np.floor(positions).astype(int), 0, span - 1)
+            hi = np.clip(lo + 1, 0, span - 1)
+            weights = (positions - lo).astype(np.float32)
+            return span, stride, (lo, hi), weights
+        span = max(int(round(self.window_seconds * native)), self.window_size)
+        stride = max(int(round(self.stride_seconds * native)), 1)
+        offsets = np.rint(np.arange(self.window_size) * ratio).astype(int)
+        offsets = np.clip(offsets, 0, span - 1)
+        return span, stride, offsets, None
+
+    def _load_windows(self) -> None:
+        """Build the window index from samples, in each store's own frame units.
+
+        Strided mode emits ``range(0, frame_count - span + 1, stride)`` starts;
+        random mode emits a single ``None``-start entry per sample (start chosen
+        at access time). Samples shorter than one window are skipped in both
+        modes. Starts stay in native frames so ``start_frame`` keeps naming a
+        real index in the store it came from.
         """
         windows: list[tuple[str, str, int | None]] = []
         for recording_name, perspective in self.samples:
             frame_count = self._get_frame_count(recording_name, perspective)
-            if frame_count < self.window_size:
+            span, stride, _, _ = self._window_plan(recording_name, perspective)
+            if frame_count < span:
                 continue
             if self.random_windows:
                 windows.append((recording_name, perspective, None))
                 continue
-            for start in range(0, frame_count - self.window_size + 1, self.window_stride):
+            for start in range(0, frame_count - span + 1, stride):
                 windows.append((recording_name, perspective, int(start)))
         self.windows = windows
+
+    def _warn_zero_coverage(self) -> None:
+        """One warning per demanded channel/trace no admitted sample carries.
+
+        Benign at inference (zeros + a False mask, by design); in training it
+        means the model is being taught to ignore that channel, or will never
+        receive gradient for that trace. A warning rather than an error,
+        deliberately: fine-tuning a wider pretrained model on narrower data is
+        legitimate. Channels the dataset can never provide were already warned
+        about at construction (``_resolve_streams``) and are skipped here.
+        """
+        if not self.samples:
+            return
+        streams_with_data: set[str] = set()
+        for present in self.present_streams.values():
+            streams_with_data.update(present)
+        for ch_name, plan_entry in zip(self.channels, self.stream_plan):
+            if plan_entry is not None and plan_entry[0].lower() not in streams_with_data:
+                warnings.warn(
+                    f"Channel {ch_name!r} is absent from every admitted sample: "
+                    "it will be all zeros with channel_mask=False throughout. "
+                    "Fine for inference with a wider checkpoint; in training it "
+                    "teaches the model to ignore the channel.")
+        labels_with_data: set[str] = set()
+        for present in self.present_labels.values():
+            labels_with_data.update(present)
+        for label in self.labels:
+            if label not in labels_with_data:
+                warnings.warn(
+                    f"Trace {label!r} is absent from every admitted sample: it "
+                    "will carry label_mask=False throughout, so it is never "
+                    "trained or scored on this data.")
 
     def __len__(self) -> int:
         return len(self.windows)
@@ -354,14 +555,21 @@ class BaseZarrDataset(ABC, torch.utils.data.Dataset):
         self._stream_hw_found = found
         fallback = next(iter(found.values()))
         self.stream_hw = {s: found.get(s, fallback) for s in self.required_streams}
+        # Zero planes for channels the dataset can never provide (a None entry
+        # in the stream plan) are sized like the streams it can.
+        self.fallback_hw = fallback
         self._stream_hw_complete = True
 
-    def _window_trace(self, stream, trace_key: str, start: int, end: int) -> np.ndarray:
-        """Slice one trace copy, NaN-right-padded to the window.
+    def _window_trace(self, stream, trace_key: str, start: int, end: int,
+                      offsets, weights) -> np.ndarray:
+        """One trace copy over the native span, NaN-padded then resampled.
 
         Per-stream trailing-NaN trimming can leave a trace shorter than its
         stream's ``num_frames``; a window overlapping that tail yields a short
-        slice, padded here so copies always align.
+        slice, padded here so copies always align. Labels are index-aligned to
+        frames in the cache, so they resample with the *same* plan the frames
+        do and stay aligned afterwards (in float64, so a NaN neighbour keeps
+        poisoning its blended positions — absorbed by the post-norm zeroing).
         """
         data = stream[trace_key]["data"]
         stop = min(end, int(data.shape[0]))
@@ -369,7 +577,11 @@ class BaseZarrDataset(ABC, torch.utils.data.Dataset):
         if sliced.shape[0] < (end - start):
             pad = np.full((end - start) - sliced.shape[0], np.nan)
             sliced = np.concatenate([sliced, pad])
-        return sliced
+        if weights is None:
+            return _sample(sliced, offsets, axis=0)
+        lo, hi = offsets
+        low, high = sliced[lo], sliced[hi]
+        return low + (high - low) * weights.astype(np.float64)
 
     @staticmethod
     def _finite_mean(arrays: list[np.ndarray]) -> np.ndarray:
@@ -390,7 +602,7 @@ class BaseZarrDataset(ABC, torch.utils.data.Dataset):
 
         frames: {channel: (1, T, H, W) float32} raw pixels, zeros where the
         stream is absent; labels: {label: (T,) float32} normalised per
-        ``label_norm`` with finite-only stats; label_stats:
+        that signal's mode in ``label_norms`` with finite-only stats; label_stats:
         physical-unit stats that normalised each window; channel_mask /
         label_mask: scalar bools; metadata: recording_id / camera_id /
         start_frame.
@@ -402,16 +614,17 @@ class BaseZarrDataset(ABC, torch.utils.data.Dataset):
         present_labels = set(
             self.present_labels.get((rec_name, str(camera_id)), self.labels)
         )
+        span, _, offsets, weights = self._window_plan(rec_name, str(camera_id))
 
         if start is None:  # random window
             n_frames = self._get_frame_count(rec_name, camera_id)
-            max_start = n_frames - self.window_size
+            max_start = n_frames - span
             start = (
                 int(torch.randint(0, max_start + 1, (1,)).item())
                 if max_start > 0
                 else 0
             )
-        end = start + self.window_size
+        end = start + span
 
         store_path = self.cache_root / f"{rec_name}.zarr"
         root = zarr.open_group(str(store_path), mode="r")
@@ -425,18 +638,31 @@ class BaseZarrDataset(ABC, torch.utils.data.Dataset):
         for stream_name in present_streams:
             stream = cam_group[stream_name]
             video = stream["video"]["frames"]  # (C, T, H, W) raw frames
-            stream_frames[stream_name] = np.asarray(video[:, start:end])
+            # Read the contiguous native span (chunk-friendly), then resample
+            # it to the target rate per the window plan.
+            stream_frames[stream_name] = _sample_window(
+                np.asarray(video[:, start:end]), offsets, weights, axis=1)
             for label_name in self.labels:
                 trace_key = label_name.lower()
                 if trace_key in stream:
                     label_accumulators[label_name].append(
-                        self._window_trace(stream, trace_key, start, end)
+                        self._window_trace(stream, trace_key, start, end,
+                                           offsets, weights)
                     )
 
-        # --- Dense frames: every channel, zeros where its stream is absent ---
+        # --- Dense frames: every channel, zeros where its stream is absent
+        # (or where the dataset has no such stream at all: a None plan entry) ---
         frames: dict[str, torch.Tensor] = {}
         channel_mask: dict[str, torch.Tensor] = {}
-        for ch_name, (s_name, ch_idx) in zip(self.channels, self.stream_plan):
+        for ch_name, plan_entry in zip(self.channels, self.stream_plan):
+            if plan_entry is None:
+                h, w = self.fallback_hw
+                frames[ch_name] = torch.zeros(
+                    (1, self.window_size, h, w), dtype=torch.float32
+                )
+                channel_mask[ch_name] = torch.tensor(False, dtype=torch.bool)
+                continue
+            s_name, ch_idx = plan_entry
             present = s_name in stream_frames
             if present:
                 arr = stream_frames[s_name][ch_idx][np.newaxis]  # (1, T, H, W)
@@ -464,7 +690,7 @@ class BaseZarrDataset(ABC, torch.utils.data.Dataset):
             if present:
                 stats = finite_stats(raw)
                 normed = torch.where(
-                    finite, apply_norm(raw, stats, self.label_norm),
+                    finite, apply_norm(raw, stats, self.label_norms[label_name]),
                     raw.new_zeros(()),
                 )
             else:

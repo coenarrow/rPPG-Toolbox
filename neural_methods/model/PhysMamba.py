@@ -149,8 +149,13 @@ def conv_block(in_channels, out_channels, kernel_size, stride, padding, bn=True,
 
 
 class PhysMamba(DictModel):
+    #: The slow stream strides T by 4 and the two upsamples put it back; a
+    #: window that is not a multiple of 4 comes out a different length than it
+    #: went in.
+    temporal_divisor = 4
+
     def __init__(self, channels=("R", "G", "B"), traces=("PPG",), frame_transform=None,
-                 theta=0.5, drop_rate1=0.25, drop_rate2=0.5):
+                 fs=0.0, theta=0.5, drop_rate1=0.25, drop_rate2=0.5):
         """Definition of PhysMamba.
 
         Args:
@@ -158,8 +163,10 @@ class PhysMamba(DictModel):
           traces: ordered signals to predict, one output plane each.
           frame_transform: raw-pixel preprocessing (resize + ``DATA_TYPE``);
             its channel multiplier is folded into the stem's input width.
+          fs: frame rate the model is trained at, recorded on the checkpoint.
         """
-        super().__init__(channels=channels, traces=traces, frame_transform=frame_transform)
+        super().__init__(channels=channels, traces=traces,
+                         frame_transform=frame_transform, fs=fs)
 
         self.ConvBlock1 = conv_block(self.in_channels, 16, [1, 5, 5], stride=1, padding=[0, 2, 2])
         self.ConvBlock2 = conv_block(16, 32, [3, 3, 3], stride=1, padding=1)
@@ -209,6 +216,10 @@ class PhysMamba(DictModel):
         # Spatial-only pooling: ``None`` keeps the temporal axis at whatever
         # length the window happens to be, so one model serves any CHUNK_LENGTH.
         self.poolspa = nn.AdaptiveAvgPool3d((None, 1, 1))
+
+    def output_layers(self):
+        """The final 1x1x1 conv is the readout: one output plane per trace."""
+        return (self.ConvBlockLast,)
 
     def _build_block(self, channels, theta):
         return nn.Sequential(

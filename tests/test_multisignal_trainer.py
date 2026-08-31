@@ -5,7 +5,6 @@ test. What it pins down is that the batch dict survives the whole round trip —
 loader, collate, model, masked loss, per-signal metrics, saved outputs — and
 that a recording missing a trace is scored on the traces it does have.
 """
-import argparse
 import pickle
 
 import numpy as np
@@ -13,7 +12,7 @@ import pytest
 import torch
 from torch.utils.data import DataLoader
 
-from config import get_config
+from config import load_config
 from dataset.data_loader.NeckflixLoader import NeckflixDataset
 from dataset.data_loader.neckflix_config import zarr_config
 from neural_methods.batch import PREDICTIONS, move_to_device
@@ -25,6 +24,7 @@ from tests.zarr_fixtures import make_store
 SMOKE_CONFIG = "configs/neckflix/NECKFLIX_PHYSMAMBA_SMOKE.yaml"
 WINDOW = 16
 FRAME_SIZE = 32
+FS = 30        # the synthetic stores' native rate
 
 
 @pytest.fixture
@@ -41,37 +41,41 @@ def cache(tmp_path):
 
 @pytest.fixture
 def config(cache):
-    cfg = get_config(argparse.Namespace(config_file=SMOKE_CONFIG))
-    cfg.defrost()
-    for block in (cfg.TRAIN.DATA, cfg.VALID.DATA, cfg.TEST.DATA):
-        block.CACHED_PATH = str(cache)
-        block.PREPROCESS.CHUNK_LENGTH = WINDOW
-        block.PREPROCESS.CHUNK_STRIDE = WINDOW
-        block.PREPROCESS.TRACES = ["ABP", "CVP"]
-        block.PREPROCESS.CHANNELS = ["R", "G", "B"]
-        block.PREPROCESS.RESIZE.H = FRAME_SIZE
-        block.PREPROCESS.RESIZE.W = FRAME_SIZE
+    cfg = load_config(SMOKE_CONFIG)
+    cfg.DATA.CACHED_PATH = str(cache)
+    cfg.INTERFACE.WINDOW_SECONDS = WINDOW / FS  # WINDOW frames at the fixture rate
+    cfg.INTERFACE.CHANNELS = ["R", "G", "B"]
+    cfg.INTERFACE.TRACES = ["ABP", "CVP"]
+    cfg.INTERFACE.RESIZE.H = FRAME_SIZE
+    cfg.INTERFACE.RESIZE.W = FRAME_SIZE
+    for split in cfg.DATA.SPLITS.values():
+        split.STRIDE_SECONDS = WINDOW / FS
+    # TRACES is narrowed above, so the loss registry has to be narrowed with
+    # it: naming a signal the run does not predict is an error, not a no-op.
+    cfg.TRAIN.LOSS.pop("ECG", None)
     cfg.TRAIN.EPOCHS = 1
     cfg.TRAIN.BATCH_SIZE = 2
-    cfg.INFERENCE.BATCH_SIZE = 2
+    cfg.TEST.BATCH_SIZE = 2
     cfg.TEST.USE_LAST_EPOCH = True
     cfg.TEST.METRICS = ['MAE', 'RMSE', 'MACC']       # no BA: skip plot writing
+    cfg.LOG.PATH = str(cache / "logs")
+    cfg.LOG.EXP_NAME = "test_exp"
     cfg.MODEL.MODEL_DIR = str(cache / "models")
     cfg.TEST.OUTPUT_SAVE_DIR = str(cache / "outputs")
-    cfg.freeze()
     return cfg
 
 
 def loaders_for(config, *, train_exclude=("P003",), test_include=("P003",)):
-    def loader(block, batch_size, **kwargs):
-        dataset = NeckflixDataset(zarr_config(block, random_windows=False, **kwargs))
+    def loader(split, batch_size, **kwargs):
+        dataset = NeckflixDataset(zarr_config(config, split, random_windows=False,
+                                              **kwargs))
         return DataLoader(dataset, batch_size=batch_size, shuffle=False,
                           num_workers=0, drop_last=False)
     return {
-        "train": loader(config.TRAIN.DATA, config.TRAIN.BATCH_SIZE,
+        "train": loader("train", config.TRAIN.BATCH_SIZE,
                         exclude_participants=train_exclude),
         "valid": None,
-        "test": loader(config.TEST.DATA, config.INFERENCE.BATCH_SIZE,
+        "test": loader("test", config.TEST.BATCH_SIZE,
                        include_participants=test_include),
     }
 
@@ -81,8 +85,8 @@ def test_registry_holds_the_dict_contract_models():
     assert {"PhysMamba", "DeepPhys"} <= set(MODEL_REGISTRY)
 
 
-def test_build_model_reads_channels_traces_and_transform(config):
-    model = build_model(config, config.TRAIN.DATA)
+def test_build_model_reads_the_interface(config):
+    model = build_model(config)
     assert model.channels == ("R", "G", "B")
     assert model.traces == ("ABP", "CVP")
     assert model.frame_transform.size == (FRAME_SIZE, FRAME_SIZE)
@@ -90,11 +94,9 @@ def test_build_model_reads_channels_traces_and_transform(config):
 
 
 def test_build_model_rejects_an_unregistered_model(config):
-    config.defrost()
     config.MODEL.NAME = "RhythmFormer"
-    config.freeze()
     with pytest.raises(ValueError, match="does not speak the Neckflix dict contract"):
-        build_model(config, config.TRAIN.DATA)
+        build_model(config)
 
 
 # --- end to end ----------------------------------------------------------
@@ -105,7 +107,12 @@ def test_train_then_test_round_trip(config, cache, capsys):
 
     trainer = MultiSignalTrainer(config, loaders, rank=0, world_size=1, debug=False)
     trainer.train(loaders)
-    assert (cache / "models" / "neckflix_physmamba_smoke_Epoch0.pth").exists()
+    checkpoint = cache / "models" / "neckflix_physmamba_smoke_Epoch0.pth"
+    assert checkpoint.exists()
+    # The checkpoint carries the interface it was trained against.
+    payload = torch.load(checkpoint, map_location="cpu")
+    assert payload["interface"]["CHANNELS"] == ["R", "G", "B"]
+    assert payload["model_name"] == "PhysMamba"
 
     report = trainer.test(loaders)
     # P003 has no ABP, so only CVP is scored on the held-out split.
@@ -128,7 +135,7 @@ def test_saved_outputs_carry_signal_keyed_windows(config, cache):
     payload = pickle.loads(path.read_bytes())
     assert payload["traces"] == ["ABP", "CVP"]
     assert payload["channels"] == ["R", "G", "B"]
-    assert payload["label_norm"] == "zscore"
+    assert payload["label_norms"] == {"ABP": "raw", "CVP": "raw"}
     signals = {record["signal"] for record in payload["windows"]}
     assert signals == {"ABP", "CVP"}
     record = payload["windows"][0]
@@ -158,20 +165,19 @@ def test_model_output_still_carries_the_loader_keys(config):
 
 def test_validation_split_drives_best_epoch_selection(config, cache):
     """USE_LAST_EPOCH False + a held-out valid split exercises valid()."""
-    config.defrost()
     config.TEST.USE_LAST_EPOCH = False
     config.TRAIN.EPOCHS = 2
-    config.freeze()
 
-    def loader(block, batch_size, **kwargs):
-        dataset = NeckflixDataset(zarr_config(block, random_windows=False, **kwargs))
+    def loader(split, batch_size, **kwargs):
+        dataset = NeckflixDataset(zarr_config(config, split, random_windows=False,
+                                              **kwargs))
         return DataLoader(dataset, batch_size=batch_size, shuffle=False,
                           num_workers=0, drop_last=False)
 
     loaders = {
-        "train": loader(config.TRAIN.DATA, 2, exclude_participants=("P002", "P003")),
-        "valid": loader(config.VALID.DATA, 2, include_participants=("P002",)),
-        "test": loader(config.TEST.DATA, 2, include_participants=("P003",)),
+        "train": loader("train", 2, exclude_participants=("P002", "P003")),
+        "valid": loader("valid", 2, include_participants=("P002",)),
+        "test": loader("test", 2, include_participants=("P003",)),
     }
     trainer = MultiSignalTrainer(config, loaders, rank=0, world_size=1, debug=False)
     trainer.train(loaders)
@@ -197,27 +203,50 @@ def test_only_test_mode_needs_no_train_loader(config, cache):
     loaders = loaders_for(config, test_include=("P001",))
     MultiSignalTrainer(config, loaders, rank=0, world_size=1, debug=False).train(loaders)
 
-    config.defrost()
-    config.TOOLBOX_MODE = "only_test"
-    config.INFERENCE.MODEL_PATH = str(
+    config.MODE = "only_test"
+    config.TEST.MODEL_PATH = str(
         cache / "models" / "neckflix_physmamba_smoke_Epoch0.pth")
-    config.freeze()
     trainer = MultiSignalTrainer(config, {"test": loaders["test"]},
                                  rank=0, world_size=1, debug=False)
     assert trainer.test({"test": loaders["test"]}) is not None
 
 
-def test_physical_unit_error_is_the_normalised_error_times_the_window_scale(config):
-    """z-score inverse is linear, so the mmHg error is MAE x that window's std."""
+def _stats(mean, std, low, high):
+    import torch as _torch
+    return {"mean": _torch.tensor(mean), "std": _torch.tensor(std),
+            "min": _torch.tensor(low), "max": _torch.tensor(high)}
+
+
+def test_a_raw_signal_is_already_physical_and_inverts_by_identity(config):
+    """ABP is absolute-class, so the model predicts mmHg and nothing is undone."""
     import torch as _torch
 
+    loaders = loaders_for(config, test_include=("P001",))
+    trainer = MultiSignalTrainer(config, loaders, rank=0, world_size=1, debug=False)
+    assert trainer.label_norms["ABP"] == "raw"
+    sample = {
+        "predictions": {"ABP": _torch.tensor([88.0, 121.0, 79.0, 95.0])},
+        "labels": {"ABP": _torch.tensor([90.0, 120.0, 80.0, 96.0])},
+        "label_stats": {"ABP": _stats(96.5, 18.0, 80.0, 120.0)},
+    }
+    physical_pred, physical_label = trainer._to_physical(sample, "ABP")
+    assert np.allclose(physical_pred, [88.0, 121.0, 79.0, 95.0])
+    assert np.allclose(physical_label, [90.0, 120.0, 80.0, 96.0])
+    # The mmHg error is the error, full stop -- this is absolute-level accuracy.
+    assert float(np.mean(np.abs(physical_pred - physical_label))) == pytest.approx(1.25)
+
+
+def test_a_zscored_signal_scales_by_the_windows_own_std(config):
+    """z-score inverse is linear, so the physical error is MAE x that window's std."""
+    import torch as _torch
+
+    config.INTERFACE.LABEL_NORM = {"ABP": "zscore"}
     loaders = loaders_for(config, test_include=("P001",))
     trainer = MultiSignalTrainer(config, loaders, rank=0, world_size=1, debug=False)
     sample = {
         "predictions": {"ABP": _torch.tensor([0.0, 1.0, -1.0, 0.5])},
         "labels": {"ABP": _torch.tensor([0.0, 0.0, 0.0, 0.0])},
-        "label_stats": {"ABP": {"mean": _torch.tensor(90.0), "std": _torch.tensor(12.0),
-                                "min": _torch.tensor(70.0), "max": _torch.tensor(130.0)}},
+        "label_stats": {"ABP": _stats(90.0, 12.0, 70.0, 130.0)},
     }
     physical_pred, physical_label = trainer._to_physical(sample, "ABP")
     assert np.allclose(physical_label, 90.0)
@@ -234,21 +263,19 @@ def test_test_report_prints_both_normalised_and_physical_errors(config, capsys):
     trainer.train(loaders)
     trainer.test(loaders)
     printed = capsys.readouterr().out
-    assert "(normalised units)" in printed
-    assert "(mmHg, at the window's own scale)" in printed
+    assert "(raw units)" in printed
+    assert "(mmHg, physical units, predicted directly)" in printed
 
 
 def test_unknown_label_norm_is_rejected_at_construction(config):
-    """The loader rejects it first; the trainer guards the same key independently,
-    since it has to pick the matching inverse for the physical-unit report."""
+    """One resolver validates the key, and both the loader and the trainer use it —
+    the trainer needs it to pick the matching inverse for the physical report."""
     loaders = loaders_for(config)                      # built while the norm is valid
-    config.defrost()
-    config.TEST.DATA.PREPROCESS.NECKFLIX.LABEL_NORM = "robust"
-    config.freeze()
-    with pytest.raises(ValueError, match="Unknown LABEL_NORM"):
+    config.INTERFACE.LABEL_NORM = {"ABP": "robust"}
+    with pytest.raises(ValueError, match="LABEL_NORM for ABP"):
         MultiSignalTrainer(config, loaders, rank=0, world_size=1, debug=False)
-    with pytest.raises(ValueError, match="label_norm must be"):
-        NeckflixDataset(zarr_config(config.TEST.DATA))
+    with pytest.raises(ValueError, match="LABEL_NORM for ABP"):
+        NeckflixDataset(zarr_config(config, "test"))
 
 
 def test_epoch_mean_loss_is_printed(config, capsys):

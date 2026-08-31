@@ -1,0 +1,35 @@
+# CPU/laptop smoke variant of NECKFLIX_PHYSFORMER.yaml: short windows, 64x64
+# frames (resized consumer-side from the 128x128 cache), one epoch. Use it to
+# check the pipeline runs end-to-end before submitting the real config.
+#
+# The architecture block is deliberately inherited unchanged — only the
+# window, the frame size and the epoch count shrink, so the smoke run
+# exercises the same tokenization path. At 64x64 the token grid is 2x2 instead
+# of the published 4x4.
+#
+#   uv run python main.py --limit_windows 8 --test_participants P015 \
+#       --config_file configs/neckflix/NECKFLIX_PHYSFORMER_SMOKE.yaml
+BASE: [NECKFLIX_PHYSFORMER.yaml]
+DEVICE: cpu
+LOG:
+  PATH: "runs/neckflix_physformer_smoke"
+
+DATA:
+  SPLITS:
+    TRAIN:
+      STRIDE_SECONDS: 1.066667
+
+INTERFACE:
+  WINDOW_SECONDS: 2.133333      # 64 frames @ 30 fps (32/15 s)
+  RESIZE:
+    H: 64
+    W: 64
+
+TRAIN:
+  BATCH_SIZE: 2
+  EPOCHS: 1
+  USE_AMP: False
+  MODEL_FILE_NAME: neckflix_physformer_smoke
+
+TEST:
+  BATCH_SIZE: 2

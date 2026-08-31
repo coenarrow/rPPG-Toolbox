@@ -31,7 +31,8 @@ def _window(signal, recording, start, *, mean=90.0, std=12.0, offset=0.0, n=64):
 
 def _payload(windows, label_norm="zscore"):
     return {"windows": windows, "traces": ["ABP", "CVP"], "channels": ["R", "G", "B"],
-            "fs": FS, "label_norm": label_norm}
+            "fs": FS,
+            "label_norms": {w["signal"]: label_norm for w in windows}}
 
 
 def test_window_table_has_one_row_per_record():

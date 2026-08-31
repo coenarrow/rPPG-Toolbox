@@ -75,7 +75,7 @@ def _dict_windows(batch):
         if missing:
             raise ValueError(
                 f"The unsupervised methods need channels {list(RGB_CHANNELS)}; the "
-                f"batch is missing {missing}. Set PREPROCESS.CHANNELS to include them."
+                f"batch is missing {missing}. Set INTERFACE.CHANNELS to include them."
             )
         absent = [ch for ch in RGB_CHANNELS if not bool(sample[CHANNEL_MASK][ch])]
         if absent:
@@ -95,19 +95,19 @@ def _dict_windows(batch):
 
 def _window_size(config, n_frames):
     """Evaluation window length in frames, clipped to what the clip provides."""
-    window_cfg = config.INFERENCE.EVALUATION_WINDOW
+    window_cfg = config.TEST.EVALUATION_WINDOW
     if not window_cfg.USE_SMALLER_WINDOW:
         return n_frames
-    return min(window_cfg.WINDOW_SIZE * config.UNSUPERVISED.DATA.FS, n_frames)
+    return min(int(window_cfg.WINDOW_SIZE * config.INTERFACE.FS), n_frames)
 
 
 def _hr_method(config):
-    method = config.INFERENCE.EVALUATION_METHOD
+    method = config.TEST.EVALUATION_METHOD
     if method == "peak detection":
         return "Peak"
     if method == "FFT":
         return "FFT"
-    raise ValueError(f"Inference evaluation method name wrong: {method!r}")
+    raise ValueError(f"TEST.EVALUATION_METHOD name wrong: {method!r}")
 
 
 def _accumulate(config, data_loader, method_names):
@@ -120,7 +120,7 @@ def _accumulate(config, data_loader, method_names):
     Returns ``{method: {signal: {"gt"/"pred"/"snr"/"macc": [...]}}}``.
     """
     hr_method = _hr_method(config)
-    fs = config.UNSUPERVISED.DATA.FS
+    fs = config.INTERFACE.FS
     groups = {method: defaultdict(lambda: defaultdict(list)) for method in method_names}
 
     for test_batch in tqdm(data_loader, ncols=80):
@@ -163,10 +163,10 @@ def _report(config, method_name, signal_groups):
     """Print and return the metric table for one method."""
     print("Used Unsupervised Method: " + method_name)
     # Filename ID to be used in any results files (e.g., Bland-Altman plots) that get saved
-    if config.TOOLBOX_MODE != "unsupervised_method":
+    if config.MODE != "unsupervised_method":
         raise ValueError(
             "unsupervised_predictor.py evaluation only supports unsupervised_method!")
-    filename_id = method_name + "_" + config.UNSUPERVISED.DATA.DATASET
+    filename_id = method_name + "_" + config.DATA.DATASET
 
     if not signal_groups:
         print("No evaluable windows found - check the label masks and channels.")
@@ -178,7 +178,7 @@ def _report(config, method_name, signal_groups):
         group = signal_groups[signal]
         report[signal] = report_hr_metrics(
             group["gt"], group["pred"], group["snr"], group["macc"],
-            metrics=config.UNSUPERVISED.METRICS, config=config,
+            metrics=config.TEST.METRICS, config=config,
             filename_id=filename_id, hr_method=hr_method,
             scope=signal)
     return report

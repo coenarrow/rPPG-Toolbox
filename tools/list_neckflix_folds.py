@@ -17,19 +17,9 @@ from collections import Counter
 
 sys.path.insert(0, ".")
 
-from config import get_config                                   # noqa: E402
+from config import load_config                                   # noqa: E402
 from dataset.data_loader.NeckflixLoader import NeckflixDataset   # noqa: E402
 from dataset.data_loader.neckflix_config import zarr_config      # noqa: E402
-
-
-def data_block(config, split):
-    """The config section a split reads its cache and filters from."""
-    return {
-        "train": config.TRAIN.DATA,
-        "valid": config.VALID.DATA,
-        "test": config.TEST.DATA,
-        "unsupervised": config.UNSUPERVISED.DATA,
-    }[split]
 
 
 def main():
@@ -45,8 +35,8 @@ def main():
                         help="prepend to each value, e.g. --prefix P for P015")
     args = parser.parse_args()
 
-    config = get_config(args)
-    dataset = NeckflixDataset(zarr_config(data_block(config, args.split)))
+    config = load_config(args.config_file)
+    dataset = NeckflixDataset(zarr_config(config, args.split))
 
     if not args.counts:
         for value in dataset.attribute_values(args.attribute):

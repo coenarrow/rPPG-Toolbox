@@ -73,13 +73,26 @@ def stack_frames(frames: dict, channels) -> torch.Tensor:
     The per-channel singleton axis is the loader's, not a batch axis: each
     channel is one plane, so stacking and folding that axis away reproduces the
     channel dimension every backbone expects.
+
+    ``channels`` is the *model's* list, and the model is the authority on what
+    it consumes: a channel the model expects but this batch does not carry is
+    zero-filled rather than refused, so an RGB+IR+depth checkpoint runs on
+    RGB-only data — degraded, not crashed. That is the same convention the
+    loader already uses for a stream a store happens to lack, and the same one
+    ``channel_mask`` records; here there is no mask to write, because the
+    absence is a property of the data the caller already knows about.
     """
-    missing = [ch for ch in channels if ch not in frames]
-    if missing:
+    present = [ch for ch in channels if ch in frames]
+    if not present:
         raise KeyError(
-            f"Batch is missing configured channel(s) {missing}; it carries {sorted(frames)}"
+            f"Batch carries none of the model's channels {list(channels)}; "
+            f"it carries {sorted(frames)}"
         )
-    stacked = torch.stack([frames[ch] for ch in channels], dim=0)
+    reference = frames[present[0]]
+    planes = [frames.get(ch) for ch in channels]
+    stacked = torch.stack(
+        [torch.zeros_like(reference) if plane is None else plane for plane in planes],
+        dim=0)
     return rearrange(stacked, "c b plane t h w -> b (c plane) t h w")
 
 

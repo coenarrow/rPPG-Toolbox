@@ -54,10 +54,20 @@ def test_stack_frames_round_trips():
         assert torch.equal(restored[channel], batch[bt.FRAMES][channel])
 
 
-def test_stack_frames_reports_missing_channel():
+def test_stack_frames_zero_fills_a_channel_the_batch_lacks():
+    """The model is the authority: an RGB+IR checkpoint runs on RGB-only data."""
     batch = default_collate([make_sample(channels=("R", "G"))])
-    with pytest.raises(KeyError, match="'B'"):
-        bt.stack_frames(batch[bt.FRAMES], ["R", "G", "B"])
+    video = bt.stack_frames(batch[bt.FRAMES], ["R", "G", "B"])
+    assert video.shape == (1, 3, 6, 4, 5)
+    assert torch.equal(video[:, 0], batch[bt.FRAMES]["R"][:, 0])
+    assert torch.equal(video[:, 2], torch.zeros_like(video[:, 2]))
+
+
+def test_stack_frames_refuses_a_batch_with_none_of_the_channels():
+    """Zero-filling everything would be a silently black clip, not degradation."""
+    batch = default_collate([make_sample(channels=("R", "G"))])
+    with pytest.raises(KeyError, match="none of the model's channels"):
+        bt.stack_frames(batch[bt.FRAMES], ["I", "D"])
 
 
 # --- split / stack signals ----------------------------------------------

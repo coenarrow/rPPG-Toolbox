@@ -48,11 +48,20 @@ tagged `pre-overhaul`.
 
 **Current (build on this):**
 
+- `config.py` — the typed DATA / INTERFACE / MODEL schema (`load_config`);
+  `INTERFACE` is the model's demand on the data pipeline, serialized into
+  every checkpoint (design:
+  `docs/plans/2026-08-31-interface-config-redesign.md`)
 - `neural_methods/batch.py` — owns the batch-dict key names and shape moves
 - `neural_methods/frame_transforms.py` — consumer-side DATA_TYPE + resize
 - `neural_methods/model/DictModel.py`, `SignalDictWrapper.py` — model contract
 - `neural_methods/trainer/MultiSignalTrainer.py` — the one trainer, plus
-  `MODEL_REGISTRY`
+  `MODEL_REGISTRY`, `ModelSpec` (everything a builder derives from the data
+  spec) and the absolute-scale guardrails (output-bias priors, weight-decay
+  exemption, window-constraint check)
+- `neural_methods/loss/PerSignalLoss.py` — the per-signal composite loss:
+  per-sample components (CCC, L1 mean, L1 soft peaks, negpearson, MSE,
+  spectral), masked so an absent signal contributes exactly 0
 - `dataset/data_loader/` — `BaseZarrDataset` / `NeckflixDataset` (lazy, over
   the external zarr cache), `neckflix_config.py` (typed config pattern), and
   one markdown **cache spec per legacy dataset** (`PURE.md`, `MMPD.md`, …) —
@@ -67,16 +76,13 @@ tagged `pre-overhaul`.
 
 **Legacy (dies in Phases 4–6 of the roadmap — do not extend):**
 
-- `config.py`'s yacs bulk (`DO_PREPROCESS`, `BEGIN`/`END`, face detection,
-  per-dataset blocks — inert for the zarr pipeline, deleted in Phase 5)
 - `neural_methods/trainer/<Model>Trainer.py` files and `BaseTrainer` —
   unreachable from the entry point since Phase 2, kept as migration
   reference; each dies as its model moves onto `MultiSignalTrainer`
 - `configs/train_configs/`, `configs/infer_configs/`, `physhydra_configs/`
   (config consolidation is Phase 5)
-- Models not yet on the dict contract: DeepPhys, TS-CAN, EfficientPhys,
-  PhysNet, iBVPNet, FactorizePhys, PhysFormer, RhythmFormer, BigSmall,
-  PhysHydra
+- Models not yet on the dict contract: TS-CAN, EfficientPhys, PhysNet,
+  iBVPNet, FactorizePhys, RhythmFormer, BigSmall, PhysHydra
 
 ## The Batch-Dict Contract
 
@@ -88,7 +94,7 @@ point. `neural_methods/batch.py` owns the key names and the shape moves.
 
 ```python
 {"frames":       {ch:  (1, T, H, W) float32},   # raw pixels, zero-filled where absent
- "labels":       {sig: (T,)         float32},   # per-window normalised
+ "labels":       {sig: (T,)         float32},   # per-signal LABEL_NORM (raw for ABP/CVP)
  "label_stats":  {sig: {stat: ()    float32}},  # physical units, for exact inversion
  "channel_mask": {ch:  ()           bool},      # True = real data, not zero fill
  "label_mask":   {sig: ()           bool},
@@ -111,7 +117,7 @@ out["frames"] is batch["frames"]    # nothing is dropped in transit
   `neural_methods/frame_transforms.py` applies `DATA_TYPE` + resize, carried
   by the model.
 - `label_mask` is load-bearing, not an edge case: trace coverage genuinely
-  varies per recording, and `MaskedMultiSignalLoss` makes an absent signal
+  varies per recording, and `PerSignalLoss` makes an absent signal
   contribute exactly 0 rather than NaN.
 
 ## The Zarr Cache
@@ -146,37 +152,85 @@ the normal configuration, not an edge case; splits are participant filters
 
 ## Config Keys (current format, `configs/neckflix/`)
 
-Keys the zarr loader reads (all four data blocks carry them):
+The schema is the **DATA / INTERFACE / MODEL split**
+(`docs/plans/2026-08-31-interface-config-redesign.md`), loaded by
+`config.py` (`load_config`): typed dataclasses, unknown keys refused with the
+full path, ints coerced to floats (`STRIDE_SECONDS: 0` is fine). `BASE:
+[<file>]` deep-merges include files — the `_SMOKE` variants are
+`BASE: [<real config>]` plus a handful of overrides. Old-schema keys
+(`TOOLBOX_MODE`, `INFERENCE`, the four `*.DATA` blocks) are refused with a
+pointer at the design doc.
 
-- `PREPROCESS.CHANNELS` — ordered camera channels, subset of `R,G,B,I,D`
-- `PREPROCESS.TRACES` — signals to predict, e.g. `['ABP','CVP','ECG']`
-- `PREPROCESS.CHUNK_LENGTH` / `CHUNK_STRIDE` — window size and stride in
-  frames (stride `0` means "no overlap")
-- `PREPROCESS.RESIZE.H/W` — what the model sees; resizing happens
-  consumer-side, so it need not match the cache resolution
-- `PREPROCESS.DATA_TYPE` — `Raw` / `Standardized` / `DiffNormalized`, applied
-  consumer-side and concatenated along channels if several are listed
-- `NECKFLIX.LABEL_NORM` — `zscore` or `minmax`, per window
-- `NECKFLIX.ALLOW_MISSING` / `MIN_CHANNELS` / `MIN_LABELS` — keep recordings
-  that lack some traces
-- `NECKFLIX.FILTERS` — attribute include filters, keyed by the store's own
-  root attrs (plus the `perspective` pseudo-attr), e.g.
-  `FILTERS: {posture: ['0','45'], light: ['D']}`; any attr a cache carries
-  works, `[]` means no filter
-- `NECKFLIX.PARTICIPANTS` — participant include list (LOSO uses
-  `--test_participants`); separate from `FILTERS` because ids are normalised
-  (`P015` → the store's `015`)
-- `TRAIN.LOSS` — `negpearson` or `mse`, the base of the masked multi-signal
-  loss
+- `MODE` — `train_and_test` / `only_test` / `unsupervised_method`
+- `DATA` — **which stores participate**: `CACHED_PATH`; `FILTERS` (attribute
+  include filters keyed by the store's own root attrs plus the `perspective`
+  pseudo-attr, e.g. `{posture: ['0','45'], light: ['D']}`; `[]` = no
+  filter); `PARTICIPANTS` (include list, ids normalised `P015` → `015`;
+  LOSO uses `--test_participants`); `ALLOW_MISSING` / `MIN_CHANNELS` /
+  `MIN_LABELS`; and `SPLITS.TRAIN/VALID/TEST` — per-split policy **only**
+  (`STRIDE_SECONDS`, `0.0` = no overlap; `RANDOM_WINDOWS`; optional
+  `FILTERS`/`PARTICIPANTS` overrides). Unsupervised runs use the TEST
+  split policy
+- `INTERFACE` — **the model's demand on the data pipeline**, serialized into
+  every checkpoint; at `only_test` the checkpoint's copy is adopted over the
+  config's (differences printed). The loader delivers what it demands:
+  channels/traces the data lacks come back as zeros + a False mask — even
+  channels the dataset can never provide — with construction-time warnings
+  for anything that has zero coverage
+  - `FS` — **mandatory**: the frame rate the model sees. Faster stores are
+    decimated to it; slower ones are refused unless
+    `UPSAMPLING: interpolate` opts into linear frame/label blending (never
+    duplication — duplicated frames make DiffNormalized identically zero)
+  - `WINDOW_SECONDS` — the window as a **duration**. The frame count is
+    derived, `T = WINDOW_SECONDS x FS`, snapped to the whole frame within
+    0.01 and refused otherwise — 150 frames is 5 s of physiology at 30 fps
+    and 1 s at 150 fps, and a frame count alone cannot tell them apart. To
+    reproduce a published model's canonical `T_orig`, set
+    `WINDOW_SECONDS = T_orig / FS` (at 30 fps: 128 -> `4.266667`,
+    160 -> `5.333333`, 180 -> `6.0`)
+  - `CHANNELS` — ordered camera channels, subset of `R,G,B,I,D`; the order
+    transfers to `model.channels`
+  - `TRACES` — signals to predict, e.g. `['ABP','CVP','ECG']`; order
+    transfers to `model.traces`
+  - `RESIZE.H/W` — what the model sees; resizing happens consumer-side, so
+    it need not match the cache resolution (`0` = keep the cache's size)
+  - `DATA_TYPE` — `Raw` / `Standardized` / `DiffNormalized`, applied
+    consumer-side and concatenated along channels if several are listed
+  - `LABEL_NORM` — **per signal**: `{ECG: zscore}`. Omit a signal to take
+    its class default from `neural_methods/signals.py` — absolute-class
+    signals (ABP, CVP) load `raw`, in physical units, because their level is
+    part of the prediction; shape-class signals (PPG, ECG, RESP) are
+    per-window z-scored
+- `MODEL` — `NAME`, `HEAD_STYLE` (`widened` = style A, default;
+  `per_signal` = style B), `DROP_RATE`, plus per-model architecture blocks
+  of any size (`MODEL.PHYSFORMER.PATCH_SIZE`, ...)
+- `TRAIN.LOSS` — **a per-signal registry**, not one global base:
+  `ABP: {TYPE: absolute, WEIGHTS: {CCC: 1.0, MEAN: 0.05, MAX: 0.05, MIN: 0.05}}`.
+  `TYPE` picks the component family (`absolute` = CCC + L1 on the window mean
+  and the soft systolic/diastolic peaks, in mmHg; `shape` = negpearson;
+  `mse`); `WEIGHTS` overrides that family's defaults and may name any
+  component (`CCC MEAN MAX MIN NEGPEARSON MSE SPECTRAL`). Omit a signal, or
+  the whole block, to take its class default. **The weights are where the
+  per-signal scale factors live** — raw ABP error is O(10 mmHg), CVP
+  O(1 mmHg) and CCC is O(1), so unweighted the pressures own every gradient.
+  Naming a signal not in `INTERFACE.TRACES` is an error, not a no-op
+- `TEST` — how predictions are scored, in every mode: `BATCH_SIZE`,
+  `METRICS` (omit for the standard set), `USE_LAST_EPOCH`,
+  `EVALUATION_METHOD`, `EVALUATION_WINDOW`, and `MODEL_PATH` (the
+  `only_test` checkpoint)
+- `UNSUPERVISED.METHODS` — the traditional methods to score
 
-`DO_PREPROCESS`, `BEGIN`/`END`, `FILE_LIST_PATH` and the face-detection block
-do nothing for the zarr pipeline.
+Derived at runtime, never written in YAML: `LOG.EXP_NAME`,
+`TEST.OUTPUT_SAVE_DIR`, `UNSUPERVISED.OUTPUT_SAVE_DIR`, `MODEL.MODEL_DIR`.
 
 ## Running Experiments
 
 ```bash
 # All seven unsupervised methods (CPU), scored per trace
 uv run python main.py --config_file configs/neckflix/NECKFLIX_UNSUPERVISED.yaml
+
+# DeepPhys (the migration pilot), one LOSO fold
+uv run python main.py --config_file configs/neckflix/NECKFLIX_DEEPPHYS.yaml --test_participants P015
 
 # PhysMamba, one LOSO fold
 uv run python main.py --config_file configs/neckflix/NECKFLIX_PHYSMAMBA.yaml --test_participants P015
@@ -199,7 +253,11 @@ uv run python main.py --limit_windows 8 --test_participants P015 --config_file c
 otherwise. `--limit_windows N` subsamples evenly for smoke runs.
 
 **Outputs**: checkpoints and plots to `LOG.PATH` (default `runs/exp`);
-predictions to `TEST.OUTPUT_SAVE_DIR`; SLURM logs to `logs/`.
+predictions to `TEST.OUTPUT_SAVE_DIR`; SLURM logs to `logs/`. The standard
+plot set (written once, in the trainer and `evaluation/metrics_report.py`,
+never per model) is: loss/LR curves, per-signal per-component loss curves, HR
+Bland-Altman, per-signal waveform overlays, and predicted-vs-true agreement
+scatters (window mean, systolic, diastolic) for absolute-class signals.
 
 ## Adding a Model
 
@@ -215,9 +273,18 @@ No new trainer. `MultiSignalTrainer` serves every dict-contract model.
    `forward_video(video) -> (B, S, T)`, taking its width from
    `self.in_channels` / `self.out_signals`. A per-frame 2-D backbone needs no
    change at all — wrap it in `SignalDictWrapper(..., input_mode='frames2d')`.
+   Declare any constraint on the window length (`temporal_divisor`,
+   `temporal_length`) and expose the activation-free readout via
+   `output_layers()`.
 2. Add a builder to `MODEL_REGISTRY` in
-   `neural_methods/trainer/MultiSignalTrainer.py`.
+   `neural_methods/trainer/MultiSignalTrainer.py`. It takes a `ModelSpec`,
+   which has already derived every width from the data blocks — take the
+   first-layer width from `spec.camera_channels` if the model splits the
+   `DATA_TYPE` blocks itself (DeepPhys, TS-CAN), `spec.in_channels` if it
+   consumes them as one tensor (PhysMamba).
 3. Point a config at it with `MODEL.NAME`.
+
+`configs/neckflix/NECKFLIX_DEEPPHYS.yaml` is the worked example of all of it.
 
 When migrating a legacy model, delete its `<Model>Trainer.py` in the same
 change, and follow the migration with a short config retro (what was awkward

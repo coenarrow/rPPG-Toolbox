@@ -23,8 +23,8 @@ def test_is_torch_dataset_subclass():
 
 
 def test_bad_label_norm_raises(tmp_path):
-    with pytest.raises(ValueError, match="label_norm"):
-        NeckflixDataset(base_cfg(tmp_path, label_norm="fixed"))
+    with pytest.raises(ValueError, match="LABEL_NORM"):
+        NeckflixDataset(base_cfg(tmp_path, label_norms={"ABP": "fixed"}))
 
 
 def test_filter_overlap_raises_upfront_even_with_empty_cache(tmp_path):
@@ -37,9 +37,52 @@ def test_filter_overlap_raises_upfront_even_with_empty_cache(tmp_path):
         NeckflixDataset(cfg)
 
 
-def test_unknown_channel_raises(tmp_path):
-    with pytest.raises(ValueError, match="Unknown channel"):
-        NeckflixDataset(base_cfg(tmp_path, channels=["R", "X"]))
+def test_all_unknown_channels_raise(tmp_path):
+    with pytest.raises(ValueError, match="None of the demanded channels"):
+        NeckflixDataset(base_cfg(tmp_path, channels=["X", "Y"]))
+
+
+def test_unknown_channel_is_delivered_as_zeros_with_a_false_mask(tmp_path):
+    """Demand-driven delivery: a channel this dataset can never provide is
+    zeros + channel_mask=False, so a wider pretrained checkpoint still runs."""
+    make_store(tmp_path, "P030_S01_R1_0_D", streams=("rgb",), num_frames=12)
+    with pytest.warns(UserWarning, match="not provided by"):
+        ds = NeckflixDataset(base_cfg(
+            tmp_path, channels=["R", "G", "B", "X"], window_size=4))
+    sample = ds[0]
+    assert not bool(sample["channel_mask"]["X"])
+    assert torch.all(sample["frames"]["X"] == 0)
+    assert sample["frames"]["X"].shape == sample["frames"]["R"].shape
+    assert bool(sample["channel_mask"]["R"])
+
+
+def test_a_slower_store_is_refused_by_default(tmp_path):
+    """Naive upsampling duplicates frames and darkens DiffNormalized; the
+    refusal names the opt-in."""
+    make_store(tmp_path, "P030_S01_R1_0_D", streams=("rgb",), num_frames=12,
+               fps=15.0)
+    with pytest.raises(ValueError, match="UPSAMPLING"):
+        NeckflixDataset(base_cfg(tmp_path, channels=["R", "G", "B"],
+                                 window_size=8))
+
+
+def test_opted_in_upsampling_interpolates_rather_than_duplicates(tmp_path):
+    import numpy as np
+
+    make_store(tmp_path, "P030_S01_R1_0_D", streams=("rgb",), traces=("abp",),
+               num_frames=12, fps=15.0,
+               trace_values={("1", "rgb", "abp"): 100.0 + np.arange(12.0)})
+    ds = NeckflixDataset(base_cfg(
+        tmp_path, channels=["R", "G", "B"], labels=["ABP"], window_size=8,
+        upsampling="interpolate", label_norms={"ABP": "raw"}))
+    sample = ds[0]
+    abp = sample["labels"]["ABP"].numpy()
+    assert len(abp) == 8
+    # 8 target frames at 30 fps span 4 native frames at 15 fps: the ramp label
+    # comes back in linearly interpolated half-steps, never as repeats.
+    assert np.allclose(np.diff(abp)[:-1], 0.5)
+    frames = sample["frames"]["R"]
+    assert not torch.equal(frames[:, 0], frames[:, 1])
 
 
 # --------------------------------------------------------------------------

@@ -1,10 +1,11 @@
 """Entry point for the zarr pipeline (formerly ``neckflix_main.py``).
 
 Everything downstream of the loader speaks the nested batch dict (see
-:mod:`neural_methods.batch`), so this script is short: translate the YAML into
-the loader's plain-dict config, build the splits, and hand them to either the
-dict-contract trainer or the unsupervised predictor. The legacy tuple-contract
-entry point this file replaces lives at the ``pre-overhaul`` tag.
+:mod:`neural_methods.batch`), so this script is short: load the
+DATA / INTERFACE / MODEL config (``config.py``), build the splits, and hand
+them to either the dict-contract trainer or the unsupervised predictor. The
+legacy tuple-contract entry point this file replaces lives at the
+``pre-overhaul`` tag.
 
 Splits are participant-based (LOSO): the test split *includes* the named
 participants and the train split *excludes* them. There is no percentage
@@ -36,11 +37,12 @@ from torch.distributed import destroy_process_group, init_process_group
 from torch.utils.data import DataLoader, Subset
 from torch.utils.data.distributed import DistributedSampler
 
-from config import get_config
+from config import interface_diff, interface_from_payload, load_config
 from dataset.data_loader.NeckflixLoader import NeckflixDataset
 from dataset.data_loader.neckflix_config import normalise_participant, zarr_config
-from neural_methods import trainer
-from neural_methods.trainer.MultiSignalTrainer import MODEL_REGISTRY, MultiSignalTrainer
+from neural_methods.trainer.MultiSignalTrainer import (
+    MODEL_REGISTRY, MultiSignalTrainer, checkpoint_interface,
+)
 from unsupervised_methods.unsupervised_predictor import unsupervised_predict_many
 
 #: DataLoader workers per process. Reading a Neckflix window means decompressing
@@ -85,10 +87,11 @@ def add_args(parser):
 # ---------------------------------------------------------------------------
 # Dataset construction
 # ---------------------------------------------------------------------------
-def build_dataset(config_data, *, include=(), exclude=(), random_windows=None, limit=0):
-    """One :class:`NeckflixDataset` from a yacs ``DATA`` block plus LOSO ids."""
+def build_dataset(config, split, *, include=(), exclude=(), random_windows=None,
+                  limit=0):
+    """One :class:`NeckflixDataset` for one split, plus LOSO ids."""
     dataset = NeckflixDataset(zarr_config(
-        config_data,
+        config, split,
         include_participants=include,
         exclude_participants=exclude,
         random_windows=random_windows,
@@ -121,24 +124,24 @@ def make_loader(dataset, batch_size, *, shuffle, rank, world_size, drop_last, pi
 
 
 def build_data_loaders(config, args, rank, world_size, is_main):
-    """All dataloaders the configured TOOLBOX_MODE needs, as a dict."""
+    """All dataloaders the configured MODE needs, as a dict."""
     test_ids = args.test_participants or []
     valid_ids = args.valid_participants or []
     workers = getattr(args, "num_workers", DEFAULT_NUM_WORKERS)
     loaders = {}
 
-    if config.TOOLBOX_MODE == "unsupervised_method":
-        dataset = build_dataset(config.UNSUPERVISED.DATA, include=test_ids,
+    if config.MODE == "unsupervised_method":
+        dataset = build_dataset(config, "unsupervised", include=test_ids,
                                 random_windows=False, limit=args.limit_windows)
         _require_non_empty(dataset, "unsupervised")
         loaders["unsupervised"] = make_loader(
-            dataset, config.INFERENCE.BATCH_SIZE, shuffle=False, rank=rank,
+            dataset, config.TEST.BATCH_SIZE, shuffle=False, rank=rank,
             world_size=1, drop_last=False, pin_memory=False, num_workers=workers)
         return loaders
 
-    if config.TOOLBOX_MODE == "train_and_test":
+    if config.MODE == "train_and_test":
         train_dataset = build_dataset(
-            config.TRAIN.DATA, exclude=list(test_ids) + list(valid_ids),
+            config, "train", exclude=list(test_ids) + list(valid_ids),
             limit=args.limit_windows)
         _require_non_empty(train_dataset, "train")
         loaders["train"] = make_loader(
@@ -162,7 +165,7 @@ def build_data_loaders(config, args, rank, world_size, is_main):
                 "--valid_participants, or set TEST.USE_LAST_EPOCH: True."
             )
         else:
-            valid_dataset = build_dataset(config.VALID.DATA, include=valid_ids,
+            valid_dataset = build_dataset(config, "valid", include=valid_ids,
                                           random_windows=False, limit=args.limit_windows)
             _require_non_empty(valid_dataset, "valid")
             loaders["valid"] = make_loader(
@@ -171,11 +174,11 @@ def build_data_loaders(config, args, rank, world_size, is_main):
                 num_workers=workers)
 
     # Test runs on rank 0 only, so it is never sharded.
-    test_dataset = build_dataset(config.TEST.DATA, include=test_ids,
+    test_dataset = build_dataset(config, "test", include=test_ids,
                                  random_windows=False, limit=args.limit_windows)
     _require_non_empty(test_dataset, "test")
     loaders["test"] = make_loader(
-        test_dataset, config.INFERENCE.BATCH_SIZE, shuffle=False, rank=rank,
+        test_dataset, config.TEST.BATCH_SIZE, shuffle=False, rank=rank,
         world_size=1, drop_last=False, pin_memory=False, num_workers=workers)
     return loaders
 
@@ -183,57 +186,62 @@ def build_data_loaders(config, args, rank, world_size, is_main):
 def _require_non_empty(dataset, split):
     if len(dataset) == 0:
         raise ValueError(
-            f"The {split} dataset is empty. Check CACHED_PATH, the participant "
-            "arguments and the NECKFLIX.FILTERS attribute filters."
+            f"The {split} dataset is empty. Check DATA.CACHED_PATH, the "
+            "participant arguments and the DATA.FILTERS attribute filters."
         )
 
 
 # ---------------------------------------------------------------------------
 # Config derivation
 # ---------------------------------------------------------------------------
+def adopt_checkpoint_interface(config, is_main=True):
+    """In only_test mode, the checkpoint's interface is the authority.
+
+    The checkpoint records the demand the model was trained against (rate,
+    window, channels, traces, resize, DATA_TYPE, label norms). Adopting it
+    before anything is built points the loaders at what the model actually
+    expects — the config's INTERFACE block is only a guess about someone
+    else's checkpoint. Differences are printed, not silently absorbed. A bare
+    pre-redesign checkpoint carries no interface and leaves the config's in
+    charge (the trainer warns at load time).
+    """
+    if config.MODE != "only_test" or not config.TEST.MODEL_PATH:
+        return config
+    payload = checkpoint_interface(config.TEST.MODEL_PATH)
+    if payload is None:
+        return config
+    adopted = interface_from_payload(payload)
+    differences = interface_diff(config.INTERFACE, adopted)
+    if differences and is_main:
+        print("Adopting the checkpoint's interface over the config's:")
+        for line in differences:
+            print("  " + line)
+    config.INTERFACE = adopted
+    return config
+
+
 def apply_experiment_naming(config, args):
     """Name the experiment after what actually varies between Neckflix runs."""
-    from neural_methods.signals import resolve_channels, resolve_traces
-
-    if config.TOOLBOX_MODE == "unsupervised_method":
-        # No training block is involved, so the unsupervised block names the run.
-        naming_data = config.UNSUPERVISED.DATA
-    else:
-        naming_data = config.TRAIN.DATA
-        train_pre, test_pre = config.TRAIN.DATA.PREPROCESS, config.TEST.DATA.PREPROCESS
-        for name, left, right in (
-                ("resize width", train_pre.RESIZE.W, test_pre.RESIZE.W),
-                ("resize height", train_pre.RESIZE.H, test_pre.RESIZE.H),
-                ("channels", resolve_channels(config.TRAIN.DATA), resolve_channels(config.TEST.DATA)),
-                ("traces", resolve_traces(config.TRAIN.DATA), resolve_traces(config.TEST.DATA)),
-                ("filters", train_pre.NECKFLIX.FILTERS, test_pre.NECKFLIX.FILTERS)):
-            if left != right:
-                raise ValueError(f"Train and test {name} must be the same!")
-
-    preprocess = naming_data.PREPROCESS
-    channels = ''.join(resolve_channels(naming_data))
-    traces = '-'.join(resolve_traces(naming_data))
+    interface = config.INTERFACE
+    channels = ''.join(interface.CHANNELS)
+    traces = '-'.join(interface.TRACES)
     filters = ''.join(
         f"_{str(attr).upper()}-" + '-'.join(str(v) for v in values)
-        for attr, values in sorted(preprocess.NECKFLIX.FILTERS.items()) if values
+        for attr, values in sorted(config.DATA.FILTERS.items()) if values
     )
     exp_name = f"TRACES-{traces}{filters}_CHANNELS-{channels}" \
-               f"_H-{preprocess.RESIZE.H}_W-{preprocess.RESIZE.W}"
+               f"_H-{interface.RESIZE.H}_W-{interface.RESIZE.W}"
     if args.test_participants:
         held_out = '_'.join(normalise_participant(p) for p in args.test_participants)
         exp_name = os.path.join(exp_name, f'tested_on_{held_out}')
 
-    config.defrost()
-    config.TRAIN.DATA.EXP_DATA_NAME = exp_name
-    config.TEST.DATA.EXP_DATA_NAME = exp_name
-    config.UNSUPERVISED.DATA.EXP_DATA_NAME = exp_name
-    config.TEST.OUTPUT_SAVE_DIR = os.path.join(config.LOG.PATH, exp_name, 'saved_test_outputs')
-    config.UNSUPERVISED.OUTPUT_SAVE_DIR = os.path.join(config.LOG.PATH, exp_name, 'saved_outputs')
-    config.MODEL.MODEL_DIR = os.path.join(config.LOG.PATH, exp_name, "PreTrainedModels")
-    if hasattr(config.MODEL, 'PHYSHYDRA'):
-        config.MODEL.PHYSHYDRA.NUM_CHANNELS = len(resolve_channels(config.TRAIN.DATA))
-        config.MODEL.PHYSHYDRA.NUM_LABELS = len(resolve_traces(config.TRAIN.DATA))
-    config.freeze()
+    config.LOG.EXP_NAME = exp_name
+    config.TEST.OUTPUT_SAVE_DIR = os.path.join(config.LOG.PATH, exp_name,
+                                               'saved_test_outputs')
+    config.UNSUPERVISED.OUTPUT_SAVE_DIR = os.path.join(config.LOG.PATH, exp_name,
+                                                       'saved_outputs')
+    config.MODEL.MODEL_DIR = os.path.join(config.LOG.PATH, exp_name,
+                                          "PreTrainedModels")
     return config
 
 
@@ -243,7 +251,7 @@ def apply_experiment_naming(config, args):
 def run_supervised(config, loaders, rank, world_size):
     model_trainer = MultiSignalTrainer(config, loaders, rank=rank, world_size=world_size,
                                        debug=config.DEBUG)
-    if config.TOOLBOX_MODE == "train_and_test":
+    if config.MODE == "train_and_test":
         model_trainer.train(loaders)
     model_trainer.test(loaders)
 
@@ -253,23 +261,22 @@ def run_unsupervised(config, loaders, is_main=True):
     other ranks would duplicate the work and overwrite each other's plots."""
     if not is_main:
         return None
-    if not config.UNSUPERVISED.METHOD:
-        raise ValueError("Please set unsupervised method in yaml!")
-    unknown = [m for m in config.UNSUPERVISED.METHOD if m not in UNSUPERVISED_METHODS]
+    if not config.UNSUPERVISED.METHODS:
+        raise ValueError("Please set UNSUPERVISED.METHODS in the yaml!")
+    unknown = [m for m in config.UNSUPERVISED.METHODS if m not in UNSUPERVISED_METHODS]
     if unknown:
         raise ValueError(f"Not supported unsupervised method(s): {unknown}. "
                          f"Available: {', '.join(UNSUPERVISED_METHODS)}")
     # One pass over the cache scores every configured method.
-    return unsupervised_predict_many(config, loaders, config.UNSUPERVISED.METHOD)
+    return unsupervised_predict_many(config, loaders, config.UNSUPERVISED.METHODS)
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser = add_args(parser)
-    parser = trainer.BaseTrainer.BaseTrainer.add_trainer_args(parser)
     args = parser.parse_args()
 
-    config = get_config(args)
+    config = load_config(args.config_file)
 
     is_distributed = 'RANK' in os.environ and 'WORLD_SIZE' in os.environ
     if is_distributed:
@@ -286,12 +293,13 @@ def main():
         rank, world_size = 0, 1
     is_main = (rank == 0)
 
+    config = adopt_checkpoint_interface(config, is_main)
     config = apply_experiment_naming(config, args)
 
     if is_main:
         print(f"Number of workers for data loading: {args.num_workers}")
-        print(f"Running with {world_size} process(es); mode {config.TOOLBOX_MODE}")
-        if config.TOOLBOX_MODE != "unsupervised_method" \
+        print(f"Running with {world_size} process(es); mode {config.MODE}")
+        if config.MODE != "unsupervised_method" \
                 and config.MODEL.NAME not in MODEL_REGISTRY:
             print(f"WARNING: model {config.MODEL.NAME!r} is not in the dict-contract "
                   f"registry {sorted(MODEL_REGISTRY)}")
@@ -305,7 +313,7 @@ def main():
 
     if is_main:
         output_dir = (config.UNSUPERVISED.OUTPUT_SAVE_DIR
-                      if config.TOOLBOX_MODE == "unsupervised_method"
+                      if config.MODE == "unsupervised_method"
                       else config.TEST.OUTPUT_SAVE_DIR)
         os.makedirs(output_dir, exist_ok=True)
         with open(args.config_file, 'r') as source, \
@@ -325,13 +333,10 @@ def main():
         dist.barrier()
 
     try:
-        if config.TOOLBOX_MODE == "unsupervised_method":
+        if config.MODE == "unsupervised_method":
             run_unsupervised(config, loaders, is_main)
-        elif config.TOOLBOX_MODE in ("train_and_test", "only_test"):
-            run_supervised(config, loaders, rank, world_size)
         else:
-            raise ValueError("TOOLBOX_MODE only supports train_and_test, only_test "
-                             "or unsupervised_method!")
+            run_supervised(config, loaders, rank, world_size)
     finally:
         if is_distributed and dist.is_initialized():
             destroy_process_group()

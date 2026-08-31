@@ -7,15 +7,38 @@ PhysHydra** (designed natively around Neckflix; it follows its own path).
 PhysMamba and `SignalDictWrapper` are the reference implementations; the
 DeepPhys pilot, once landed, is the worked example of everything below.
 
-**Status (2026-08-31).** This contract is written ahead of its
-infrastructure: the §7 stage-0 prerequisites are **not yet built** — they
-are the DeepPhys pilot's deliverables. Already in the tree: PhysMamba fully
-migrated (the reference `DictModel`), `SignalDictWrapper` +
-`MODEL_REGISTRY`, and a head start on DeepPhys (widened model,
-`_build_deepphys`, `tests/test_deepphys_multisignal.py`) — but DeepPhys
-still has its legacy trainer, no config, and none of the loss/windowing
-machinery below. Work order for a fresh session: run the pilot first
-(stage 0 + the recipe, §7); only then fan out one agent per model.
+**Status (2026-08-31).** The DeepPhys pilot has landed, so **§7 stage 0 is
+built** and this document is now describing the tree rather than anticipating
+it: physical-time windowing with a resampling loader, per-signal label
+normalisation with `raw` physical units, the per-signal composite loss
+(`neural_methods/loss/PerSignalLoss.py`), checkpoint-authority channel
+zero-fill, and plots 1/3/4. `ModelSpec` in `MultiSignalTrainer` carries
+everything §1 says is derived, and the builder applies the §2 guardrails
+(output-bias priors, weight-decay exemption, window-constraint check).
+Migrated: PhysMamba (the reference `DictModel`), DeepPhys (the worked
+example — see `configs/neckflix/NECKFLIX_DEEPPHYS.yaml` and
+[its retro](2026-08-31-deepphys-pilot-retro.md)), PhysFormer. Remaining
+models are one agent each, against this contract.
+
+**Config schema update (2026-08-31, after both pilots).** The config was
+redesigned into the **DATA / INTERFACE / MODEL split**
+([design](2026-08-31-interface-config-redesign.md)): `INTERFACE` states the
+model's demand on the data pipeline and is serialized into every checkpoint;
+the yacs tree, the four per-split data blocks and the `INFERENCE` block are
+gone. `ModelSpec` is unchanged in shape — it is now built *from* `INTERFACE`
+— so **model code and builders did not change**. Section §1 below describes
+the current schema; §7a is the re-verification recipe for the already-migrated
+models (their configs were mechanically converted and are drafts until a
+sub-agent verifies them).
+
+Two things the pilot learned that are not obvious from the text below.
+**`in_channels` is ambiguous**: a model that splits the stacked `DATA_TYPE`
+blocks itself (DeepPhys, TS-CAN) builds its first layer for *one* block's
+width, `spec.camera_channels`, while a model that consumes the stack whole
+(PhysMamba) uses `spec.in_channels`. **A cache's nominal rate is not its
+exact rate**: `FS: 30` is reconciled against measured per-store rates of
+29.9796–30.0 by a relative tolerance, so the `T_orig / FS` conversions below
+are nominal identities.
 
 **The fidelity principle.** A migrated model stays as close to the published
 architecture as possible. Exactly three things may change:
@@ -34,31 +57,39 @@ exactly recoverable.
 
 ## 1. Where configuration comes from
 
-Three sources, with a strict authority order. Nothing is ever stated in two
+Four sources, with a strict authority order. Nothing is ever stated in two
 places.
 
 | Source | Owns | Examples |
 | --- | --- | --- |
 | **Zarr cache** (store attrs) | Facts about the data | native `fps` (per-stream `video` attrs), which streams/traces a recording has, physical units |
-| **Config file** (`configs/neckflix/`) | Experiment choices | channels requested, traces predicted, `WINDOW_SECONDS`/`STRIDE_SECONDS`, target `FPS`, `RESIZE`, `DATA_TYPE`, per-signal label norm, per-signal loss spec, filters/participants, optimizer settings |
-| **Model / checkpoint** | Its own identity | `model.channels`, `model.traces`, `model.fs`, `frame_transform` — these ride with the model and are the authority at inference |
+| **`DATA` block** | Which stores participate | `CACHED_PATH`, attribute `FILTERS`, `PARTICIPANTS`, `ALLOW_MISSING`/`MIN_*`, per-split `SPLITS` policy (`STRIDE_SECONDS`, `RANDOM_WINDOWS`) |
+| **`INTERFACE` block** | The model's **demand** on the data pipeline | `FS`, `WINDOW_SECONDS`, `CHANNELS`, `TRACES`, `RESIZE`, `DATA_TYPE`, per-signal `LABEL_NORM`, `UPSAMPLING` |
+| **`MODEL` block / checkpoint** | The architecture and its identity | `NAME`, `HEAD_STYLE`, per-model blocks (`MODEL.PHYSFORMER.*`); every checkpoint carries its `INTERFACE` and is the authority at inference |
+
+The interface is a *demand*, not a description: the loader's job is to
+satisfy it — zero-fill + mask what the data cannot provide, resample time,
+resize space (consumer-side) — or refuse with an error naming the fix.
+Training choices (`TRAIN.LOSS`, LR, AMP) and scoring choices (`TEST.*`,
+absorbing the old `INFERENCE` block) live in their own blocks and are not
+model identity.
 
 Rules:
 
-- **The temporal contract is physical: `WINDOW_SECONDS` and `FPS`, both
-  mandatory** (stride as `STRIDE_SECONDS`, 0 = no overlap). The frame count
-  is always derived: `T = WINDOW_SECONDS × FPS`, **snapped to the integer
+- **The temporal contract is physical: `INTERFACE.WINDOW_SECONDS` and
+  `INTERFACE.FS`, both mandatory** (stride as the per-split
+  `DATA.SPLITS.<X>.STRIDE_SECONDS`, 0 = no overlap). The frame count is
+  always derived: `T = WINDOW_SECONDS × FS`, **snapped to the integer
   within a tight tolerance (0.01 frames) and refused otherwise** — the
   error names the nearest valid `WINDOW_SECONDS`. The tolerance exists only
   to absorb decimal representation (`4.266667 × 30 → exactly 128`); a
   genuinely ambiguous value (`4.27 × 30 = 128.1`) is a config error, never
-  a silent round. The frame-count keys (`CHUNK_LENGTH`/`CHUNK_STRIDE`) die
-  with this. Rationale: 150 frames from a 30 fps camera is 5 s of
+  a silent round. Rationale: 150 frames from a 30 fps camera is 5 s of
   physiology; 150 frames from a 150 fps camera is 1 s — not enough to carry
   a heart rate, and a frame count without a rate cannot tell them apart.
 - **Matching an original architecture's canonical input length.** Where the
   published model has a canonical frame count `T_orig`, the config that
-  reproduces it is `WINDOW_SECONDS = T_orig / FPS` — at 30 fps: 128 frames
+  reproduces it is `WINDOW_SECONDS = T_orig / FS` — at 30 fps: 128 frames
   → `4.266667` (64/15 s, PhysMamba-style), 160 frames → `5.333333`
   (16/3 s), 180 frames → `6.0`. The migration agent looks up `T_orig` in
   the model's legacy config (`configs/train_configs/`, before Phase 5
@@ -67,34 +98,44 @@ Rules:
 - **The store's native `fps` attr is the source rate for resampling, not the
   model-facing rate.** Where native > target, the loader decimates by
   nearest-index sampling over a `WINDOW_SECONDS × native_fps` span; labels
-  are index-aligned to frames and decimate with the same indices. Because
+  are index-aligned to frames and resample with the same plan. Because
   `DATA_TYPE` transforms run consumer-side on the emitted window, diffs are
   taken between *sampled* frames (Δt = 1/target fps) — DiffNormalized
   semantics survive decimation by construction. **Native < target is refused
-  with a clear error**: upsampling means duplicated frames, and duplicated
-  frames produce zero diffs — a dark motion branch, silently. The
-  model-facing rate (config `FPS`) flows into the spectral loss and HR
-  post-processing — never hardcoded.
-- **The MODEL config block carries `NAME` plus genuinely architectural
-  hyperparameters only** (e.g. a TSM segment length). Anything derivable from
-  the data spec is derived in the builder, never restated:
+  by default**: naive upsampling means duplicated frames, and duplicated
+  frames produce zero diffs — a dark motion branch, silently.
+  `INTERFACE.UPSAMPLING: interpolate` opts into linear frame/label blending
+  instead — interpolation, never duplication, and only by name. Rates within
+  1% are the same *nominal* rate and take the identity path (the PhysFormer
+  retro's jitter lesson). The model-facing rate (`INTERFACE.FS`) flows into
+  the spectral loss and HR post-processing — never hardcoded.
+- **The MODEL config block carries `NAME`, `HEAD_STYLE`, and a per-model
+  architecture block of whatever size the architecture needs** (PhysFormer's
+  six keys are normal, not a smell — retro item 1). Anything derivable from
+  the interface is derived in the builder, never restated:
 
   | Derived quantity | From |
   | --- | --- |
-  | `in_channels` | `len(channels) × frame_transform.channel_multiplier` |
-  | `out_signals` | `len(traces)` |
-  | `img_size` | `PREPROCESS.RESIZE.H/W` |
-  | window `T` | `WINDOW_SECONDS × FPS` (integer within 0.01, validated) |
-  | `fs` | config target `FPS` (must be ≤ every store's native fps) |
+  | `in_channels` | `len(CHANNELS) × frame_transform.channel_multiplier` |
+  | `out_signals` | `len(TRACES)` |
+  | `img_size` | `INTERFACE.RESIZE.H/W` |
+  | window `T` | `WINDOW_SECONDS × FS` (integer within 0.01, validated) |
+  | `fs` | `INTERFACE.FS` (stores are resampled to it) |
 
-- **The checkpoint is the authority on what it expects.** The config decides
-  what the loader reads; the model decides what it consumes. Frame assembly
-  aligns to `model.channels`, zero-filling any channel the model expects but
-  the batch lacks (see §4). A checkpoint trained on RGBID runs on RGB-only
-  data; it degrades, it does not crash. The same principle holds in time:
-  `model.fs` records the rate the model was trained at, and at inference the
-  data is decimated to the *model's* rate — a 30 fps checkpoint fed a
-  150 fps source sees 30 fps, exactly as its dynamics were learned.
+- **The checkpoint is the authority on what it expects — mechanically.**
+  Every checkpoint `MultiSignalTrainer` writes is
+  `{"state_dict", "interface", "model_name"}`; at `MODE: only_test`,
+  `main.py` reads the checkpoint's interface *before building anything*,
+  prints any difference from the config's block, and adopts it — the loaders
+  then deliver what the model actually demands. Frame assembly aligns to
+  `model.channels`, zero-filling any channel the model expects but the batch
+  lacks (see §4), and the dataset does the same for channels the *dataset*
+  can never provide. A checkpoint trained on RGBID runs on RGB-only data; it
+  degrades, it does not crash. The same principle holds in time: the adopted
+  interface's `FS` is the rate the dynamics were learned at, and the data is
+  resampled to it — a 30 fps checkpoint fed a 150 fps source sees 30 fps.
+  (A bare pre-redesign `state_dict` still loads, with a warning that the
+  config's interface is being trusted blind.)
 
 ## 2. Predicting multiple waveforms
 
@@ -208,13 +249,19 @@ the gradient to try; migrations are not judged on absolute-level accuracy.
   and models that split diff/raw blocks (DeepPhys, TS-CAN) slice
   `[:C]` / `[C:2C]` exactly as upstream did with 3. EfficientPhys computes
   its diff internally and takes C raw channels.
-- **Missing data is zeros + a False mask, end to end.** The dataset already
-  emits every configured channel, zero-filled with `channel_mask=False`
-  where the store lacks the stream, and every configured trace, zero-filled
-  with `label_mask=False` (`dataset/data_loader/zarr_dataset.py`). The
-  model-side counterpart — `stack_frames` zero-filling channels the model
-  expects but the batch lacks, instead of raising — lands with the DeepPhys
-  pilot and is contract, not per-model work.
+- **Missing data is zeros + a False mask, end to end.** The dataset emits
+  every demanded channel, zero-filled with `channel_mask=False` where the
+  store lacks the stream — and likewise where the *dataset* has no such
+  stream at all (a channel outside its `channel_map` warns once at
+  construction and is delivered as zeros throughout) — and every demanded
+  trace, zero-filled with `label_mask=False`
+  (`dataset/data_loader/zarr_dataset.py`). The model-side counterpart is
+  `stack_frames` zero-filling channels the model expects but the batch
+  lacks, instead of raising. Both are contract, not per-model work. The
+  dataset also warns for any demanded channel or trace that *no* admitted
+  sample carries: benign at inference, but in training it means the model is
+  being taught to ignore that input, or will never receive gradient for that
+  trace.
 - Masks make reduced input *correct*, not costless: a model trained with
   IR/depth present will lose accuracy fed zeros there. The same machinery
   enables channel-dropout augmentation (train with channels randomly
@@ -302,10 +349,11 @@ Per model, in one change:
    §1, applies bias init + weight-decay exemption for absolute-class
    signals, exposes the head-style option (Style A default). The existing
    `_build_physmamba` / `_build_deepphys` are the pattern.
-5. Add `configs/neckflix/NECKFLIX_<MODEL>.yaml` from the standard template
-   (the pilot's `NECKFLIX_DEEPPHYS.yaml`) — the MODEL block should be
-   `NAME` plus at most a couple of architectural keys; if it needs more,
-   that is retro material, not a precedent.
+5. Add `configs/neckflix/NECKFLIX_<MODEL>.yaml` in the DATA / INTERFACE /
+   MODEL schema (`NECKFLIX_PHYSMAMBA.yaml` is the worked example; the
+   `_SMOKE` variant is `BASE: [<real config>]` plus a handful of overrides).
+   The MODEL block is `NAME`, `HEAD_STYLE` where relevant, and a per-model
+   architecture block of whatever size the architecture needs.
 6. **One smoke test** — the ceiling, per the testing rule
    (`tests/test_deepphys_multisignal.py` is the pattern). The contract
    tests already cover dict plumbing; do not re-test it per model.
@@ -315,18 +363,53 @@ Per model, in one change:
 9. Validate: full suite green, then a
    `--limit_windows 8 --test_participants P015` smoke run.
 
+## 7a. Re-basing the already-migrated models (one sub-agent per model)
+
+DeepPhys and PhysFormer were migrated before the config redesign. Their model
+files, builders and smoke tests did not change (ModelSpec kept its shape), and
+their configs were **mechanically converted** to the DATA / INTERFACE / MODEL
+schema — those YAMLs are *drafts* until this recipe has been run against them.
+PhysMamba's config was converted the same way and is verified by the trainer
+test suite; a sub-agent taking DeepPhys or PhysFormer does, in one change:
+
+1. **Verify the drafted config against the pilot's settings.** Diff the
+   converted `NECKFLIX_<MODEL>{,_SMOKE}.yaml` against the retro and the
+   pre-redesign values (this conversation's history and the pilot retros are
+   the record): every INTERFACE value (`FS`, `WINDOW_SECONDS`, `CHANNELS`,
+   `TRACES`, `RESIZE`, `DATA_TYPE`), the per-split strides, the MODEL block,
+   the LOSS registry, LR/AMP/epochs. The `_SMOKE` variant must stay
+   `BASE: [<real config>]` + overrides only.
+2. **Verify the built model is unchanged.** `build_model(load_config(...))`
+   must produce the same architecture the pilot landed: same `state_dict`
+   keys and shapes as before the redesign, same frame transform, same window
+   constraint behaviour. The fidelity re-check recipe in the model's retro
+   applies if anything architectural looks off.
+3. **Run the suite** (`uv run python -m pytest tests/ -q`) and the real smoke
+   run (`--limit_windows 8 --test_participants P015` against the `_SMOKE`
+   config, on the real cache).
+4. **Exercise the checkpoint-interface path**: after the smoke run, point a
+   `MODE: only_test` config with a *deliberately wrong* INTERFACE (e.g. wrong
+   RESIZE) at the produced checkpoint and confirm main adopts the
+   checkpoint's interface, prints the diff, and the run scores.
+5. **Retro anything the new schema cannot express** — appended to the model's
+   existing retro file, feeding Phase 5's remaining consolidation (legacy
+   config deletion).
+
+No trainer, loss, plot, or model-file work is in scope; if step 2 finds a
+discrepancy, that is a finding to report, not something to quietly fix.
+
 ## Appendix: model roster
 
 | Model | Family / input mode | Head notes | Status |
 | --- | --- | --- | --- |
-| PhysMamba | native `DictModel` | — | migrated (reference) |
-| DeepPhys | frames2d | diff/raw split; Style A; attention shared | pilot in progress |
+| PhysMamba | native `DictModel` | — | migrated (reference; config on the new schema, suite-verified) |
+| DeepPhys | frames2d | diff/raw split; Style A (B available); attention shared | migrated (pilot — [retro](2026-08-31-deepphys-pilot-retro.md)); **§7a re-verified on the new schema (2026-08-31)** |
 | TS-CAN | frames2d | diff/raw split; declare TSM `n_segment` \| T | pending |
 | EfficientPhys | frames2d | raw-only input (internal diff) | pending |
 | PhysNet | video3d | widen final conv to S | pending |
 | iBVPNet | video3d | widen final conv to S | pending |
 | FactorizePhys | video3d | widen final conv to S | pending |
-| PhysFormer | video3d (transformer) | head/tokenization decided at migration | pending (Phase 6) |
+| PhysFormer | native `DictModel` (transformer) | Style A; tokenization unchanged; style B N/A (grid pooled before the head) | migrated ([retro](2026-08-31-physformer-migration-retro.md)); **§7a re-verified on the new schema** (config, built model, 280-test suite, smoke run and checkpoint-interface adoption; no architectural discrepancy) |
 | RhythmFormer | video3d (transformer) | head/tokenization decided at migration | pending (Phase 6) |
 | BigSmall | frames2d, dual view derived internally | per-signal heads native (Style B); AU head out of scope; declare WTSM constraint | pending (Phase 6) |
 | PhysHydra | — | **excluded from this contract** (Neckflix-native) | own path |
