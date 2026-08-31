@@ -14,7 +14,8 @@ Per-sample (dataset ``__getitem__``)::
      "label_stats":  {sig: {stat: ()    float32}},  # physical units
      "channel_mask": {ch:  ()           bool},
      "label_mask":   {sig: ()           bool},
-     "metadata":     {"recording_id": str, "camera_id": str, "start_frame": int}}
+     "metadata":     {"recording_id": str, "camera_id": str, "start_frame": int,
+                      "attrs": {str: str}}}
 
 Collated (``default_collate``) every tensor gains a leading batch axis, and the
 metadata strings become lists. A model adds ``PREDICTIONS`` -> ``{sig: (B, T)}``
@@ -41,6 +42,10 @@ LOADER_KEYS = (FRAMES, LABELS, LABEL_STATS, CHANNEL_MASK, LABEL_MASK, METADATA)
 RECORDING_ID = "recording_id"
 CAMERA_ID = "camera_id"
 START_FRAME = "start_frame"
+#: The store's own scalar root attrs, stringified. Dataset-agnostic: whatever
+#: attrs a store carries, not a fixed Neckflix key list. This is what the
+#: evaluation hierarchy groups by (participant, posture, session, ...).
+ATTRS = "attrs"
 
 
 def is_batch_dict(obj) -> bool:

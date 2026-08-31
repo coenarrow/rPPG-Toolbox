@@ -115,13 +115,13 @@ def test_dataloader_end_to_end_smoke(tmp_path):
 def test_dataset_keys_are_exactly_the_declared_contract(tmp_path):
     """The dataset and neural_methods.batch must not drift apart."""
     from neural_methods.batch import (
-        CAMERA_ID, LOADER_KEYS, METADATA, RECORDING_ID, START_FRAME,
+        ATTRS, CAMERA_ID, LOADER_KEYS, METADATA, RECORDING_ID, START_FRAME,
     )
 
     make_store(tmp_path, "P030_S01_R1_0_D", num_frames=12)
     item = NeckflixDataset(base_cfg(tmp_path, window_size=4))[0]
     assert set(item) == set(LOADER_KEYS)
-    assert set(item[METADATA]) == {RECORDING_ID, CAMERA_ID, START_FRAME}
+    assert set(item[METADATA]) == {RECORDING_ID, CAMERA_ID, START_FRAME, ATTRS}
 
 
 def test_model_consumes_the_dataset_output_unchanged(tmp_path):

@@ -21,7 +21,7 @@ def make_sample(channels=("R", "G", "B"), signals=("ABP", "CVP"), t=6, hw=(4, 5)
         bt.CHANNEL_MASK: {c: torch.tensor(True) for c in channels},
         bt.LABEL_MASK: {s: torch.tensor(s == "ABP") for s in signals},
         bt.METADATA: {bt.RECORDING_ID: "P001_S01_R1_0_D", bt.CAMERA_ID: "1",
-                      bt.START_FRAME: 12},
+                      bt.START_FRAME: 12, bt.ATTRS: {}},
     }
 
 
@@ -195,4 +195,25 @@ def test_loader_keys_match_what_the_dataset_emits():
 
 def test_metadata_subkeys_match_the_constants():
     assert set(make_sample()[bt.METADATA]) == {
-        bt.RECORDING_ID, bt.CAMERA_ID, bt.START_FRAME}
+        bt.RECORDING_ID, bt.CAMERA_ID, bt.START_FRAME, bt.ATTRS}
+
+
+def test_metadata_carries_store_attrs_as_strings():
+    """Grouping attributes ride in metadata, not in the recording id's spelling."""
+    sample = {
+        "frames": {"G": torch.zeros(1, 4, 2, 2)},
+        "labels": {"ABP": torch.zeros(4)},
+        "label_stats": {"ABP": {"mean": torch.zeros(())}},
+        "channel_mask": {"G": torch.tensor(True)},
+        "label_mask": {"ABP": torch.tensor(True)},
+        bt.METADATA: {
+            "recording_id": "P015_S01_R3_0_D",
+            "camera_id": "1",
+            "start_frame": 0,
+            bt.ATTRS: {"participant": "015", "posture": "0", "light": "D"},
+        },
+    }
+    batch = default_collate([sample, sample])
+    first = next(bt.iter_samples(batch))
+    assert first[bt.METADATA][bt.ATTRS] == {"participant": "015", "posture": "0",
+                                            "light": "D"}

@@ -605,7 +605,7 @@ class BaseZarrDataset(ABC, torch.utils.data.Dataset):
         that signal's mode in ``label_norms`` with finite-only stats; label_stats:
         physical-unit stats that normalised each window; channel_mask /
         label_mask: scalar bools; metadata: recording_id / camera_id /
-        start_frame.
+        start_frame / attrs.
         """
         rec_name, camera_id, start = self.windows[idx]
         self._ensure_stream_shapes()
@@ -704,6 +704,14 @@ class BaseZarrDataset(ABC, torch.utils.data.Dataset):
             label_mask[label_name] = torch.tensor(present, dtype=torch.bool)
 
         recording_id = root.attrs.get("recording", rec_name)
+        # Scalars only, stringified: default_collate turns a dict of strings
+        # into a dict of lists, which iter_samples already indexes. Nested or
+        # array-valued attrs have no meaning as a grouping key.
+        store_attrs = {
+            str(key): str(value)
+            for key, value in root.attrs.items()
+            if isinstance(value, (str, int, float, bool))
+        }
 
         return {
             "frames": frames,
@@ -715,5 +723,6 @@ class BaseZarrDataset(ABC, torch.utils.data.Dataset):
                 "recording_id": recording_id,
                 "camera_id": camera_id,
                 "start_frame": start,
+                "attrs": store_attrs,
             },
         }
