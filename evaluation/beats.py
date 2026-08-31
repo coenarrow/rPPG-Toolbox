@@ -80,23 +80,42 @@ def beat_stats(trace, intervals) -> dict:
     }
 
 
-#: A trace must swing at least this many times its own high-frequency noise
-#: floor before its extrema count as beats. Non-maximum suppression alone
-#: always returns one extremum per window, so without this a model emitting
-#: noise would score a full complement of beats.
-AMPLITUDE_GATE = 10.0
+#: A prediction must repeat at a plausible heart rate before its extrema count
+#: as beats. Non-maximum suppression alone always returns one extremum per
+#: window, so without this a model emitting noise would score a full
+#: complement of beats. Autocorrelation is the discriminator rather than raw
+#: amplitude: amplitude ratios separate noise from signal by only a few per
+#: cent here, periodicity separates them by an order of magnitude.
+PULSATILITY_THRESHOLD = 0.3
+
+#: Lag window the pulsatility test searches, in seconds — 30 to 240 bpm.
+PULSATILITY_LAGS = (0.25, 2.0)
 
 
-def _has_pulsatility(trace) -> bool:
-    """True when the trace's beat-scale swing stands clear of its noise floor."""
+def _has_pulsatility(trace, fs) -> bool:
+    """True when the trace repeats at a plausible heart rate.
+
+    The normalised autocorrelation of white noise over a few hundred samples
+    peaks around 0.1; a pulsatile trace peaks near 1.0 at its beat lag.
+    """
     values = np.asarray(trace, dtype=np.float64)
-    if values.size < 4:
+    if values.size < 8:
         return False
-    noise = np.median(np.abs(np.diff(values)))
-    swing = float(values.max() - values.min())
-    if noise <= 0:
-        return swing > 0
-    return swing > AMPLITUDE_GATE * noise
+    centred = values - values.mean()
+    energy = float(centred @ centred)
+    if energy <= 0:
+        return False
+    # FFT autocorrelation: a section can be thousands of samples, and the
+    # direct form is quadratic in that length.
+    size = 1 << int(np.ceil(np.log2(2 * centred.size)))
+    spectrum = np.fft.rfft(centred, n=size)
+    correlation = np.fft.irfft(spectrum * np.conj(spectrum), n=size)[:centred.size]
+    correlation /= energy
+    low, high = PULSATILITY_LAGS
+    first, last = int(low * fs), min(int(high * fs), correlation.size - 1)
+    if first > last:
+        return False
+    return bool(correlation[first:last + 1].max() >= PULSATILITY_THRESHOLD)
 
 
 def detection_quality(prediction, reference, fs, tolerance_seconds=0.15) -> dict:
@@ -110,7 +129,7 @@ def detection_quality(prediction, reference, fs, tolerance_seconds=0.15) -> dict
     width = max(3, int(fs * WIDTH_SECONDS))
     reference_feet, _ = find_peaks(reference, kind="min", width=width,
                                    clip_ends=True)
-    if _has_pulsatility(prediction):
+    if _has_pulsatility(prediction, fs):
         predicted_feet, _ = find_peaks(prediction, kind="min", width=width,
                                        clip_ends=True)
     else:
