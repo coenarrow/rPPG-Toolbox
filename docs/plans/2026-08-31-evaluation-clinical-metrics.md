@@ -365,28 +365,41 @@ Every one of these is a reported number, never a crash:
 
 ## 15. Tests
 
-Four, replacing `tests/test_metrics_report.py` rather than sitting beside it,
-consistent with the repo's minimal-testing rule:
+Five modules, replacing `tests/test_metrics_report.py` rather than sitting
+beside it, plus one line added to the existing batch-contract test:
 
 1. **Tidy-frame contract** — columns, dtypes, and the level vocabulary.
 2. **Beat layer** — a synthetic arterial waveform with known systolic,
    diastolic and rate; beats found at the right count, values recovered within
-   tolerance.
+   tolerance; and the amplitude gate scoring zero beats on noise.
 3. **Criteria** — a hand-built error distribution with known mean and SD must
    produce the expected IEEE 1708 grade and 81060-3 verdict.
 4. **Round trip** — the trainer's in-memory records and the same run's pickle
    produce identical frames.
+5. **Uncertainty** — the HAC standard error must exceed the naive one on an
+   AR(1) series and agree with it on white noise.
+
+The fifth was not in this design's first draft. It earns its place because the
+Andrews bandwidth formulas are being transcribed from a notebook rather than
+derived, and a transcription error there is silent: it produces a plausible
+number that is simply wrong. The check is two assertions and no fixtures.
 
 Plus the existing smoke run through `NECKFLIX_*_SMOKE.yaml`.
 
 ## 16. Deletions, caller migration, and one observation
 
-**Deleted**: `evaluation/metrics_report.py` and `evaluation/BlandAltmanPy.py`
-(content redistributed into `report.py` and `plots.py`; `BlandAltmanPy` takes
-a `config` object purely to locate an output directory and prints errors
-instead of raising, so none of its behaviour is worth carrying forward);
-`evaluation/prototypes/` once consumed, closing Phase 7 step 3;
-`tests/test_metrics_report.py`.
+**Deleted**: `evaluation/metrics_report.py`, its content redistributed into
+`report.py` and `plots.py`; `evaluation/prototypes/` once consumed, closing
+Phase 7 step 3; `tests/test_metrics_report.py`.
+
+**`evaluation/BlandAltmanPy.py` is superseded but not deleted.** Writing the
+plan surfaced what this design first got wrong: `evaluation/metrics.py` and
+`bigsmall_multitask_metrics.py` both import `BlandAltman` from it, and those
+two are Phase 6's to remove. So it joins them as untouched legacy — no new
+code imports it, `plots.py` replaces it functionally, and all three die
+together with the last legacy trainer. Its `config`-object argument (used only
+to locate an output directory) and its habit of printing errors instead of
+raising are why none of it is carried forward.
 
 **Callers that must move in the same change**:
 `neural_methods/trainer/MultiSignalTrainer.py` and
