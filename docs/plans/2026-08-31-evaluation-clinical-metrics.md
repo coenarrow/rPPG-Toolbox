@@ -77,7 +77,7 @@ One path, two entry points. The trainer and the sweep reporter call identical
 functions and differ only in which levels of the hierarchy they can populate.
 
 ```text
-window records ──► records.py ──► beats.py ──► levels.py ──► metrics/ ──► report.py ──► digest + CSV/JSON
+window records ──► records.py ──► beats.py ──► levels.py ──► scoring/ ──► report.py ──► digest + CSV/JSON
   (in-memory                                                     │                        plots.py
    or *.pickle)                                                  └── uncertainty.py
 ```
@@ -89,7 +89,7 @@ evaluation/
   beats.py           # cardiac clock, beat table, detection quality
   levels.py          # the hierarchy: grouping keys per level
   uncertainty.py     # HAC standard error, moving-block bootstrap (from prototypes)
-  metrics/
+  scoring/
     __init__.py      # family registry: which families apply to which signal class
     waveform.py      # MAE, RMSE, Pearson, CCC, MACC
     rate.py          # HR (FFT / peak), SNR — absorbs report_hr_metrics
@@ -249,7 +249,7 @@ A run populates every level it can; a LOSO fold simply has one participant.
 
 ## 9. Metric families
 
-`metrics/__init__.py` holds the registry mapping signal class to applicable
+`scoring/__init__.py` holds the registry mapping signal class to applicable
 families. Nothing in a YAML selects them (D7).
 
 - **`waveform.py`** — MAE, RMSE, Pearson, CCC, MACC, at window level and
@@ -291,7 +291,7 @@ Applied per D6:
 
 ## 11. Standards: thresholds, provenance, and what we cannot satisfy
 
-`metrics/standards.py` holds every threshold, grade band and clause reference
+`scoring/standards.py` holds every threshold, grade band and clause reference
 as a named constant with a source comment, plus a small table binding each
 criterion to the level it consumes and the statistic it tests. Applying them
 is one generic evaluator, so ESH or ISO 81060-2 later is rows, not code.
@@ -418,7 +418,7 @@ next person to read both modules sees it.
 ## 17. Verification steps carried into the implementation plan
 
 1. **Confirm every threshold, grade band and aggregation formula in
-   `metrics/standards.py` against the purchased ISO 81060-3:2022 and
+   `scoring/standards.py` against the purchased ISO 81060-3:2022 and
    IEEE 1708-2014 / 1708a-2019 texts** before any report prints a pass/fail.
    Blocking for clinical claims; not blocking for the rest of the build.
 2. Confirm the beat detector's constraints (refractory window, prominence

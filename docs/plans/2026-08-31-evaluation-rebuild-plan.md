@@ -796,7 +796,7 @@ Andrews (1991) automatic bandwidth selection, and a moving-block bootstrap for
 the statistics with no usable closed form.
 
 Applies to the DL-side metrics only. Clinical numbers use the standards' own
-prescribed aggregation — see ``evaluation/metrics/standards.py``.
+prescribed aggregation — see ``evaluation/scoring/standards.py``.
 """
 
 import numpy as np
@@ -1050,11 +1050,11 @@ git commit -m "feat(eval): aggregation hierarchy with sections from window conti
 
 ---
 
-### Task 7: `evaluation/metrics/waveform.py`
+### Task 7: `evaluation/scoring/waveform.py`
 
 **Files:**
-- Create: `evaluation/metrics/__init__.py`
-- Create: `evaluation/metrics/waveform.py`
+- Create: `evaluation/scoring/__init__.py`
+- Create: `evaluation/scoring/waveform.py`
 - Test: covered by Task 12.
 
 **Interfaces:**
@@ -1065,7 +1065,7 @@ git commit -m "feat(eval): aggregation hierarchy with sections from window conti
 
 - [ ] **Step 1: Create the package and the module**
 
-Create `evaluation/metrics/__init__.py`:
+Create `evaluation/scoring/__init__.py`:
 
 ```python
 """Metric families. Which apply to a signal follows from its class, never from
@@ -1085,7 +1085,7 @@ def families_for(signal) -> tuple:
     return FAMILIES["absolute" if is_absolute(signal) else "shape"]
 ```
 
-Create `evaluation/metrics/waveform.py`:
+Create `evaluation/scoring/waveform.py`:
 
 ```python
 """Shape and error agreement for one pair of traces, in physical units."""
@@ -1157,7 +1157,7 @@ Run:
 ```bash
 uv run python -c "
 import numpy as np
-from evaluation.metrics.waveform import waveform_metrics
+from evaluation.scoring.waveform import waveform_metrics
 t = np.linspace(0, 10, 300)
 print(waveform_metrics(np.sin(t) + 0.05, np.sin(t), fs=30))
 "
@@ -1169,16 +1169,16 @@ Expected: `pearson` ≈ 1.0, `mae` ≈ 0.05, no exception.
 Run: `uv run pytest -q`
 
 ```bash
-git add evaluation/metrics/__init__.py evaluation/metrics/waveform.py
+git add evaluation/scoring/__init__.py evaluation/scoring/waveform.py
 git commit -m "feat(eval): waveform metric family"
 ```
 
 ---
 
-### Task 8: `evaluation/metrics/rate.py` — the HR family absorbs `report_hr_metrics`
+### Task 8: `evaluation/scoring/rate.py` — the HR family absorbs `report_hr_metrics`
 
 **Files:**
-- Create: `evaluation/metrics/rate.py`
+- Create: `evaluation/scoring/rate.py`
 - Test: covered by Task 12.
 
 **Interfaces:**
@@ -1194,7 +1194,7 @@ git commit -m "feat(eval): waveform metric family"
 
 - [ ] **Step 1: Write the implementation**
 
-Create `evaluation/metrics/rate.py`:
+Create `evaluation/scoring/rate.py`:
 
 ```python
 """Heart-rate agreement — what the upstream toolbox called *the* evaluation.
@@ -1283,7 +1283,7 @@ Run:
 ```bash
 uv run python -c "
 import numpy as np
-from evaluation.metrics.rate import rate_metrics, aggregate_rate
+from evaluation.scoring.rate import rate_metrics, aggregate_rate
 t = np.arange(300) / 30
 w = np.sin(2 * np.pi * 1.2 * t)
 rows = [rate_metrics(w, w, fs=30) for _ in range(4)]
@@ -1297,13 +1297,13 @@ Expected: a gt_hr near 72 bpm and an `mae` of 0.0.
 Run: `uv run pytest -q`
 
 ```bash
-git add evaluation/metrics/rate.py
+git add evaluation/scoring/rate.py
 git commit -m "feat(eval): rate metric family, absorbing report_hr_metrics"
 ```
 
 ---
 
-### Task 9: `evaluation/metrics/standards.py` — thresholds as named, sourced constants
+### Task 9: `evaluation/scoring/standards.py` — thresholds as named, sourced constants
 
 > **These values are written from general knowledge of the standards, not from
 > their text.** They must be checked against the purchased ISO 81060-3:2022 and
@@ -1314,7 +1314,7 @@ git commit -m "feat(eval): rate metric family, absorbing report_hr_metrics"
 > not of the implementation.
 
 **Files:**
-- Create: `evaluation/metrics/standards.py`
+- Create: `evaluation/scoring/standards.py`
 - Test: covered by Task 10.
 
 **Interfaces:**
@@ -1325,7 +1325,7 @@ git commit -m "feat(eval): rate metric family, absorbing report_hr_metrics"
 
 - [ ] **Step 1: Write the implementation**
 
-Create `evaluation/metrics/standards.py`:
+Create `evaluation/scoring/standards.py`:
 
 ```python
 """Clinical acceptance criteria, expressed as data.
@@ -1410,27 +1410,27 @@ def provenance_lines() -> list:
 
 - [ ] **Step 2: Verify the provenance prints the warning**
 
-Run: `uv run python -c "from evaluation.metrics.standards import provenance_lines; print('\n'.join(provenance_lines()))"`
+Run: `uv run python -c "from evaluation.scoring.standards import provenance_lines; print('\n'.join(provenance_lines()))"`
 Expected: two source lines, the WARNING line, and the study-design line.
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add evaluation/metrics/standards.py
+git add evaluation/scoring/standards.py
 git commit -m "feat(eval): clinical criteria as sourced constants with provenance"
 ```
 
 ---
 
-### Task 10: `evaluation/metrics/clinical.py` — per-beat agreement and grading
+### Task 10: `evaluation/scoring/clinical.py` — per-beat agreement and grading
 
 **Files:**
-- Create: `evaluation/metrics/clinical.py`
+- Create: `evaluation/scoring/clinical.py`
 - Test: `tests/test_evaluation_clinical.py`
 
 **Interfaces:**
 - Consumes: `evaluation.beats.BEAT_STATS`, `beat_intervals`, `beat_stats`
-  (Task 3); `evaluation.metrics.standards` (Task 9);
+  (Task 3); `evaluation.scoring.standards` (Task 9);
   `evaluation.uncertainty.mean_se` (Task 5).
 - Produces:
   - `beat_errors(prediction, label, fs) -> dict[str, np.ndarray]` keyed by `BEAT_STATS`
@@ -1446,7 +1446,7 @@ Create `tests/test_evaluation_clinical.py`:
 import numpy as np
 import pytest
 
-from evaluation.metrics.clinical import (
+from evaluation.scoring.clinical import (
     beat_errors, grade_ieee1708, iso81060_3_verdict)
 
 
@@ -1483,11 +1483,11 @@ def test_beat_errors_are_zero_against_the_reference_itself():
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_evaluation_clinical.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'evaluation.metrics.clinical'`.
+Expected: FAIL with `ModuleNotFoundError: No module named 'evaluation.scoring.clinical'`.
 
 - [ ] **Step 3: Write the implementation**
 
-Create `evaluation/metrics/clinical.py`:
+Create `evaluation/scoring/clinical.py`:
 
 ```python
 """Per-beat pressure agreement, and the acceptance criteria over it.
@@ -1500,7 +1500,7 @@ distribution is not filtered by how detectable the prediction's own beats are.
 import numpy as np
 
 from evaluation.beats import BEAT_STATS, beat_intervals, beat_stats
-from evaluation.metrics import standards
+from evaluation.scoring import standards
 from evaluation.uncertainty import mean_se
 
 
@@ -1571,7 +1571,7 @@ Expected: all four PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add evaluation/metrics/clinical.py tests/test_evaluation_clinical.py
+git add evaluation/scoring/clinical.py tests/test_evaluation_clinical.py
 git commit -m "feat(eval): per-beat clinical agreement and criteria evaluation"
 ```
 
@@ -1676,10 +1676,10 @@ import pandas as pd
 
 from evaluation.beats import detection_quality
 from evaluation.levels import sections, unit_id
-from evaluation.metrics import families_for, standards
-from evaluation.metrics.clinical import beat_errors, grade_ieee1708, iso81060_3_verdict
-from evaluation.metrics.rate import aggregate_rate, rate_metrics
-from evaluation.metrics.waveform import waveform_metrics
+from evaluation.scoring import families_for, standards
+from evaluation.scoring.clinical import beat_errors, grade_ieee1708, iso81060_3_verdict
+from evaluation.scoring.rate import aggregate_rate, rate_metrics
+from evaluation.scoring.waveform import waveform_metrics
 from neural_methods.signals import beat_labels, is_absolute, signal_unit
 
 FRAME_COLUMNS = ("level", "unit_id", "signal", "metric", "statistic",
@@ -2164,7 +2164,7 @@ git commit -m "refactor(config): TEST.REPORT replaces the HR-only TEST.METRICS l
 
 **Interfaces:**
 - Consumes: `evaluation.records.from_saved`, `evaluation.report.build_frame`,
-  `digest`, `write`, `evaluation.plots.draw`, `evaluation.metrics.rate.aggregate_rate`.
+  `digest`, `write`, `evaluation.plots.draw`, `evaluation.scoring.rate.aggregate_rate`.
 - Produces: `MultiSignalTrainer.test()` returns the tidy `DataFrame`.
 
 - [ ] **Step 1: Rewrite the trainer's reporting tail**
@@ -2224,7 +2224,7 @@ Import `ATTRS` from `neural_methods.batch`, and add `'attrs'` handling to
 - [ ] **Step 2: Wire the unsupervised predictor**
 
 In `unsupervised_methods/unsupervised_predictor.py`, replace the
-`report_hr_metrics` import with `from evaluation.metrics.rate import aggregate_rate`
+`report_hr_metrics` import with `from evaluation.scoring.rate import aggregate_rate`
 and replace the body of `_report`'s loop:
 
 ```python
@@ -2373,8 +2373,8 @@ git commit -m "feat(tools): pool a LOSO sweep into one cohort report"
 Check each prototype capability has a home before deleting:
 `find_peaks` → `evaluation/beats.py`; `mean_se` / `_moving_block_bootstrap` →
 `evaluation/uncertainty.py`; `get_rmse` / `get_mae` / `get_pearson_r` /
-`get_ccc` / `get_macc` → `evaluation/metrics/waveform.py`; `get_hr_fft` /
-`get_snr` → `evaluation/metrics/rate.py`; `aggregate_data` →
+`get_ccc` / `get_macc` → `evaluation/scoring/waveform.py`; `get_hr_fft` /
+`get_snr` → `evaluation/scoring/rate.py`; `aggregate_data` →
 `evaluation/levels.py` + `evaluation/report.py`; the Bland-Altman cells →
 `evaluation/plots.py`.
 
@@ -2399,7 +2399,7 @@ In `CLAUDE.md`:
   `REPORT.BOOTSTRAP / REPORT.PLOTS (what applies to a signal follows from its
   class; these gate only cost)`.
 - Adding Metrics — replace the section body with: extend the relevant family in
-  `evaluation/metrics/`; a new clinical criterion is rows in
+  `evaluation/scoring/`; a new clinical criterion is rows in
   `metrics/standards.py`, not new code; every number lands in the tidy frame.
 - Delete the `evaluation/prototypes/` sentence.
 
@@ -2435,7 +2435,7 @@ git commit -m "docs: close Phase 7; delete the consumed evaluation prototypes"
 These are **not** part of the tasks above. Do them before any report is used to
 support a clinical claim.
 
-1. **Check every constant in `evaluation/metrics/standards.py` against the
+1. **Check every constant in `evaluation/scoring/standards.py` against the
    purchased ISO 81060-3:2022 and IEEE 1708-2014 / 1708a-2019 texts.** Only
    then set `VERIFIED_AGAINST_STANDARD_TEXT = True` and update each `UNVERIFIED`
    source string with the clause it came from.
