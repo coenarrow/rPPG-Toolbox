@@ -28,15 +28,21 @@ SIGNALS = {
     'ECG':  {'norm': (-1500.0, 1500.0),
              'class': SHAPE,    'unit': 'uV',   'prior': 0.0,  'scale': 1.0},
     'ABP':  {'norm': (0.0, 200.0),
-             'class': ABSOLUTE, 'unit': 'mmHg', 'prior': 90.0, 'scale': 20.0},
+             'class': ABSOLUTE, 'unit': 'mmHg', 'prior': 90.0, 'scale': 20.0,
+             'beat_labels': {'max': 'systolic', 'mean': 'MAP', 'min': 'diastolic'}},
     'CVP':  {'norm': (-20.0, 30.0),
-             'class': ABSOLUTE, 'unit': 'mmHg', 'prior': 8.0,  'scale': 5.0},
+             'class': ABSOLUTE, 'unit': 'mmHg', 'prior': 8.0,  'scale': 5.0,
+             # CVP has no systole: its waveform is a/c/v waves, and the
+             # quantity that matters clinically is the mean. The machinery is
+             # shared with ABP; only the wording differs.
+             'beat_labels': {'max': 'peak', 'mean': 'mean', 'min': 'trough'}},
     'RESP': {'norm': (0.0, 10.0),        # BP4D Resp_Volts scale; override per dataset
              'class': SHAPE,    'unit': 'V',    'prior': 0.0,  'scale': 1.0},
     'EDA':  {'norm': (0.0, 40.0),        # microsiemens; override per dataset
              'class': SHAPE,    'unit': 'uS',   'prior': 0.0,  'scale': 1.0},
     'SPO2': {'norm': (0.0, 100.0),
-             'class': ABSOLUTE, 'unit': '%',    'prior': 97.0, 'scale': 3.0},
+             'class': ABSOLUTE, 'unit': '%',    'prior': 97.0, 'scale': 3.0,
+             'beat_labels': {'max': 'max', 'mean': 'mean', 'min': 'min'}},
 }
 
 EVAL_ONLY = ('HR',)
@@ -128,5 +134,16 @@ def normalize_signal(x, sig, overrides=None):
 def denormalize_signal(x, sig, overrides=None):
     lo, hi = norm_range(sig, overrides)
     return (np.asarray(x) + 1.0) / 2.0 * (hi - lo) + lo
+
+
+def beat_labels(sig) -> dict:
+    """How this signal's per-beat max/mean/min are named in a report.
+
+    Shape-class signals get no beat treatment, so they fall back to the plain
+    words rather than borrowing arterial vocabulary.
+    """
+    entry = SIGNALS[canonical_signal(sig)]
+    return dict(entry.get('beat_labels',
+                          {'max': 'max', 'mean': 'mean', 'min': 'min'}))
 
 
