@@ -88,6 +88,16 @@
   one smoke test (suite now 288). Local four-recording subset cached at
   `D:/pure_zarr`
 
+- **Phase 5 closed** (2026-08-31): the schema slimmed to YAML-writable keys
+  only (`LOG_PATH` / `UNSUPERVISED_METHODS` flattened,
+  `EVALUATION_WINDOW_SECONDS`, derived paths on `config.RUN`, `RESIZE`
+  square shorthand, YAML 1.2 floats, `LABEL_NORM` serialized resolved so
+  checkpoints are self-describing), and the 141 legacy config files
+  (`configs/train_configs/`, `configs/infer_configs/`,
+  `physhydra_configs/`, the pre-overhaul `.configs/`) distilled into the
+  migration contract's legacy settings reference and deleted — `configs/`
+  holds only `neckflix/`. Suite 289; real-cache smoke green
+
 ## In Progress
 
 - Neckflix zarr cache generation (`rgb128`; participants still being added)
@@ -119,8 +129,8 @@
   (12.6.3), `uv sync --no-dev`, then a PhysMamba smoke via SLURM on a
   **V100** node — the one open question is whether triton 3.8 still JITs
   for sm_70 (A100/H100 are safe regardless)
-- Roadmap Phases 4–8: model migrations, config consolidation, clinical
-  metrics, docs finalization
+- Roadmap Phases 4, 6–8: model migrations, clinical metrics, docs
+  finalization (Phase 5, config consolidation, is closed)
 
 ---
 

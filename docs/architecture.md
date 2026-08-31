@@ -117,10 +117,7 @@ remote-physiology/
 |   |-- utils.py
 |
 |-- configs/
-|   |-- neckflix/              Current-format experiment configs
-|   |-- train_configs/         Legacy configs (die in Phase 5)
-|   |-- infer_configs/         Legacy configs (die in Phase 5)
-|-- physhydra_configs/         Legacy PhysHydra configs (die in Phase 5)
+|   |-- neckflix/              The experiment configs (the only config tree)
 |
 |-- .slurm_scripts/            SLURM reference templates (copy and adapt)
 |-- logs/                      SLURM job stdout/stderr files (gitignored)
@@ -144,7 +141,8 @@ files (the `_SMOKE` configs are the real config plus a few overrides).
 **Top-level:**
 - `MODE`: `train_and_test`, `only_test`, or `unsupervised_method`
 - `DEVICE`: Target device (e.g., `cuda:0`)
-- `LOG.PATH`: Output directory for runs (default: `runs/exp`)
+- `LOG_PATH`: Output directory for runs (default: `runs/exp`)
+- `UNSUPERVISED_METHODS`: The traditional methods to score (POS, CHROM, ICA, ...)
 
 **`DATA` — which stores participate** (one block; splits differ only via `SPLITS`):
 - `CACHED_PATH`: Path to the zarr cache (one `*.zarr` store per recording)
@@ -162,9 +160,9 @@ provide), with warnings for zero coverage:
 - `FS`: **Mandatory.** The frame rate the model sees, in Hz. Each store's own measured `fps` attr is reconciled against it: a faster store is decimated by nearest-index sampling, a store at the same *nominal* rate (within 1%) is taken as-is, and a genuinely slower one is refused unless `UPSAMPLING: interpolate` opts into linear frame/label blending (duplication would make DiffNormalized identically zero)
 - `WINDOW_SECONDS`: The window as a **duration**. The frame count is derived, `T = WINDOW_SECONDS x FS`, snapped to a whole frame within 0.01 and refused otherwise — a frame count without a rate cannot distinguish 5 s of physiology from 1 s
 - `CHANNELS` / `TRACES`: Camera channels to load and signals to predict; the *order* transfers to `model.channels` / `model.traces`
-- `RESIZE`: Frame dimensions the model sees (`H`, `W`; `0` = keep the cache's) — resizing is consumer-side, so it need not match the cache resolution
+- `RESIZE`: Frame dimensions the model sees; a scalar is the square shorthand (`RESIZE: 128` = `{H: 128, W: 128}`; `0` = keep the cache's) — resizing is consumer-side, so it need not match the cache resolution
 - `DATA_TYPE`: Normalization methods (e.g., `['DiffNormalized', 'Standardized']`), consumer-side, concatenated along channels
-- `LABEL_NORM`: **Per signal**, `{SIG: raw|zscore|minmax}`. Omit a signal for its class default: absolute-class (ABP, CVP) load `raw` in physical units, shape-class (PPG, ECG, RESP) are per-window z-scored
+- `LABEL_NORM`: **Per signal**, `{SIG: raw|zscore|minmax}`. Omit a signal for its class default: absolute-class (ABP, CVP) load `raw` in physical units, shape-class (PPG, ECG, RESP) are per-window z-scored. Resolved to the full per-signal map at load, so checkpoints serialize the actual modes, not the omission
 
 **`MODEL`:**
 - `NAME`: Model architecture identifier (e.g., `DeepPhys`, `PhysMamba`, `PhysFormer`)
@@ -174,17 +172,16 @@ provide), with warnings for zero coverage:
 - `BATCH_SIZE`, `EPOCHS`, `LR`, `USE_AMP`/`AMP_DTYPE`
 - `MODEL_FILE_NAME`: Checkpoint naming prefix
 - `LOSS`: The per-signal registry (`{SIG: {TYPE, WEIGHTS}}`; omit for class defaults)
-- `PLOT_LOSSES_AND_LR`: Whether to generate loss/LR plots
 
 **`TEST` — scoring, in every mode** (absorbs the old `INFERENCE` block):
 - `BATCH_SIZE`; `METRICS` (omit for the standard set)
 - `USE_LAST_EPOCH`: If false, uses validation-based best epoch selection
 - `EVALUATION_METHOD`: `FFT` or `peak detection` for heart rate derivation
-- `EVALUATION_WINDOW`: Optional sliding window evaluation
+- `EVALUATION_WINDOW_SECONDS`: HR-scoring window within each test window (`0` = whole window)
 - `MODEL_PATH`: The checkpoint to load at `only_test`
 
-**`UNSUPERVISED`:**
-- `METHODS`: The traditional methods to score (POS, CHROM, ICA, ...)
+Runtime-derived paths never appear in YAML: `main.py` attaches `config.RUN`
+(`RunPaths`: `exp_name`, `model_dir`, `output_dir`).
 
 
 ## Model / Trainer Patterns

@@ -38,8 +38,9 @@ tagged `pre-overhaul`.
   `neckflix_main.py`; the legacy tuple-contract entry point it replaces is
   gone, the `pre-overhaul` tag has it).
 - **Run with**: `uv run python main.py --config_file configs/neckflix/<CONFIG>.yaml`
-- **Configs**: `configs/neckflix/` (current format). Everything else under
-  `configs/` and `physhydra_configs/` is legacy.
+- **Configs**: `configs/neckflix/` — the only config tree (the legacy piles
+  were distilled into the migration contract's settings appendix and
+  deleted in the Phase 5 close-out).
 - **HPC**: never run compute on the login node — use the
   [running-hpc-jobs](.claude/skills/running-hpc-jobs/SKILL.md) skill for
   SLURM submission, partitions, salloc, monitoring, troubleshooting.
@@ -79,8 +80,6 @@ tagged `pre-overhaul`.
 - `neural_methods/trainer/<Model>Trainer.py` files and `BaseTrainer` —
   unreachable from the entry point since Phase 2, kept as migration
   reference; each dies as its model moves onto `MultiSignalTrainer`
-- `configs/train_configs/`, `configs/infer_configs/`, `physhydra_configs/`
-  (config consolidation is Phase 5)
 - Models not yet on the dict contract: TS-CAN, EfficientPhys, PhysNet,
   iBVPNet, FactorizePhys, RhythmFormer, BigSmall, PhysHydra
 
@@ -155,7 +154,8 @@ the normal configuration, not an edge case; splits are participant filters
 The schema is the **DATA / INTERFACE / MODEL split**
 (`docs/plans/2026-08-31-interface-config-redesign.md`), loaded by
 `config.py` (`load_config`): typed dataclasses, unknown keys refused with the
-full path, ints coerced to floats (`STRIDE_SECONDS: 0` is fine). `BASE:
+full path, ints coerced to floats (`STRIDE_SECONDS: 0` is fine), and floats
+resolved with YAML 1.2 semantics (`LR: 9e-3` is a number). `BASE:
 [<file>]` deep-merges include files — the `_SMOKE` variants are
 `BASE: [<real config>]` plus a handful of overrides. Old-schema keys
 (`TOOLBOX_MODE`, `INFERENCE`, the four `*.DATA` blocks) are refused with a
@@ -192,7 +192,8 @@ pointer at the design doc.
     transfers to `model.channels`
   - `TRACES` — signals to predict, e.g. `['ABP','CVP','ECG']`; order
     transfers to `model.traces`
-  - `RESIZE.H/W` — what the model sees; resizing happens consumer-side, so
+  - `RESIZE` — what the model sees; a scalar is the square shorthand
+    (`RESIZE: 128` = `{H: 128, W: 128}`). Resizing happens consumer-side, so
     it need not match the cache resolution (`0` = keep the cache's size)
   - `DATA_TYPE` — `Raw` / `Standardized` / `DiffNormalized`, applied
     consumer-side and concatenated along channels if several are listed
@@ -200,7 +201,8 @@ pointer at the design doc.
     its class default from `neural_methods/signals.py` — absolute-class
     signals (ABP, CVP) load `raw`, in physical units, because their level is
     part of the prediction; shape-class signals (PPG, ECG, RESP) are
-    per-window z-scored
+    per-window z-scored. Resolved to the full per-signal map at load, so
+    checkpoints serialize the actual modes, not the omission
 - `MODEL` — `NAME`, `HEAD_STYLE` (`widened` = style A, default;
   `per_signal` = style B), `DROP_RATE`, plus per-model architecture blocks
   of any size (`MODEL.PHYSFORMER.PATCH_SIZE`, ...)
@@ -216,12 +218,14 @@ pointer at the design doc.
   Naming a signal not in `INTERFACE.TRACES` is an error, not a no-op
 - `TEST` — how predictions are scored, in every mode: `BATCH_SIZE`,
   `METRICS` (omit for the standard set), `USE_LAST_EPOCH`,
-  `EVALUATION_METHOD`, `EVALUATION_WINDOW`, and `MODEL_PATH` (the
-  `only_test` checkpoint)
-- `UNSUPERVISED.METHODS` — the traditional methods to score
+  `EVALUATION_METHOD`, `EVALUATION_WINDOW_SECONDS` (`0` = score each window
+  whole), and `MODEL_PATH` (the `only_test` checkpoint)
+- `LOG_PATH` — where the run's outputs land (default `runs/exp`)
+- `UNSUPERVISED_METHODS` — the traditional methods to score
 
-Derived at runtime, never written in YAML: `LOG.EXP_NAME`,
-`TEST.OUTPUT_SAVE_DIR`, `UNSUPERVISED.OUTPUT_SAVE_DIR`, `MODEL.MODEL_DIR`.
+Derived at runtime, never written in YAML: `main.py` builds `config.RUN`
+(`RunPaths`: `exp_name`, `model_dir`, `output_dir`) — the schema holds only
+keys a YAML may write.
 
 ## Running Experiments
 
@@ -252,8 +256,8 @@ uv run python main.py --limit_windows 8 --test_participants P015 --config_file c
 `unsupervised_method`. DDP is used under `torch.distributed.run`, skipped
 otherwise. `--limit_windows N` subsamples evenly for smoke runs.
 
-**Outputs**: checkpoints and plots to `LOG.PATH` (default `runs/exp`);
-predictions to `TEST.OUTPUT_SAVE_DIR`; SLURM logs to `logs/`. The standard
+**Outputs**: checkpoints and plots to `LOG_PATH` (default `runs/exp`);
+predictions to `config.RUN.output_dir`; SLURM logs to `logs/`. The standard
 plot set (written once, in the trainer and `evaluation/metrics_report.py`,
 never per model) is: loss/LR curves, per-signal per-component loss curves, HR
 Bland-Altman, per-signal waveform overlays, and predicted-vs-true agreement

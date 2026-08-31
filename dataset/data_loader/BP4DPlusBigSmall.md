@@ -173,8 +173,9 @@ task), with these differences:
   4-char code so no harm resulted. Use the 4-char code as `participant`.
 - **3-fold membership**: the legacy pipeline filtered subjects through
   `FOLD.FOLD_PATH` CSVs (column `subjects`, matched against `index[0:4]`)
-  named in the configs
-  `configs/train_configs/BP4D_BP4D_BIGSMALL_FOLD{1,2,3}.yaml`. Proposal
+  named in the configs `BP4D_BP4D_BIGSMALL_FOLD{1,2,3}.yaml` (the legacy
+  config tree was deleted in the Phase 5 close-out; git history has the
+  files). Proposal
   (design choice): derive a root attr `bigsmall_fold` in {1,2,3} — the split
   whose `Test` CSV contains the subject — so the three cross-validation
   folds become attribute filters. The six CSVs under

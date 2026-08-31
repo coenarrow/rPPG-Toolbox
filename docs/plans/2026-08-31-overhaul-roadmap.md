@@ -184,17 +184,26 @@ delivery in the zarr loader (dataset-agnostic channel fill, zero-coverage
 warnings, opt-in interpolating upsampling), and all seven
 `configs/neckflix/*.yaml` re-pointed (`_SMOKE` = `BASE:` + overrides).
 
-Still open in this phase:
+**Closed 2026-08-31** with a second pass (the design doc's addendum):
 
-- One config system: kill the Hydra split (`physhydra_configs/`), delete the
-  legacy `configs/train_configs/` + `configs/infer_configs/` piles;
-  `configs/` holds only current-format experiment files. (Deferred until the
-  remaining migrations stop needing the legacy configs as the `T_orig`
-  reference — contract §1.)
+- ~~One config system: kill the Hydra split, delete the legacy config
+  piles.~~ **Done** — the 132 files under `configs/train_configs/`,
+  `configs/infer_configs/`, `physhydra_configs/` (plus the pre-overhaul
+  hidden `.configs/`) were distilled into the migration contract's
+  **legacy settings reference** appendix (canonical `T_orig`, resize,
+  data types, LR, architecture blocks, per-dataset variants) and deleted;
+  `configs/` holds only `neckflix/`.
 - ~~§7a of the migration contract: sub-agent re-verification of the converted
   DeepPhys and PhysFormer configs.~~ **Done 2026-08-31** — both passed with
   no architectural discrepancy; the schema gaps found are recorded in the two
-  retros and feed this phase's remaining pass.
+  retros.
+- The close-out also slimmed the schema to exactly what a YAML may write:
+  `LOG_PATH` / `UNSUPERVISED_METHODS` flattened to top level,
+  `EVALUATION_WINDOW_SECONDS` replaces the two-key block, dead
+  `PLOT_LOSSES_AND_LR` deleted, runtime-derived paths moved off the schema
+  onto `config.RUN`, `RESIZE` square shorthand, YAML 1.2 float resolution,
+  and `LABEL_NORM` resolved-at-load so checkpoints are self-describing
+  (a §7a finding).
 
 ## Phase 6 — Model migration, wave 2
 

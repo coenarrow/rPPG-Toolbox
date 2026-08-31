@@ -55,8 +55,9 @@ Optionally present per session (only under `DATA_AUG: ['Motion']`):
   store RGB channel order, uint8, 0-255, at native resolution (the
   resolution is not recorded in the code; read it from the pngs).
 - fps: not read from any file. The shipped config
-  (`configs/train_configs/PhysDrive_PhysDrive_PhysDrive_TSCAN_BASIC.yaml`)
-  sets `FS: 30` in all data blocks, and the pseudo-label branch used
+  (`PhysDrive_PhysDrive_PhysDrive_TSCAN_BASIC.yaml`, in the legacy config
+  tree deleted in the Phase 5 close-out — git history has it)
+  set `FS: 30` in all data blocks, and the pseudo-label branch used
   `fs=self.config_data.FS`. Write `fps: 30` (verify against the PhysDrive
   documentation).
 - The loader raised on an empty/missing `Align/` directory

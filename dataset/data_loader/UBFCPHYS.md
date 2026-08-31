@@ -146,8 +146,8 @@ conversion).
   `load_preprocessed_data` matched chunk names against the list after
   stripping the `_input{i}.npy` suffix). The exclusion list used across
   this repo's UBFC-PHYS configs (e.g.
-  `configs/infer_configs/PURE_UBFC-PHYS_TSCAN_BASIC.yaml`) — preserved
-  here because those configs are scheduled for deletion — is:
+  `PURE_UBFC-PHYS_TSCAN_BASIC.yaml`) — preserved here because those
+  configs were deleted in the Phase 5 close-out — is:
 
   ```
   s3_T1, s8_T1, s9_T1, s26_T1, s28_T1, s30_T1, s31_T1, s32_T1,

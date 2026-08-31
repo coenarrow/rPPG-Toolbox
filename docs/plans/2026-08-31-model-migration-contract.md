@@ -92,9 +92,10 @@ Rules:
   reproduces it is `WINDOW_SECONDS = T_orig / FS` — at 30 fps: 128 frames
   → `4.266667` (64/15 s, PhysMamba-style), 160 frames → `5.333333`
   (16/3 s), 180 frames → `6.0`. The migration agent looks up `T_orig` in
-  the model's legacy config (`configs/train_configs/`, before Phase 5
-  deletes them) and records the conversion in a comment beside
-  `WINDOW_SECONDS` in the new config.
+  the **legacy settings reference** (appendix) — the legacy config trees
+  were deleted in the Phase 5 close-out; git history has the files — and
+  records the conversion in a comment beside `WINDOW_SECONDS` in the new
+  config.
 - **The store's native `fps` attr is the source rate for resampling, not the
   model-facing rate.** Where native > target, the loader decimates by
   nearest-index sampling over a `WINDOW_SECONDS × native_fps` span; labels
@@ -337,9 +338,9 @@ every later migration assumes it. Where each piece lands:
 Per model, in one change:
 
 1. Read the original architecture, its legacy `<Model>Trainer.py` (the
-   migration reference until step 7 deletes it), and its legacy config
-   under `configs/train_configs/` (canonical `T_orig`, §1); identify its
-   family (§2).
+   migration reference until step 7 deletes it), and its row in the
+   **legacy settings reference** appendix (canonical `T_orig`, §1);
+   identify its family (§2).
 2. Parameterise `in_channels` / `out_signals` (first layer + final readout
    only); verify the final readout is activation-free. Any reshapes touched
    use einops (cross-cutting rule). Original recoverable at `3/1`.
@@ -413,6 +414,39 @@ discrepancy, that is a finding to report, not something to quietly fix.
 | RhythmFormer | video3d (transformer) | head/tokenization decided at migration | pending (Phase 6) |
 | BigSmall | frames2d, dual view derived internally | per-signal heads native (Style B); AU head out of scope; declare WTSM constraint | pending (Phase 6) |
 | PhysHydra | — | **excluded from this contract** (Neckflix-native) | own path |
+
+## Appendix: legacy settings reference
+
+Distilled 2026-08-31 from `configs/train_configs/`, `configs/infer_configs/`
+and `physhydra_configs/` (132 files), which were **deleted in the Phase 5
+close-out** — this table replaces them as the canonical-settings record; git
+history before that commit has the originals. Values are the canonical
+(most-common, cross-dataset) settings; per-dataset variants worth knowing are
+in the notes. `WINDOW_SECONDS` is `T_orig / 30` (§1).
+
+| Model | `T_orig` | `WINDOW_SECONDS` @30 | Resize | `DATA_TYPE` | Label norm (legacy `LABEL_TYPE`) | LR | Batch | Epochs | Architecture block |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| TS-CAN | 180 | 6.0 | 72 | `[DiffNormalized, Standardized]` | DiffNormalized | 9e-3 | 4 | 30 | `TSCAN.FRAME_DEPTH: 10`; `DROP_RATE: 0.2` |
+| EfficientPhys | 180 | 6.0 | 72 | `[Standardized]` | DiffNormalized | 9e-3 | 4 | 30 | `EFFICIENTPHYS.FRAME_DEPTH: 10`; `DROP_RATE: 0.2` |
+| PhysNet | 128 | 4.266667 | 72 | `[DiffNormalized]` | DiffNormalized | 9e-3 | 4 | 30 | `PHYSNET.FRAME_NUM: 128` ("only support for factor of 512") ; `DROP_RATE: 0.2` |
+| iBVPNet | 160 | 5.333333 | 72 | `[Raw]` | Standardized | 1e-3 | 4 | 30 | `iBVPNet.{CHANNELS: 3, FRAME_NUM: 160}`; `DROP_RATE: 0.1` (0.2 in two files) |
+| FactorizePhys | 160 | 5.333333 | 72 | `[Raw]` | Standardized | 1e-3 | 4 | 10 | `FactorizePhys.{CHANNELS: 3, FRAME_NUM: 160, MD_TYPE: NMF, MD_R: 1, MD_S: 1, MD_STEPS: 4, MD_RESIDUAL: True, MD_INFERENCE: True}`; `MD_FSAM: True` at train, `False` in every infer config; `MD_TRANSFORM: "T_KAB"` (stated once, "default if not specified"); `DROP_RATE: 0.1` |
+| RhythmFormer | 160 | 5.333333 | **128** | `[Standardized]` | Standardized | 9e-3 | 4 | 30 | **none** — no `MODEL.RHYTHMFORMER` block exists anywhere; everything is hard-coded in the class. `DROP_RATE: 0.2` |
+| BigSmall | 3 | n/a — frame-depth chunking, not a physiological window | BIG 144, SMALL 9 | BIG `[Standardized]`, SMALL `[DiffNormalized]` | DiffNormalized + `USE_PSUEDO_PPG_LABEL: True` | 1e-3 | 180 | 5 | `BIGSMALL.FRAME_DEPTH: 3`; no `DROP_RATE`; FS **25** (BP4D+); the dual resolution lived in a `PREPROCESS.BIGSMALL` block, not `RESIZE` |
+| PhysHydra | 128 | 4.266667 | 128 | `[DiffNormalized]` | Raw (TEST block only) | 3e-3 | 2 | 50 | none under `MODEL.*`; trace norm ranges (`ABP [0,200]`, `CVP [-20,30]`, `ECG [-1500,1500]`), postures and `RANDOM_CHUNK` lived in the legacy `NECKFLIX` block. Own migration path |
+
+Variant notes that survive the deletion:
+
+- **TS-CAN / EfficientPhys at other rates**: the UBFC-PHYS *infer* configs
+  rescaled to `FS: 35` + `CHUNK_LENGTH: 210` (and PURE→iBVP to 160), but the
+  UBFC-PHYS *train* configs kept 180 @ 35 — a real train/infer inconsistency
+  in upstream; the physical-time schema makes it inexpressible (6.0 s is
+  6.0 s at any rate).
+- **EfficientPhys on iBVP** flipped all three axes: `[Raw]` input
+  ("if use EfficientPhys, should be Raw"), Standardized labels,
+  `CHUNK_LENGTH: 160`.
+- **PhysNet never rescaled** its 128 frames regardless of dataset FS.
+- BP4D+ datasets ran at FS 25 (train/valid); PhysDrive TS-CAN used batch 32.
 
 ---
 

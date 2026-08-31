@@ -207,6 +207,36 @@ verifies the converted config reproduces the same built model, runs the test
 suite and a real smoke run, and records anything the new schema cannot
 express. The migration contract carries the exact recipe (§7a).
 
+## Addendum: the Phase 5 close-out slim (2026-08-31, later)
+
+A second pass, after the §7a re-verifications, cut the schema to exactly what
+a YAML may write:
+
+- `LOG.PATH` → top-level `LOG_PATH`; `UNSUPERVISED.METHODS` → top-level
+  `UNSUPERVISED_METHODS` (both single-value blocks dissolved).
+- `TEST.EVALUATION_WINDOW.{USE_SMALLER_WINDOW, WINDOW_SIZE}` → one key,
+  `TEST.EVALUATION_WINDOW_SECONDS` (`0` = score each window whole).
+- `TRAIN.PLOT_LOSSES_AND_LR` deleted — the standard plot set is always
+  written (rank 0 only), per the plots-written-once rule.
+- The four runtime-derived fields (`LOG.EXP_NAME`, `MODEL.MODEL_DIR`, the two
+  `OUTPUT_SAVE_DIR`s) left the schema entirely: `main.py` attaches
+  `config.RUN` (`RunPaths`: `exp_name`, `model_dir`, `output_dir` — one
+  output dir, since the modes are exclusive).
+- `RESIZE` gained the square scalar shorthand (`RESIZE: 128`), normalised to
+  `{H, W}` before the schema sees it.
+- The YAML loader resolves floats with YAML 1.2 semantics (`9e-3` is a
+  number), which also fixes numbers inside the free-form `WEIGHTS` and
+  `MODEL.<NAME>` blocks; `_coerce_scalar`'s string-number workarounds died.
+- `LABEL_NORM` is resolved to the full per-signal map at load and serialized
+  resolved — the §7a finding that a checkpoint carrying `{}` would silently
+  reinterpret its units if a class default ever changed.
+
+The other close-out action: the three legacy config directories
+(`configs/train_configs/`, `configs/infer_configs/`, `physhydra_configs/`)
+were distilled into the migration contract's per-model settings table and
+deleted — the contract, not 132 yacs-era files, is now the `T_orig`
+reference for the remaining migrations.
+
 ---
 
 Last updated: 2026-08-31

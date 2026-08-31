@@ -6,6 +6,37 @@ This file tracks development milestones. As of 2026-08-25 all branches (HPC, Mac
 
 ---
 
+## 2026-08-31 — Branch: `main` — Phase 5 close-out: schema slimmed, legacy config piles deleted
+
+Going back to yacs was considered and declined: the parser was never what
+made the config complex — the key count was. So the close-out cut keys, not
+machinery ([design addendum](plans/2026-08-31-interface-config-redesign.md)).
+
+- **Schema slimmed to exactly what a YAML may write.** `LOG.PATH` →
+  top-level `LOG_PATH`; `UNSUPERVISED.METHODS` → `UNSUPERVISED_METHODS`;
+  the two-key `TEST.EVALUATION_WINDOW` block → one
+  `EVALUATION_WINDOW_SECONDS` (`0` = score each window whole); dead
+  `TRAIN.PLOT_LOSSES_AND_LR` deleted (the standard plot set always writes,
+  rank 0 only); the four runtime-derived fields left the schema for
+  `config.RUN` (`RunPaths`: exp_name, model_dir, one output_dir — the modes
+  are exclusive); `RESIZE: 128` square shorthand; the loader resolves floats
+  with YAML 1.2 semantics, so `9e-3` is a number even inside the free-form
+  `WEIGHTS` and `MODEL.<NAME>` blocks.
+- **`LABEL_NORM` is resolved at load and serialized resolved** — checkpoints
+  now carry `{ABP: raw, CVP: raw, ECG: zscore}` rather than `{}`, closing
+  the §7a finding that a class-default change would silently reinterpret an
+  existing checkpoint's units.
+- **The legacy config piles are gone**: `configs/train_configs/`,
+  `configs/infer_configs/`, `physhydra_configs/` (132 files) plus the
+  pre-overhaul hidden `.configs/` (9), distilled first into the migration
+  contract's **legacy settings reference** appendix — canonical `T_orig`,
+  resize, data types, LR/batch/epochs, every model-specific block, and the
+  per-dataset variants worth keeping (including upstream's real UBFC-PHYS
+  train/infer FS inconsistency, which the physical-time schema makes
+  inexpressible). `configs/` holds only `neckflix/`.
+- Suite: 289. Real-cache PhysMamba smoke green end-to-end on the slimmed
+  schema, metrics identical to the pre-slim run.
+
 ## 2026-08-31 — Branch: `main` — §7a re-verifications green; PURE on the zarr cache
 
 - **DeepPhys and PhysFormer §7a re-verification (one sub-agent per model) —
