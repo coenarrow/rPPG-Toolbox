@@ -38,12 +38,15 @@ def main():
     frame = build_frame(run, bootstrap=args.bootstrap, hr_method=args.hr_method)
     summary = digest(frame, run)
     print(summary)
+    # Always: the JSON is where the digest, the threshold provenance and the
+    # unmet study-design notes live, and a CSV quoted without them is exactly
+    # the artefact that turns an indicative grade into a claim. --csv adds a
+    # copy at the caller's path, it does not replace the report.
+    directory = args.target if args.target.is_dir() else args.target.parent
+    write(frame, summary, directory, "pooled")
     if args.csv:
         frame.to_csv(args.csv, index=False)
         print(f"Wrote {args.csv}")
-    else:
-        directory = args.target if args.target.is_dir() else args.target.parent
-        write(frame, summary, directory, "pooled")
 
 
 if __name__ == "__main__":

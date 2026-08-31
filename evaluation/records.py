@@ -94,9 +94,14 @@ def load(target) -> RunRecords:
     numbers would silently mix units.
     """
     windows, fs, traces, label_norms = [], None, [], {}
+    model_names = set()
     for path in _pickle_paths(target):
         with open(path, "rb") as handle:
             payload = pickle.load(handle)
+        # Absent in pickles written before the key existed; pooling across
+        # models can be deliberate, so this is a warning and never an error.
+        if payload.get("model_name"):
+            model_names.add(str(payload["model_name"]))
         if fs is None:
             fs = float(payload["fs"])
         elif float(payload["fs"]) != fs:
@@ -112,4 +117,8 @@ def load(target) -> RunRecords:
             if trace not in traces:
                 traces.append(trace)
         windows.extend(payload["windows"])
+    if len(model_names) > 1:
+        print("WARNING: pooling outputs from more than one model ("
+              + ", ".join(sorted(model_names))
+              + "); the participant and cohort numbers below mix them")
     return from_saved(windows, fs=fs, traces=tuple(traces), label_norms=label_norms)

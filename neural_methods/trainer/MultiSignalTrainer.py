@@ -671,6 +671,9 @@ class MultiSignalTrainer:
             'traces': list(self.traces),
             'channels': list(self.channels),
             'fs': self.frame_rate,
+            # The same identity the checkpoint records, so a pooled sweep can
+            # say out loud when a `runs/` directory holds two models' folds.
+            'model_name': self.config.MODEL.NAME,
             # Per signal, so downstream tooling can invert each one correctly
             # without knowing anything about the model that produced it.
             'label_norms': dict(self.label_norms),
