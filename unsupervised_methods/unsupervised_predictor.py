@@ -5,8 +5,8 @@ CVP and ECG each carry the cardiac rhythm, so one video yields one HR estimate
 scored against every reference trace that recording actually has.
 ``label_mask`` decides which those are, so a recording missing ABP simply
 contributes nothing to the ABP row instead of being dropped. Every window
-funnels into the same per-window HR comparison and the same metric report
-(:mod:`evaluation.metrics_report`).
+funnels into the same per-window HR comparison and the same rate-family
+aggregation (:mod:`evaluation.scoring.rate`).
 
 The legacy tuple path ``(frames, labels, filename, chunk_id)`` died with
 ``main.py``; the ``pre-overhaul`` tag has it.
@@ -17,8 +17,8 @@ from collections import defaultdict
 import numpy as np
 from tqdm import tqdm
 
-from evaluation.metrics_report import report_hr_metrics
 from evaluation.post_process import calculate_metric_per_video
+from evaluation.scoring.rate import aggregate_rate
 from neural_methods.batch import (
     CHANNEL_MASK, FRAMES, LABEL_MASK, LABELS, METADATA,
     frames_to_rgb_trace, is_batch_dict, iter_samples,
@@ -162,25 +162,26 @@ def _accumulate(config, data_loader, method_names):
 def _report(config, method_name, signal_groups):
     """Print and return the metric table for one method."""
     print("Used Unsupervised Method: " + method_name)
-    # Filename ID to be used in any results files (e.g., Bland-Altman plots) that get saved
     if config.MODE != "unsupervised_method":
         raise ValueError(
             "unsupervised_predictor.py evaluation only supports unsupervised_method!")
-    filename_id = method_name + "_" + config.DATA.DATASET
 
     if not signal_groups:
         print("No evaluable windows found - check the label masks and channels.")
         return {}
 
-    hr_method = _hr_method(config)
     report = {}
     for signal in sorted(signal_groups):
         group = signal_groups[signal]
-        report[signal] = report_hr_metrics(
-            group["gt"], group["pred"], group["snr"], group["macc"],
-            metrics=config.TEST.METRICS, config=config,
-            filename_id=filename_id, hr_method=hr_method,
-            scope=signal)
+        rows = [{"gt_hr": (gt, float("nan")), "pred_hr": (pred, float("nan")),
+                 "snr": (snr, float("nan")), "macc": (macc, float("nan"))}
+                for gt, pred, snr, macc in zip(group["gt"], group["pred"],
+                                               group["snr"], group["macc"])]
+        summary = aggregate_rate(rows)
+        report[signal] = summary
+        print(f"--- {signal}: {len(rows)} windows ---")
+        for metric, (value, se) in summary.items():
+            print(f"[{signal}] {metric}: {value} +/- {se}")
     return report
 
 

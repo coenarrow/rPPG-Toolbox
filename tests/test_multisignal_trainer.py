@@ -59,7 +59,7 @@ def config(cache):
     cfg.TRAIN.BATCH_SIZE = 2
     cfg.TEST.BATCH_SIZE = 2
     cfg.TEST.USE_LAST_EPOCH = True
-    cfg.TEST.METRICS = ['MAE', 'RMSE', 'MACC']       # no BA: skip plot writing
+    cfg.TEST.REPORT.PLOTS = []                        # keep unit tests off the filesystem
     cfg.LOG_PATH = str(cache / "logs")
     cfg.RUN = RunPaths(exp_name="test_exp",
                        model_dir=str(cache / "models"),
@@ -116,14 +116,15 @@ def test_train_then_test_round_trip(config, cache, capsys):
     assert payload["interface"]["CHANNELS"] == ["R", "G", "B"]
     assert payload["model_name"] == "PhysMamba"
 
-    report = trainer.test(loaders)
+    frame = trainer.test(loaders)
     # P003 has no ABP, so only CVP is scored on the held-out split.
-    assert set(report) == {"CVP"}
-    assert report["CVP"]["n"] > 0
-    assert report["CVP"]["MAE"] == pytest.approx(report["CVP"]["MAE"])  # finite
+    assert set(frame["signal"]) == {"CVP"}
+    window_mae = frame[(frame["level"] == "window") & (frame["metric"] == "mae")]
+    assert not window_mae.empty
+    assert np.isfinite(window_mae["value"]).all()          # finite
 
     printed = capsys.readouterr().out
-    assert "[CVP] waveform Pearson" in printed
+    assert "--- CVP (mmHg) ---" in printed
     assert "no windows carried this label" in printed      # the ABP row
 
 
@@ -211,62 +212,6 @@ def test_only_test_mode_needs_no_train_loader(config, cache):
     trainer = MultiSignalTrainer(config, {"test": loaders["test"]},
                                  rank=0, world_size=1, debug=False)
     assert trainer.test({"test": loaders["test"]}) is not None
-
-
-def _stats(mean, std, low, high):
-    import torch as _torch
-    return {"mean": _torch.tensor(mean), "std": _torch.tensor(std),
-            "min": _torch.tensor(low), "max": _torch.tensor(high)}
-
-
-def test_a_raw_signal_is_already_physical_and_inverts_by_identity(config):
-    """ABP is absolute-class, so the model predicts mmHg and nothing is undone."""
-    import torch as _torch
-
-    loaders = loaders_for(config, test_include=("P001",))
-    trainer = MultiSignalTrainer(config, loaders, rank=0, world_size=1, debug=False)
-    assert trainer.label_norms["ABP"] == "raw"
-    sample = {
-        "predictions": {"ABP": _torch.tensor([88.0, 121.0, 79.0, 95.0])},
-        "labels": {"ABP": _torch.tensor([90.0, 120.0, 80.0, 96.0])},
-        "label_stats": {"ABP": _stats(96.5, 18.0, 80.0, 120.0)},
-    }
-    physical_pred, physical_label = trainer._to_physical(sample, "ABP")
-    assert np.allclose(physical_pred, [88.0, 121.0, 79.0, 95.0])
-    assert np.allclose(physical_label, [90.0, 120.0, 80.0, 96.0])
-    # The mmHg error is the error, full stop -- this is absolute-level accuracy.
-    assert float(np.mean(np.abs(physical_pred - physical_label))) == pytest.approx(1.25)
-
-
-def test_a_zscored_signal_scales_by_the_windows_own_std(config):
-    """z-score inverse is linear, so the physical error is MAE x that window's std."""
-    import torch as _torch
-
-    config.INTERFACE.LABEL_NORM = {"ABP": "zscore"}
-    loaders = loaders_for(config, test_include=("P001",))
-    trainer = MultiSignalTrainer(config, loaders, rank=0, world_size=1, debug=False)
-    sample = {
-        "predictions": {"ABP": _torch.tensor([0.0, 1.0, -1.0, 0.5])},
-        "labels": {"ABP": _torch.tensor([0.0, 0.0, 0.0, 0.0])},
-        "label_stats": {"ABP": _stats(90.0, 12.0, 70.0, 130.0)},
-    }
-    physical_pred, physical_label = trainer._to_physical(sample, "ABP")
-    assert np.allclose(physical_label, 90.0)
-    assert np.allclose(physical_pred, [90.0, 102.0, 78.0, 96.0])
-    normalised_mae = float(np.mean(np.abs(
-        sample["predictions"]["ABP"].numpy() - sample["labels"]["ABP"].numpy())))
-    physical_mae = float(np.mean(np.abs(physical_pred - physical_label)))
-    assert physical_mae == pytest.approx(normalised_mae * 12.0)
-
-
-def test_test_report_prints_both_normalised_and_physical_errors(config, capsys):
-    loaders = loaders_for(config, test_include=("P001",))
-    trainer = MultiSignalTrainer(config, loaders, rank=0, world_size=1, debug=False)
-    trainer.train(loaders)
-    trainer.test(loaders)
-    printed = capsys.readouterr().out
-    assert "(raw units)" in printed
-    assert "(mmHg, physical units, predicted directly)" in printed
 
 
 def test_unknown_label_norm_is_rejected_at_construction(config):

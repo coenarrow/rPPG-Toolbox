@@ -155,7 +155,7 @@ def digest(frame, run) -> str:
     """The fixed, readable summary. The CSV is where everything else lives."""
     lines = ["=== Evaluation report ==="]
     lines += [f"  {line}" for line in standards.provenance_lines()]
-    for signal in run.signals():
+    for signal in (run.traces or run.signals()):
         unit = signal_unit(signal)
         rows = frame[frame["signal"] == signal]
         if rows.empty:

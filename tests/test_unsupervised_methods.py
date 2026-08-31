@@ -199,13 +199,12 @@ class _Cfg(dict):
             raise AttributeError(name) from None
 
 
-def _predictor_config(metrics=("MAE", "RMSE", "MACC")):
+def _predictor_config():
     return _Cfg(
         MODE="unsupervised_method",
         DATA=_Cfg(DATASET="Neckflix"),
         INTERFACE=_Cfg(FS=FS),
-        TEST=_Cfg(METRICS=list(metrics),
-                  EVALUATION_METHOD="FFT",
+        TEST=_Cfg(EVALUATION_METHOD="FFT",
                   EVALUATION_WINDOW_SECONDS=0.0),
     )
 
@@ -216,7 +215,10 @@ def test_predictor_reports_one_row_per_signal_over_dict_batches():
                                                  present=("ABP", "CVP"), t=256)])]
     report = unsupervised_predict(_predictor_config(), {"unsupervised": batches}, "POS")
     assert set(report) == {"ABP", "CVP"}
-    assert all(row["n"] > 0 for row in report.values())
+    # aggregate_rate's full metric set, computed unconditionally now.
+    assert all(set(summary) == {"mae", "rmse", "mape", "pearson", "snr", "macc"}
+               for summary in report.values())
+    assert all(np.isfinite(summary["mae"][0]) for summary in report.values())
 
 
 def test_predictor_rejects_a_legacy_tuple_batch():
@@ -242,7 +244,12 @@ def test_predict_many_matches_running_each_method_alone():
     for method in methods:
         alone = unsupervised_predict(
             config, {"unsupervised": [default_collate([sample])]}, method)
-        assert together[method]["ABP"] == pytest.approx(alone["ABP"])
+        # A single-window group leaves pearson undefined (NaN); nan_ok so that
+        # doesn't itself read as a mismatch between the two paths.
+        for metric, (value, se) in together[method]["ABP"].items():
+            alone_value, alone_se = alone["ABP"][metric]
+            assert value == pytest.approx(alone_value, nan_ok=True)
+            assert se == pytest.approx(alone_se, nan_ok=True)
 
 
 def test_predictor_rejects_a_non_unsupervised_mode():

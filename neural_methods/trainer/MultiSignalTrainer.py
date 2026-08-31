@@ -29,26 +29,21 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from tqdm import tqdm
 
 from config import interface_payload
-from dataset.data_loader.label_transforms import INVERSES
 from dataset.data_loader.neckflix_config import (
     frame_size, label_norms, window_frames,
 )
-from evaluation.metrics_report import (
-    plot_absolute_agreement, plot_waveform_overlays, report_hr_metrics,
-)
-from evaluation.post_process import calculate_metric_per_video
+from evaluation.plots import draw as draw_plots
+from evaluation.records import from_saved
+from evaluation.report import build_frame, digest, write as write_report
 from neural_methods.batch import (
-    LABEL_MASK, LABEL_STATS, LABELS, METADATA, PREDICTIONS,
+    ATTRS, LABEL_MASK, LABEL_STATS, LABELS, METADATA, PREDICTIONS,
     detach_to_cpu, iter_samples, move_to_device,
 )
 from neural_methods.frame_transforms import FrameTransform
 from neural_methods.loss.PerSignalLoss import PerSignalLoss
-from neural_methods.signals import signal_prior, signal_unit
+from neural_methods.signals import signal_prior
 
 NCOLS = 80
-
-#: Shortest window the HR post-processing can filter (filtfilt padlen).
-MIN_HR_WINDOW = 9
 
 #: Weight decay applied to everything except the output readout, which is
 #: exempt (see :func:`_parameter_groups`).
@@ -532,7 +527,6 @@ class MultiSignalTrainer:
         self.model.eval()
 
         windows = []          # per (recording, signal) window records, for saving
-        stats = defaultdict(lambda: defaultdict(list))
         with torch.no_grad():
             for batch in tqdm(data_loader["test"], ncols=NCOLS):
                 on_device = move_to_device(batch, self.device)
@@ -540,93 +534,46 @@ class MultiSignalTrainer:
                     out = self.model(on_device)
                 out = detach_to_cpu(out)
                 for sample in iter_samples(out):
-                    windows.extend(self._score_sample(sample, stats))
+                    windows.extend(self._score_sample(sample))
 
         print('')
-        report = {}
-        hr_method = 'Peak' if self.config.TEST.EVALUATION_METHOD == "peak detection" else 'FFT'
-        for signal in self.traces:
-            group = stats.get(signal)
-            if not group:
-                print(f"[{signal}] no windows carried this label — skipped")
-                continue
-            print(f"--- {signal}: {len(group['gt_hr'])} windows ---")
-            unit = signal_unit(signal)
-            scope = ("physical units, predicted directly"
-                     if self.label_norms[signal] == 'raw'
-                     else "at the window's own scale")
-            print(f"[{signal}] waveform Pearson: {np.mean(group['pearson']):.4f}  "
-                  f"MAE: {np.mean(group['mae']):.4f}  RMSE: {np.mean(group['rmse']):.4f} "
-                  f"({self.label_norms[signal]} units)")
-            print(f"[{signal}] waveform MAE: {np.mean(group['mae_physical']):.4f}  "
-                  f"RMSE: {np.mean(group['rmse_physical']):.4f} ({unit}, {scope})")
-            report[signal] = report_hr_metrics(
-                group['gt_hr'], group['pred_hr'], group['snr'], group['macc'],
-                metrics=self.config.TEST.METRICS, config=self.config,
-                filename_id=self._filename_id(), hr_method=hr_method, scope=signal)
-        self.plot_test_windows(windows)
+        run = from_saved(windows, fs=self.frame_rate, traces=self.traces,
+                         label_norms=self.label_norms)
+        hr_method = ('Peak' if self.config.TEST.EVALUATION_METHOD == "peak detection"
+                     else 'FFT')
+        frame = build_frame(run, bootstrap=self.config.TEST.REPORT.BOOTSTRAP,
+                            hr_method=hr_method)
+        summary = digest(frame, run)
+        print(summary)
+        draw_plots(frame, run, output_dir=self._plot_dir(),
+                   filename_id=self._filename_id(),
+                   plots=self.config.TEST.REPORT.PLOTS)
         if self.config.RUN.output_dir:
+            write_report(frame, summary, self.config.RUN.output_dir,
+                         self._filename_id())
             self.save_dict_outputs(windows)
-        return report
+        return frame
 
-    def _score_sample(self, sample, stats):
-        """Accumulate one window's per-signal metrics; return its saveable records."""
+    def _score_sample(self, sample):
+        """Return one window's saveable records, per signal actually labeled."""
         metadata = sample[METADATA]
-        hr_method = 'Peak' if self.config.TEST.EVALUATION_METHOD == "peak detection" else 'FFT'
         records = []
         for signal in self.traces:
             if not bool(sample[LABEL_MASK][signal]):
                 continue
             prediction = sample[PREDICTIONS][signal].float().numpy()
             label = sample[LABELS][signal].float().numpy()
-            group = stats[signal]
-            group['mae'].append(float(np.mean(np.abs(prediction - label))))
-            group['rmse'].append(float(np.sqrt(np.mean((prediction - label) ** 2))))
-            group['pearson'].append(_safe_pearson(prediction, label))
-
-            # Physical units, via the exact inverse of the normalisation the
-            # loader applied to *this* signal. For a `raw` signal the inverse is
-            # the identity and the error is genuine absolute-level accuracy in
-            # mmHg. For a per-window normalised signal each window carries its
-            # own stats, so this is instead the error you would see given a
-            # perfect estimate of that window's scale -- shape, expressed in
-            # physical units; absolute level is a question the per-window
-            # normalisation deliberately removed.
-            physical_pred, physical_label = self._to_physical(sample, signal)
-            error = physical_pred - physical_label
-            group['mae_physical'].append(float(np.mean(np.abs(error))))
-            group['rmse_physical'].append(float(np.sqrt(np.mean(error ** 2))))
-            if len(prediction) >= MIN_HR_WINDOW:
-                gt_hr, pred_hr, snr, macc = calculate_metric_per_video(
-                    prediction, label, diff_flag=False, fs=self.frame_rate,
-                    hr_method=hr_method)
-                group['gt_hr'].append(gt_hr)
-                group['pred_hr'].append(pred_hr)
-                group['snr'].append(snr)
-                group['macc'].append(macc)
             records.append({
                 'signal': signal,
                 'recording_id': metadata['recording_id'],
                 'camera_id': metadata['camera_id'],
                 'start_frame': int(metadata['start_frame']),
+                'attrs': dict(metadata.get(ATTRS) or {}),
                 'prediction': prediction,
                 'label': label,
                 'label_stats': {k: float(v) for k, v in sample[LABEL_STATS][signal].items()},
             })
         return records
-
-    def _to_physical(self, sample, signal):
-        """Prediction and label for one signal back in physical units.
-
-        Each signal inverts with its own normalisation: for a ``raw`` signal
-        this is the identity and the numbers were already mmHg; for a z-scored
-        one it is that window's own std and mean, so the result measures shape
-        expressed in physical units, not absolute level.
-        """
-        inverse = INVERSES[self.label_norms[signal]]
-        stats = sample[LABEL_STATS][signal]
-        return (inverse(sample[PREDICTIONS][signal].float(), stats).numpy(),
-                inverse(sample[LABELS][signal].float(), stats).numpy())
 
     def _plot_dir(self):
         """Where the standard plot set is written, next to the loss curves."""
@@ -703,15 +650,6 @@ class MultiSignalTrainer:
         plt.close(figure)
         print('Saving per-signal loss component curves to:', path)
 
-    def plot_test_windows(self, windows):
-        """The waveform overlays and agreement scatters (contract §6, plots 3-4)."""
-        if not windows:
-            return
-        plot_waveform_overlays(windows, self.label_norms, output_dir=self._plot_dir(),
-                               filename_id=self._filename_id(), fs=self.frame_rate)
-        plot_absolute_agreement(windows, self.label_norms, output_dir=self._plot_dir(),
-                                filename_id=self._filename_id())
-
     def _filename_id(self):
         if self.config.MODE == 'train_and_test':
             return self.model_file_name
@@ -782,11 +720,3 @@ def checkpoint_interface(path):
     if isinstance(payload, dict) and "interface" in payload:
         return payload["interface"]
     return None
-
-
-def _safe_pearson(prediction, label):
-    """Correlation that returns 0 for a constant trace instead of NaN."""
-    p = prediction - prediction.mean()
-    l = label - label.mean()
-    denominator = np.sqrt((p ** 2).sum() * (l ** 2).sum())
-    return float((p * l).sum() / denominator) if denominator > 0 else 0.0
