@@ -61,4 +61,3 @@ TRAIN:
 TEST:
   BATCH_SIZE: 4
   USE_LAST_EPOCH: True          # set False and pass --valid_participants for model selection
-  # METRICS omitted: the standard set (MAE RMSE MAPE MACC Pearson SNR BA).

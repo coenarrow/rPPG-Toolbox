@@ -29,7 +29,8 @@ def test_minimal_config_loads_with_defaults(tmp_path):
     assert cfg.INTERFACE.UPSAMPLING == "refuse"
     assert cfg.DATA.ALLOW_MISSING is True
     assert cfg.TEST.EVALUATION_METHOD == "FFT"
-    assert "MAE" in cfg.TEST.METRICS
+    assert cfg.TEST.REPORT.BOOTSTRAP == 0
+    assert "waveforms" in cfg.TEST.REPORT.PLOTS
 
 
 def test_int_where_a_float_lives_is_coerced_not_refused(tmp_path):

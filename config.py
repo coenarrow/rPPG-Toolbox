@@ -36,7 +36,10 @@ MODES = ("train_and_test", "only_test", "unsupervised_method")
 UPSAMPLING_MODES = ("refuse", "interpolate")
 SPLIT_NAMES = ("TRAIN", "VALID", "TEST")
 
-DEFAULT_METRICS = ("MAE", "RMSE", "MAPE", "MACC", "Pearson", "SNR", "BA")
+#: Mirrors evaluation.plots.STANDARD_PLOTS, which is the source of truth.
+#: Duplicated deliberately: importing it here would pull matplotlib into every
+#: config load, including the metadata-only tools.
+DEFAULT_PLOTS = ("waveforms", "agreement", "clinical")
 
 
 class ConfigError(ValueError):
@@ -136,15 +139,29 @@ class TrainConfig:
 
 
 @dataclass
+class ReportConfig:
+    """What the evaluation report costs, not what it contains.
+
+    Which metrics apply to a signal follows from that signal's class, so there
+    is deliberately no per-metric switch: a number can never go missing because
+    a config forgot to ask for it. These two keys gate only the parts that cost
+    something.
+    """
+
+    BOOTSTRAP: int = 0                  # resamples for Pearson/CCC SEs; 0 = skip
+    PLOTS: list = field(default_factory=lambda: list(DEFAULT_PLOTS))
+
+
+@dataclass
 class TestConfig:
     """How predictions are scored — shared by every mode."""
 
     BATCH_SIZE: int = 4
-    METRICS: list = field(default_factory=lambda: list(DEFAULT_METRICS))
     USE_LAST_EPOCH: bool = True
     EVALUATION_METHOD: str = "FFT"      # 'FFT' or 'peak detection'
     EVALUATION_WINDOW_SECONDS: float = 0.0  # 0 = score each window whole
     MODEL_PATH: str = ""                # only_test: the checkpoint to load
+    REPORT: ReportConfig = field(default_factory=ReportConfig)
 
 
 @dataclass
