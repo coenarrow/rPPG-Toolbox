@@ -1,6 +1,6 @@
 # Contract v2 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Implement contract v2 — the cache validator (Part 1), the model
 contract rework: in-model losses + style-C parallel models (Part 2), and the
@@ -66,7 +66,7 @@ plan argues from it. Roadmap context:
   `TRACE_KEYS: dict[str, str]` — both module-level constants in
   `neural_methods.signals`.
 
-- [ ] **Step 1: Write the failing test** — append to `tests/test_signals.py`:
+- [x] **Step 1: Write the failing test** — append to `tests/test_signals.py`:
 
 ```python
 def test_modality_and_trace_vocabularies():
@@ -87,12 +87,12 @@ def test_modality_and_trace_vocabularies():
     assert TRACE_KEYS["rr"] == "RESP"
 ```
 
-- [ ] **Step 2: Run it, expect ImportError**
+- [x] **Step 2: Run it, expect ImportError**
 
 Run: `uv run python -m pytest tests/test_signals.py::test_modality_and_trace_vocabularies -v`
 Expected: FAIL — `ImportError: cannot import name 'MODALITY_CHANNELS'`.
 
-- [ ] **Step 3: Implement** — in `neural_methods/signals.py`, extend
+- [x] **Step 3: Implement** — in `neural_methods/signals.py`, extend
   `CHANNELS` and add the two tables directly below it (keep the existing
   five letters first so nothing that indexes them shifts):
 
@@ -118,13 +118,13 @@ TRACE_KEYS = {'ecg': 'ECG', 'abp': 'ABP', 'cvp': 'CVP',
               'ppg': 'PPG', 'rr': 'RESP'}
 ```
 
-- [ ] **Step 4: Run the test file and the suite's fast neighbours**
+- [x] **Step 4: Run the test file and the suite's fast neighbours**
 
 Run: `uv run python -m pytest tests/test_signals.py tests/test_batch_contract.py -q`
 Expected: all PASS (appending two letters to `CHANNELS` only widens
 `validate_channels`; nothing indexes past position 4).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add neural_methods/signals.py tests/test_signals.py
@@ -145,7 +145,7 @@ git commit -m "feat(signals): contract-v2 modality and trace vocabularies"
   units=None, trace_lengths=None, first_frame_offsets_us=None) -> pathlib.Path`
   — returns the store path.
 
-- [ ] **Step 1: Implement** — append to `tests/zarr_fixtures.py`:
+- [x] **Step 1: Implement** — append to `tests/zarr_fixtures.py`:
 
 ```python
 V2_UNITS = {"abp": "mmHg", "cvp": "mmHg", "ecg": "arb",
@@ -195,12 +195,12 @@ def make_v2_store(cache_dir, name="P030_S01_R1_0_D", *, attrs=None,
     return path
 ```
 
-- [ ] **Step 2: Sanity-run it**
+- [x] **Step 2: Sanity-run it**
 
 Run: `uv run python -c "import pathlib, tempfile; from tests.zarr_fixtures import make_v2_store; d = pathlib.Path(tempfile.mkdtemp()); print(make_v2_store(d))"`
 Expected: prints the store path, no traceback.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add tests/zarr_fixtures.py
@@ -222,7 +222,7 @@ git commit -m "test: contract-v2 zarr store fixture"
   (exit 0 = all pass). The external preprocessor repo will import
   `validate_store`; keep its signature stable.
 
-- [ ] **Step 1: Write the failing tests** — `tests/test_validate_cache.py`:
+- [x] **Step 1: Write the failing tests** — `tests/test_validate_cache.py`:
 
 ```python
 """Smoke test for the contract-v2 cache validator (one file, several cases)."""
@@ -286,7 +286,7 @@ def test_violations_are_itemised(tmp_path):
     assert "fps" in _messages(path)
 ```
 
-- [ ] **Step 2: Run, expect ModuleNotFoundError**
+- [x] **Step 2: Run, expect ModuleNotFoundError**
 
 Run: `uv run python -m pytest tests/test_validate_cache.py -v`
 Expected: FAIL — `tools.validate_cache` does not exist. (If `tools/` lacks
@@ -297,7 +297,7 @@ the same pattern any existing test uses for tools, or load by path with
 imports `tools/cache_pure.py` first and copy that pattern exactly, adjusting
 the test file's import line to match.)
 
-- [ ] **Step 3: Implement `tools/validate_cache.py`**
+- [x] **Step 3: Implement `tools/validate_cache.py`**
 
 ```python
 """Contract-v2 cache validator — the admission mechanism, made executable.
@@ -453,21 +453,25 @@ if __name__ == "__main__":
     sys.exit(main())
 ```
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `uv run python -m pytest tests/test_validate_cache.py -v`
 Expected: both PASS. Iterate on message wording only until the asserted
 substrings match.
 
-- [ ] **Step 5: Run the CLI against the current v1 cache** (a useful
-  negative check — v1 stores must FAIL, mentioning `video/data` and
-  `units`):
+- [x] **Step 5: Run the CLI against the current v1 cache** (a useful
+  negative check — v1 stores must FAIL). They fail at the *first* clause, not
+  the ones this step originally predicted: v1 keeps `timestamps_us` and
+  `frames` as arrays under `<modality>/video/`, and `fps` on that video group,
+  so every store reports `missing timestamps_us/data` and `missing required
+  perspective attr 'fps'` and never reaches the `video/data`/`units` checks.
+  Confirmed: 0/332 stores pass, exit code 1.
 
 Run: `uv run python tools/validate_cache.py D:/neckflix_zarr/rgbid256` (skip
 gracefully if the drive is absent; do not treat absence as failure)
 Expected: FAIL lines for every store — v1 layout is not v2.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add tools/validate_cache.py tests/test_validate_cache.py
@@ -488,7 +492,7 @@ git commit -m "feat(tools): contract-v2 cache validator"
   `LOSSES = "losses"`, `LABEL_UNITS = "label_units"` (reserved now, wired in
   Part 3).
 
-- [ ] **Step 1: Add the constants** beside the existing ones in
+- [x] **Step 1: Add the constants** beside the existing ones in
   `neural_methods/batch.py`:
 
 ```python
@@ -497,12 +501,12 @@ LOSSES = "losses"            # same structure, config-weighted — trainer-writt
 LABEL_UNITS = "label_units"  # {signal: str}, from the v2 cache's units attrs
 ```
 
-- [ ] **Step 2: Run the contract tests**
+- [x] **Step 2: Run the contract tests**
 
 Run: `uv run python -m pytest tests/test_batch_contract.py -q`
 Expected: PASS (additive change).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add neural_methods/batch.py
@@ -532,7 +536,7 @@ git commit -m "feat(batch): raw_losses/losses/label_units key names"
     `weighted` mirrors `raw` with detached floats plus a `'total'` float
     per module.
 
-- [ ] **Step 1: Rewrite the existing forward tests' expectations.** In
+- [x] **Step 1: Rewrite the existing forward tests' expectations.** In
   `tests/test_per_signal_loss.py`, tests currently unpack
   `total, breakdown = criterion(preds, labels, mask)`. Update each call
   site to the new two-step shape and keep the numeric assertions by going
@@ -566,12 +570,12 @@ def test_raw_is_unweighted_and_weighting_is_separate():
     assert weighted["ABP"]["total"] == float(total)
 ```
 
-- [ ] **Step 2: Run, expect failures**
+- [x] **Step 2: Run, expect failures**
 
 Run: `uv run python -m pytest tests/test_per_signal_loss.py -q`
 Expected: FAIL — old forward returns a 2-tuple, `weight_losses` undefined.
 
-- [ ] **Step 3: Implement.** Replace `PerSignalLoss.forward` (keep
+- [x] **Step 3: Implement.** Replace `PerSignalLoss.forward` (keep
   `__init__`, `_component`, `extra_repr`, and everything above the class
   untouched):
 
@@ -628,13 +632,13 @@ def weight_losses(raw, weights):
     return torch.stack(module_totals).mean(), weighted
 ```
 
-- [ ] **Step 4: Run the loss tests**
+- [x] **Step 4: Run the loss tests**
 
 Run: `uv run python -m pytest tests/test_per_signal_loss.py -q`
 Expected: PASS. (Trainer and model tests will fail until Tasks 6–7 — do not
 run the full suite yet.)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add neural_methods/loss/PerSignalLoss.py tests/test_per_signal_loss.py
@@ -662,7 +666,7 @@ git commit -m "feat(loss): raw per-signal components; weighting split into weigh
     default criterion; called by `build_model` so config `TRAIN.LOSS`
     overrides reach the model **before** any DDP wrap.
 
-- [ ] **Step 1: Write the failing test** — append to
+- [x] **Step 1: Write the failing test** — append to
   `tests/test_batch_contract.py` (reuse whatever tiny concrete model or
   batch-building helper that file already uses; the assertions are what
   matter):
@@ -683,11 +687,11 @@ def test_forward_writes_raw_losses(tiny_model_and_batch):
   If no such fixture exists, build the model/batch inline the same way the
   file's existing forward test does — copy that construction verbatim.
 
-- [ ] **Step 2: Run, expect KeyError/AttributeError**
+- [x] **Step 2: Run, expect KeyError/AttributeError**
 
 Run: `uv run python -m pytest tests/test_batch_contract.py -q`
 
-- [ ] **Step 3: Implement in `DictModel`:**
+- [x] **Step 3: Implement in `DictModel`:**
 
 In `__init__`, after the `_fs` buffer:
 
@@ -765,13 +769,13 @@ filter to signal keys first:
                                     fs=spec.fs))
 ```
 
-- [ ] **Step 4: Run the model-side tests**
+- [x] **Step 4: Run the model-side tests**
 
 Run: `uv run python -m pytest tests/test_batch_contract.py tests/test_deepphys_multisignal.py tests/test_physformer_multisignal.py tests/test_physmamba_dict.py -q`
 Expected: PASS (models still return the batch; the extra key is additive).
 Fix any test that asserted the exact output key set.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add neural_methods/model/DictModel.py neural_methods/trainer/MultiSignalTrainer.py tests/test_batch_contract.py
@@ -794,7 +798,7 @@ git commit -m "feat(model): DictModel computes raw_losses inside forward"
   `out[LOSSES] = weighted`; training/validation logs now accumulate **both**
   raw and weighted components.
 
-- [ ] **Step 1: Update the trainer tests.** In
+- [x] **Step 1: Update the trainer tests.** In
   `tests/test_multisignal_trainer.py`, any test reaching into
   `trainer.criterion` moves to `trainer.loss_weights`; add one assertion to
   the existing one-training-step test:
@@ -807,7 +811,7 @@ git commit -m "feat(model): DictModel computes raw_losses inside forward"
         assert "total" in entries
 ```
 
-- [ ] **Step 2: Implement.** Replace the criterion block (lines 332–336):
+- [x] **Step 2: Implement.** Replace the criterion block (lines 332–336):
 
 ```python
         # Contract v2: the model computes raw_losses; the trainer only
@@ -871,18 +875,18 @@ One more site: line ~639 titles subplots via `self.criterion.specs`; take
 the type from `resolve_loss_specs`'s output instead — keep `signal_specs`
 on `self` as `self.signal_specs` for that.
 
-- [ ] **Step 3: Run the trainer + main tests**
+- [x] **Step 3: Run the trainer + main tests**
 
 Run: `uv run python -m pytest tests/test_multisignal_trainer.py tests/test_main.py tests/test_legacy_contract.py -q`
 Expected: PASS (rerun the two known Windows flakes in isolation if they
 error in a full run).
 
-- [ ] **Step 4: Run the whole suite**
+- [x] **Step 4: Run the whole suite**
 
 Run: `uv run python -m pytest -q`
 Expected: 289+ passing.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add neural_methods/trainer/MultiSignalTrainer.py tests/test_multisignal_trainer.py
@@ -905,7 +909,7 @@ git commit -m "feat(trainer): weight and log the model's raw_losses; drop the ow
   qualifies). The parent applies the frame transform once; a copy's own
   `frame_transform`/`prepare_frames` is never invoked.
 
-- [ ] **Step 1: Write the failing test** — append to
+- [x] **Step 1: Write the failing test** — append to
   `tests/test_batch_contract.py`:
 
 ```python
@@ -934,11 +938,11 @@ def test_parallel_signals_is_one_copy_per_trace():
     assert torch.all(out[:, 0] == 0) and not torch.all(out[:, 1] == 0)
 ```
 
-- [ ] **Step 2: Run, expect ModuleNotFoundError**
+- [x] **Step 2: Run, expect ModuleNotFoundError**
 
 Run: `uv run python -m pytest tests/test_batch_contract.py::test_parallel_signals_is_one_copy_per_trace -v`
 
-- [ ] **Step 3: Implement `neural_methods/model/ParallelSignals.py`:**
+- [x] **Step 3: Implement `neural_methods/model/ParallelSignals.py`:**
 
 ```python
 """Style C: S complete copies of a single-signal architecture, in parallel.
@@ -990,12 +994,12 @@ class ParallelSignals(DictModel):
         return f"{super().extra_repr()}, copies={len(self.copies)}"
 ```
 
-- [ ] **Step 4: Run the test**
+- [x] **Step 4: Run the test**
 
 Run: `uv run python -m pytest tests/test_batch_contract.py::test_parallel_signals_is_one_copy_per_trace -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add neural_methods/model/ParallelSignals.py tests/test_batch_contract.py
@@ -1018,7 +1022,7 @@ git commit -m "feat(model): ParallelSignals wrapper (style C)"
 - Produces: `HEAD_STYLE` values `parallel` (default) / `widened` /
   `per_signal`; each builder honours all values it supports.
 
-- [ ] **Step 1: Add the parallel paths.** In `MultiSignalTrainer.py`,
+- [x] **Step 1: Add the parallel paths.** In `MultiSignalTrainer.py`,
   above the builders:
 
 ```python
@@ -1075,10 +1079,10 @@ def _build_physmamba(config, spec):
   (hoist `height, width = spec.img_size` and `block = config.MODEL.PHYSFORMER`
   above the guard so both paths share them.)
 
-- [ ] **Step 2: Flip the defaults** — `config.py:126` and
+- [x] **Step 2: Flip the defaults** — `config.py:126` and
   `model_spec`'s `'widened'` fallback (line 138) both become `'parallel'`.
 
-- [ ] **Step 3: Run the model + trainer + config tests; fix expectations**
+- [x] **Step 3: Run the model + trainer + config tests; fix expectations**
 
 Run: `uv run python -m pytest tests/test_deepphys_multisignal.py tests/test_physformer_multisignal.py tests/test_physmamba_dict.py tests/test_multisignal_trainer.py tests/test_config_keys.py -q`
 
@@ -1090,7 +1094,7 @@ parallel shape (when the test is about the contract). Choose per test;
 `init_output_bias` needs no change — S copies × 1 readout each hits its
 existing per-signal branch.
 
-- [ ] **Step 4: Delete the dead legacy trainer**
+- [x] **Step 4: Delete the dead legacy trainer**
 
 ```bash
 git rm neural_methods/trainer/PhysMambaTrainer.py
@@ -1099,13 +1103,13 @@ git rm neural_methods/trainer/PhysMambaTrainer.py
 Then `grep -rn "PhysMambaTrainer" --include=*.py .` — remove any import
 (check `neural_methods/trainer/__init__.py`); expect none in reachable code.
 
-- [ ] **Step 5: Full suite**
+- [x] **Step 5: Full suite**
 
 Run: `uv run python -m pytest -q`
 Expected: all pass (modulo the two known Windows flakes — rerun in
 isolation).
 
-- [ ] **Step 6: Real-cache smoke run** (GPU box; the v1 cache still works —
+- [x] **Step 6: Real-cache smoke run** (GPU box; the v1 cache still works —
   Part 3 hasn't landed):
 
 Run: `uv run python main.py --limit_windows 8 --test_participants P015 --config_file configs/neckflix/NECKFLIX_DEEPPHYS_SMOKE.yaml`
@@ -1113,7 +1117,7 @@ Expected: trains, tests, writes the report + plots; the startup print shows
 `Loss weights per module:` and the model repr shows `ParallelSignals`.
 Repeat with `NECKFLIX_PHYSMAMBA_SMOKE.yaml`.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add config.py neural_methods/trainer/MultiSignalTrainer.py tests/
@@ -1128,7 +1132,7 @@ git commit -m "feat(model): style-C parallel copies as the default head style"
 This must land **before** any Part-C migration agent is dispatched — they
 implement from this document.
 
-- [ ] **Step 1: Update the contract doc.** Precise edits, keeping its
+- [x] **Step 1: Update the contract doc.** Precise edits, keeping its
   structure:
   - The prediction contract section: `forward(batch) -> batch` now also
     writes `raw_losses` (base-computed; a migration writes no loss code)
@@ -1145,11 +1149,11 @@ implement from this document.
     internal stages (rare; PhysHydra)".
   - Add the `Reads:/Modifies:` docstring convention to the checklist.
 
-- [ ] **Step 2: Self-check** — grep the contract doc for `criterion`,
+- [x] **Step 2: Self-check** — grep the contract doc for `criterion`,
   `MaskedMultiSignalLoss`, "trainer computes": no stale statements that the
   trainer owns the loss.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add docs/plans/2026-08-31-model-migration-contract.md
