@@ -3,7 +3,7 @@ import pytest
 import torch
 from torch.utils.data import default_collate
 
-from neural_methods.batch import PREDICTIONS
+from neural_methods.batch import PREDICTIONS, RAW_LOSSES
 from neural_methods.frame_transforms import FrameTransform
 from neural_methods.model.DeepPhys import DeepPhys
 from neural_methods.model.SignalDictWrapper import SignalDictWrapper
@@ -60,7 +60,7 @@ def test_wrapper_frames2d_returns_the_batch_plus_predictions():
     batch = default_collate([make_sample(t=8, hw=(40, 40)),
                              make_sample(t=8, hw=(40, 40))])
     out = model(batch)
-    assert set(out) == set(batch) | {PREDICTIONS}
+    assert set(out) == set(batch) | {PREDICTIONS, RAW_LOSSES}
     assert set(out[PREDICTIONS]) == {"ABP", "CVP"}
     assert out[PREDICTIONS]["ABP"].shape == (2, 8)
     assert out["frames"] is batch["frames"]        # nothing dropped on the way through

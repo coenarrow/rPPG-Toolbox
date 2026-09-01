@@ -3,7 +3,7 @@ import pytest
 import torch
 from torch.utils.data import default_collate
 
-from neural_methods.batch import LABEL_MASK, LABELS, PREDICTIONS
+from neural_methods.batch import LABEL_MASK, LABELS, PREDICTIONS, RAW_LOSSES
 from neural_methods.frame_transforms import FrameTransform
 from neural_methods.loss.PerSignalLoss import PerSignalLoss, weight_losses
 from neural_methods.model.PhysMamba import PhysMamba
@@ -28,7 +28,7 @@ def test_dict_in_dict_out_keeps_everything():
     model = build()
     batch = batch_of()
     out = model(batch)
-    assert set(out) == set(batch) | {PREDICTIONS}
+    assert set(out) == set(batch) | {PREDICTIONS, RAW_LOSSES}
     for key in batch:
         assert out[key] is batch[key], f"{key} should pass through untouched"
 

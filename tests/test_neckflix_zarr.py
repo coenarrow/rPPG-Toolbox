@@ -128,7 +128,7 @@ def test_model_consumes_the_dataset_output_unchanged(tmp_path):
     """Loader -> collate -> model, with no adapter in between."""
     from torch.utils.data import DataLoader
 
-    from neural_methods.batch import PREDICTIONS
+    from neural_methods.batch import PREDICTIONS, RAW_LOSSES
     from neural_methods.frame_transforms import FrameTransform
     from neural_methods.model.PhysMamba import PhysMamba
 
@@ -139,6 +139,6 @@ def test_model_consumes_the_dataset_output_unchanged(tmp_path):
     model = PhysMamba(channels=("R", "G", "B"), traces=("ABP", "CVP"),
                       frame_transform=FrameTransform(("DiffNormalized",), size=(32, 32)))
     out = model(batch)
-    assert set(out) == set(batch) | {PREDICTIONS}
+    assert set(out) == set(batch) | {PREDICTIONS, RAW_LOSSES}
     assert out[PREDICTIONS]["ABP"].shape == (2, 16)
     assert torch.isfinite(out[PREDICTIONS]["CVP"]).all()

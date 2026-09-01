@@ -15,7 +15,7 @@ from torch.utils.data import DataLoader
 from config import RunPaths, load_config
 from dataset.data_loader.NeckflixLoader import NeckflixDataset
 from dataset.data_loader.neckflix_config import zarr_config
-from neural_methods.batch import PREDICTIONS, move_to_device
+from neural_methods.batch import PREDICTIONS, RAW_LOSSES, move_to_device
 from neural_methods.trainer.MultiSignalTrainer import (
     MODEL_REGISTRY, MultiSignalTrainer, build_model,
 )
@@ -161,7 +161,7 @@ def test_model_output_still_carries_the_loader_keys(config):
     trainer = MultiSignalTrainer(config, loaders, rank=0, world_size=1, debug=False)
     batch = move_to_device(next(iter(loaders["train"])), trainer.device)
     out = trainer.model(batch)
-    assert set(out) == set(batch) | {PREDICTIONS}
+    assert set(out) == set(batch) | {PREDICTIONS, RAW_LOSSES}
     assert set(out[PREDICTIONS]) == {"ABP", "CVP"}
     assert out["metadata"]["recording_id"] == batch["metadata"]["recording_id"]
 

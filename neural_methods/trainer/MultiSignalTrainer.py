@@ -286,6 +286,17 @@ def build_model(config):
     model = builder(config, spec)
     check_window(model, spec)
     init_output_bias(model, spec)
+    # Contract v2: the criterion belongs to the model, so the config's
+    # TRAIN.LOSS overrides have to reach it here — before .to(device) and
+    # before any DDP wrap. Stage keys are the model's own, weighted by the
+    # trainer; anything else has to name a trace, and resolve_loss_specs
+    # refuses it here if it does not.
+    overrides = dict(getattr(config.TRAIN, 'LOSS', None) or {})
+    stage_names = set(model.loss_modules())
+    signal_overrides = {k: v for k, v in overrides.items()
+                        if k not in stage_names} or None
+    model.attach_loss(PerSignalLoss(spec.traces, specs=signal_overrides,
+                                    fs=spec.fs))
     return model
 
 

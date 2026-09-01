@@ -169,9 +169,15 @@ def _index_sample(obj, i, n):
     Tensors are indexed on their batch axis. ``default_collate`` turns
     non-tensor per-sample fields (the metadata strings) into length-``n``
     lists, so those are indexed too; anything else is passed through.
+
+    A **0-dim** tensor is passed through unindexed: after collation every
+    genuinely per-sample tensor carries a batch axis, so a scalar is by
+    construction batch-level, not per-sample — the loss components a model
+    writes into ``raw_losses`` are one value for the whole batch, and every
+    sample's view of them is that same value.
     """
     if torch.is_tensor(obj):
-        return obj[i]
+        return obj if obj.ndim == 0 else obj[i]
     if isinstance(obj, dict):
         return {k: _index_sample(v, i, n) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)) and len(obj) == n:
