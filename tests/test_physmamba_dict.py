@@ -5,7 +5,7 @@ from torch.utils.data import default_collate
 
 from neural_methods.batch import LABEL_MASK, LABELS, PREDICTIONS
 from neural_methods.frame_transforms import FrameTransform
-from neural_methods.loss.PerSignalLoss import PerSignalLoss
+from neural_methods.loss.PerSignalLoss import PerSignalLoss, weight_losses
 from neural_methods.model.PhysMamba import PhysMamba
 from tests.test_batch_contract import make_sample
 
@@ -100,7 +100,10 @@ def test_masked_loss_ignores_absent_labels():
     out = model(batch)
     labels = dict(batch[LABELS])
     masks = {"ABP": torch.tensor([True, True]), "CVP": torch.tensor([False, False])}
-    loss, _ = PerSignalLoss(("ABP", "CVP"))(out[PREDICTIONS], labels, masks)
+    criterion = PerSignalLoss(("ABP", "CVP"))
+    loss, _ = weight_losses(
+        criterion(out[PREDICTIONS], labels, masks),
+        {s: spec["weights"] for s, spec in criterion.specs.items()})
     assert torch.isfinite(loss)
     loss.backward()
     assert torch.isfinite(model.ConvBlock1[0].weight.grad).all()

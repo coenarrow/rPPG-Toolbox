@@ -19,7 +19,15 @@ one place the units are reconciled.
 Every component reduces **per sample** to ``(B,)``, which is what lets the
 masking compose: each is averaged over the batch with the denominator clamped
 to >= 1, so a signal no window in the batch carries contributes exactly 0 —
-never NaN, never a sentinel — and the total is the plain mean over traces.
+never NaN, never a sentinel.
+
+Contract v2 splits the two halves: this module produces the *unweighted*
+components (a model calls it inside its own forward, and the values ride the
+batch as ``raw_losses``), and :func:`weight_losses` applies the config weights
+and reduces them to the scalar to backpropagate — the mean over modules, as it
+has always been over traces. Keeping them apart is what lets a run plot a
+component's raw magnitude against its weighted contribution, which is how a
+drowned or dominating term is spotted.
 
 The statistics are derived from the predicted waveform itself (soft local
 extrema + a temperature softmax, after ``PhysHydraLoss``), not from a second
@@ -248,13 +256,16 @@ def resolve_loss_specs(traces, overrides=None) -> dict:
 
 
 class PerSignalLoss(nn.Module):
-    """Weighted composite loss per signal, masked and averaged over traces.
+    """Masked composite loss components per signal — contract v2's raw_losses.
 
-    ``forward`` returns ``(total, breakdown)``: the scalar to backpropagate,
-    and every masked component value keyed ``{signal: {component: float}}``
-    plus each signal's weighted total. The breakdown is what makes training
-    debuggable — which term dominates is the first question, and a per-signal
-    total answers whether one signal is drowning the others.
+    ``forward`` returns ``{signal: {component: () tensor}}``: every masked
+    component value, **unweighted** and graph-attached, keyed by signal. Which
+    term dominates is the first question debugging a multi-signal run raises,
+    and a per-signal breakdown is what answers whether one signal is drowning
+    the others — so the components, not a scalar, are the return value.
+
+    The weights, and the single scalar to backpropagate, are
+    :func:`weight_losses`'s job.
     """
 
     def __init__(self, traces, specs=None, fs=None, fmax=DEFAULT_FMAX):
@@ -276,28 +287,61 @@ class PerSignalLoss(nn.Module):
         return COMPONENTS[name](pred, label)
 
     def forward(self, preds, labels, label_mask):
-        totals, breakdown = [], {}
+        """Unweighted masked components per signal — contract v2's raw_losses.
+
+        Reads    : preds, labels, label_mask (all keyed by signal)
+        Returns  : {signal: {component: () tensor}}, graph-attached.
+        Weighting is the trainer's job — see :func:`weight_losses`.
+        """
+        raw = {}
         for signal in self.traces:
             pred, label = preds[signal], labels[signal]
             mask = label_mask[signal].to(pred.dtype)                  # (B,)
             # Clamped denominator: a signal absent from every window in the
             # batch contributes exactly 0 instead of 0/0.
             denominator = mask.sum().clamp(min=1.0)
-
-            signal_total = pred.new_zeros(())
-            terms = {}
-            for component, weight in self.specs[signal]['weights'].items():
-                per_sample = self._component(component, pred, label)   # (B,)
-                value = (per_sample * mask).sum() / denominator
-                terms[component] = float(value.detach())
-                signal_total = signal_total + weight * value
-            terms['total'] = float(signal_total.detach())
-            breakdown[signal] = terms
-            totals.append(signal_total)
-        return torch.stack(totals).mean(), breakdown
+            raw[signal] = {
+                component: (self._component(component, pred, label) * mask).sum()
+                           / denominator
+                for component in self.specs[signal]['weights']
+            }
+        return raw
 
     def extra_repr(self):
         return "\n".join(
             f"{signal}: {spec['type']} " + ", ".join(
                 f"{c}={w:g}" for c, w in spec['weights'].items())
             for signal, spec in self.specs.items())
+
+
+def weight_losses(raw, weights):
+    """Apply config weights to a model's ``raw_losses`` dict.
+
+    Reads    : ``raw`` = {module: {component: () tensor}} (unweighted,
+               graph-attached), ``weights`` = {module: {component: float}};
+               a component with no weight entry is weighted 1.0, which is how
+               a model stage the config never mentions still contributes.
+    Returns  : ``(total, weighted)``. ``total`` is the scalar to
+               backpropagate — the mean over modules of each module's weighted
+               component sum, which is exactly the old mean-over-signals when
+               the modules are the signals. ``weighted`` mirrors ``raw`` as
+               detached floats, plus a ``'total'`` per module, for logging.
+
+    A module whose spec zeroed every component still contributes its zero to
+    the mean, so the denominator is the module count either way — dropping it
+    would silently rescale every other module's gradient.
+    """
+    zero = next((torch.zeros_like(value) for components in raw.values()
+                 for value in components.values()), torch.zeros(()))
+    module_totals, weighted = [], {}
+    for module, components in raw.items():
+        module_weights = weights.get(module, {})
+        module_total, entries = zero, {}
+        for component, value in components.items():
+            term = module_weights.get(component, 1.0) * value
+            entries[component] = float(term.detach())
+            module_total = module_total + term
+        entries['total'] = float(module_total.detach())
+        weighted[module] = entries
+        module_totals.append(module_total)
+    return torch.stack(module_totals).mean(), weighted

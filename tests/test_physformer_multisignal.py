@@ -116,15 +116,18 @@ def test_gradients_reach_the_stem_from_every_signal():
 def test_absent_labels_and_channels_stay_finite():
     """A signal no sample carries must not poison the loss; a channel the batch
     lacks is zero-filled by ``stack_frames``, not an error."""
-    from neural_methods.loss.PerSignalLoss import PerSignalLoss
+    from neural_methods.loss.PerSignalLoss import PerSignalLoss, weight_losses
 
     model = build(channels=("R", "G", "B", "I"), traces=("ABP", "CVP"))
     batch = batch_of(channels=("R", "G", "B"))        # no I plane at all
     out = model(batch)
-    loss, breakdown = PerSignalLoss(("ABP", "CVP"), fs=30)(
+    criterion = PerSignalLoss(("ABP", "CVP"), fs=30)
+    raw = criterion(
         out[PREDICTIONS], batch[LABELS],
         {"ABP": torch.tensor([True, True]), "CVP": torch.tensor([False, False])})
+    loss, weighted = weight_losses(
+        raw, {s: spec["weights"] for s, spec in criterion.specs.items()})
     assert torch.isfinite(loss)
-    assert breakdown["CVP"]["total"] == 0.0            # absent, not NaN
+    assert weighted["CVP"]["total"] == 0.0            # absent, not NaN
     loss.backward()
     assert torch.isfinite(model.backbone.Stem0[0].weight.grad).all()

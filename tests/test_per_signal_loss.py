@@ -10,8 +10,14 @@ import torch
 
 from neural_methods.loss.PerSignalLoss import (
     PerSignalLoss, ccc, mean_l1, negpearson, peak_max_l1, peak_min_l1,
-    resolve_loss_specs, soft_peak_stat,
+    resolve_loss_specs, soft_peak_stat, weight_losses,
 )
+
+
+def _weigh(criterion, *args):
+    """The old one-call `(total, breakdown)`, now the two contract v2 halves."""
+    return weight_losses(criterion(*args),
+                         {s: spec['weights'] for s, spec in criterion.specs.items()})
 
 
 def _mk(B=4, T=32, seed=0):
@@ -116,9 +122,9 @@ def test_hand_computed_masked_mse():
     mask = {'ABP': torch.tensor([1.0, 1.0]), 'CVP': torch.tensor([1.0, 0.0])}
     # ABP: per-sample MSE = 1.0, both present -> 1.0
     # CVP: per-sample MSE = 4.0, one present -> 4.0
-    total, breakdown = loss_fn(preds, labels, mask)
+    total, weighted = _weigh(loss_fn, preds, labels, mask)
     assert torch.isclose(total, torch.tensor((1.0 + 4.0) / 2))
-    assert breakdown['CVP']['mse'] == pytest.approx(4.0)
+    assert weighted['CVP']['mse'] == pytest.approx(4.0)
 
 
 def test_fully_masked_signal_contributes_zero_no_nan():
@@ -126,11 +132,12 @@ def test_fully_masked_signal_contributes_zero_no_nan():
                             {'ABP': {'TYPE': 'mse'}, 'CVP': {'TYPE': 'mse'}})
     preds, labels = _mk()
     mask = {'ABP': torch.ones(4), 'CVP': torch.zeros(4)}
-    total, breakdown = loss_fn(preds, labels, mask)
+    total, weighted = _weigh(loss_fn, preds, labels, mask)
     assert torch.isfinite(total)
-    assert breakdown['CVP']['total'] == 0.0
-    only_abp = PerSignalLoss(['ABP'], {'ABP': {'TYPE': 'mse'}})(
-        {'ABP': preds['ABP']}, {'ABP': labels['ABP']}, {'ABP': mask['ABP']})[0]
+    assert weighted['CVP']['total'] == 0.0
+    abp_only = PerSignalLoss(['ABP'], {'ABP': {'TYPE': 'mse'}})
+    only_abp, _ = _weigh(abp_only, {'ABP': preds['ABP']}, {'ABP': labels['ABP']},
+                         {'ABP': mask['ABP']})
     assert torch.isclose(total, only_abp / 2)
 
 
@@ -139,9 +146,13 @@ def test_absolute_spec_backpropagates_through_every_component():
     pred = torch.randn(3, 64, requires_grad=True) * 10 + 90
     pred.retain_grad()
     labels = {'ABP': torch.randn(3, 64) * 10 + 90}
-    total, breakdown = loss_fn({'ABP': pred}, labels, {'ABP': torch.ones(3)})
+    raw = loss_fn({'ABP': pred}, labels, {'ABP': torch.ones(3)})
+    total, weighted = weight_losses(
+        raw, {s: spec['weights'] for s, spec in loss_fn.specs.items()})
     total.backward()
-    assert set(breakdown['ABP']) == {'ccc', 'mean', 'max', 'min', 'total'}
+    # The raw dict is components only; the 'total' lives on the weighted side.
+    assert set(raw['ABP']) == {'ccc', 'mean', 'max', 'min'}
+    assert set(weighted['ABP']) == {'ccc', 'mean', 'max', 'min', 'total'}
     assert torch.isfinite(total) and torch.isfinite(pred.grad).all()
     assert pred.grad.abs().sum() > 0
 
@@ -151,6 +162,38 @@ def test_breakdown_keys_every_signal_even_when_absent():
     loss_fn = PerSignalLoss(['ABP', 'ECG'])
     preds = {'ABP': torch.randn(2, 32), 'ECG': torch.randn(2, 32)}
     labels = {'ABP': torch.randn(2, 32), 'ECG': torch.randn(2, 32)}
-    _, breakdown = loss_fn(preds, labels, {'ABP': torch.ones(2), 'ECG': torch.zeros(2)})
-    assert set(breakdown) == {'ABP', 'ECG'}
-    assert breakdown['ECG']['negpearson'] == 0.0
+    raw = loss_fn(preds, labels, {'ABP': torch.ones(2), 'ECG': torch.zeros(2)})
+    assert set(raw) == {'ABP', 'ECG'}
+    assert float(raw['ECG']['negpearson']) == 0.0
+
+
+def test_raw_is_unweighted_and_weighting_is_separate():
+    # Zero weights are filtered by resolve_loss_specs, so this spec leaves
+    # exactly one component (ccc) — the arithmetic below relies on that.
+    criterion = PerSignalLoss(["ABP"], specs={"ABP": {"WEIGHTS": {
+        "CCC": 2.0, "MEAN": 0, "MAX": 0, "MIN": 0}}})
+    preds = {"ABP": torch.randn(4, 32, requires_grad=True)}
+    labels = {"ABP": torch.randn(4, 32)}
+    mask = {"ABP": torch.ones(4, dtype=torch.bool)}
+    raw = criterion(preds, labels, mask)
+    assert set(raw) == {"ABP"} and "total" not in raw["ABP"]
+    assert raw["ABP"]["ccc"].requires_grad
+    total, weighted = weight_losses(raw, {"ABP": {"ccc": 2.0}})
+    assert torch.isclose(total, 2.0 * raw["ABP"]["ccc"])
+    assert weighted["ABP"]["total"] == float(total.detach())
+
+
+def test_a_fully_zeroed_module_still_counts_in_the_denominator():
+    """Dropping it would silently double every other module's gradient."""
+    criterion = PerSignalLoss(["ABP", "CVP"], specs={
+        "ABP": {"TYPE": "mse"},
+        "CVP": {"TYPE": "mse", "WEIGHTS": {"MSE": 0}}})
+    preds = {"ABP": torch.zeros(2, 4), "CVP": torch.zeros(2, 4)}
+    labels = {"ABP": torch.ones(2, 4), "CVP": torch.full((2, 4), 2.0)}
+    mask = {"ABP": torch.ones(2), "CVP": torch.ones(2)}
+    raw = criterion(preds, labels, mask)
+    assert raw["CVP"] == {}                       # every component zero-weighted
+    total, weighted = weight_losses(
+        raw, {s: spec["weights"] for s, spec in criterion.specs.items()})
+    assert torch.isclose(total, torch.tensor(0.5))   # (1.0 + 0.0) / 2, not 1.0
+    assert weighted["CVP"]["total"] == 0.0
