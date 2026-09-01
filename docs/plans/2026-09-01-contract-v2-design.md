@@ -163,13 +163,20 @@ DeepPhys to PhysHydra.
 ```python
 batch = model(batch)
 batch["predictions"]   # {signal: (B, T)}
-batch["losses"]        # {module: {component: () tensor}} — unweighted
+batch["raw_losses"]    # {module: {component: () tensor}} — unweighted, model-written
+batch["losses"]        # same structure, weighted — trainer-written
 ```
 
 - `forward(batch) -> batch`: nothing is dropped in transit; a model may add
-  intermediate keys (CWT stacks, masks, kinematics, ...) beside the two
+  intermediate keys (CWT stacks, masks, kinematics, ...) beside the
   required ones.
-- `losses` carries **unweighted** per-component values. The `DictModel` base
+- Two loss keys, as in CardioHydra, so weights stay calibratable: the model
+  writes `raw_losses` (unweighted components); the trainer applies the
+  config weights and writes `losses` beside it, and the training total is
+  the sum of `losses`. Logging carries both — comparing a component's raw
+  curve against its weighted contribution is how a drowned or dominating
+  term is spotted and the weights re-tuned.
+- `raw_losses` carries **unweighted** per-component values. The `DictModel` base
   contributes one module entry per predicted signal, named by the signal
   (`"ABP": {"ccc": ..., "mean": ...}`), by invoking the shared per-signal
   machinery (`PerSignalLoss`, the `TRAIN.LOSS` registry, signal-class
@@ -207,11 +214,12 @@ signal, presented as one `DictModel`:
 
 ### Trainer consequences
 
-`MultiSignalTrainer` slims to: forward, weight-and-sum `batch["losses"]`,
-step, log. It no longer owns a loss module. Per-component curves, the plot
-set, evaluation, and checkpointing (`INTERFACE` serialization) are
-unchanged — `batch["losses"]`'s flat structure is also the single hook point
-for any future tracker (wandb), which is part of why it exists.
+`MultiSignalTrainer` slims to: forward, weight `batch["raw_losses"]` into
+`batch["losses"]`, sum, step, log both. It no longer owns a loss module.
+Per-component curves (now raw and weighted), the plot set, evaluation, and
+checkpointing (`INTERFACE` serialization) are unchanged — the two flat loss
+dicts are also the single hook point for any future tracker (wandb), which
+is part of why they exist.
 
 ### Rework of the already-migrated models
 
@@ -241,4 +249,5 @@ ends with a smoke run. PhysFormer's "style B unavailable" finding
   cache exists.
 - Unit conversion (cmH2O/mmHg) — refused, not converted, until a real cache
   mixes units.
-- wandb integration — `batch["losses"]` is shaped for it; nothing is built.
+- wandb integration — `batch["raw_losses"]`/`batch["losses"]` are shaped
+  for it; nothing is built.

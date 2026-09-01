@@ -332,7 +332,7 @@ nothing else.
     **(c)** One dataset class: the modality→channel table is global, so
     per-dataset `channel_map` subclasses go. **(d)** Model contract v2 à la
     CardioHydra (github.com/coenarrow/CardioHydra): `forward(batch) ->
-    batch` with `losses` riding the batch, computed inside the model — the
+    batch` with `raw_losses` (unweighted, model-written) and `losses` (weighted, trainer-written) riding the batch, computed inside the model so weights stay calibratable — the
     per-signal machinery invoked from the `DictModel` base so simple models
     inherit it, composite models (PhysHydra) adding stage entries;
     `Reads:/Modifies:` docstrings adopted. **(e)** **Style C** — S full
