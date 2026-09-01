@@ -31,6 +31,24 @@ the current schema; §7a is the re-verification recipe for the already-migrated
 models (their configs were mechanically converted and are drafts until a
 sub-agent verifies them).
 
+**Contract v2 update (2026-09-01).** Two changes, both normative and both
+implemented — [the contract-v2 design](2026-09-01-contract-v2-design.md),
+Part 2, is the authority, and this document is aligned to it:
+
+1. **Losses are computed inside the model and ride the batch.**
+   `forward(batch)` writes `raw_losses` (unweighted components) beside
+   `predictions`; the trainer applies the config weights and writes `losses`.
+   The `DictModel` base does this for every predicted signal, so **a
+   migration writes no loss code at all** (§5). `MultiSignalTrainer` owns no
+   criterion any more.
+2. **Style C — S parallel copies of the published architecture — is the
+   default head style** (`HEAD_STYLE: parallel`). Styles A and B remain
+   options where an architecture supports them (§2).
+
+Every module now documents its batch contract in its docstring as
+`Reads: / Modifies:` lines — the convention adopted repo-wide with contract
+v2, and part of the §7 checklist.
+
 Two things the pilot learned that are not obvious from the text below.
 **`in_channels` is ambiguous**: a model that splits the stacked `DATA_TYPE`
 blocks itself (DeepPhys, TS-CAN) builds its first layer for *one* block's
@@ -47,9 +65,11 @@ architecture as possible. Exactly three things may change:
 2. The **final readout** widens to emit `out_signals` outputs (and must be
    activation-free — a bare linear/conv — so absolute-range signals are
    expressible).
-3. The **losses** applied to its output (loss functions are trainer-side
+3. The **losses** applied to its output (loss functions are shared
    machinery, not architecture — swapping them is a minor deviation and the
-   model remains "the" model).
+   model remains "the" model). Under contract v2 they are *invoked* inside
+   the model rather than by the trainer, which changes where the call sits,
+   not whose code it is: the base class makes it, the architecture does not.
 
 Everything between first layer and final readout is byte-for-byte the
 original. With `in_channels=3, out_signals=1` the original network must be
@@ -149,23 +169,45 @@ and back; video-native models use `input_mode='video3d'` or subclass
 `model.channels` / `model.traces`** — dict iteration order is never
 load-bearing.
 
-Multi-signal prediction is **shared trunk + per-signal readout**, in one of
-two sanctioned head styles (a builder option; both keep the trunk identical):
+Multi-signal prediction comes in three sanctioned head styles, all builder
+options selected by `MODEL.HEAD_STYLE`:
 
-- **Style A — widened readout (default, most faithful):** the original final
-  layer's output width goes from 1 to S. A `Linear(nb_dense, S)` *is* S
-  independent linear readouts of the shared feature; nothing else changes.
-- **Style B — per-signal head copies (BigSmall precedent):** one copy of the
-  original dense head (e.g. `fc1+fc2`) per signal, all reading the shared
-  trunk feature. BigSmall does exactly this natively for its three tasks.
-  Justified where signals draw on different spatial regions (ABP from the
-  carotid, CVP from the jugular): because the head reads the flattened
-  spatial map, a per-signal head is a per-signal learned spatial weighting.
-  Costs S× the head parameters; the conv/attention trunk stays untouched.
+- **Style C — parallel per-signal copies (`parallel`, the default):** S
+  complete copies of the published architecture, one per predicted signal,
+  presented as one `DictModel` by
+  `neural_methods/model/ParallelSignals.py`. Each copy takes the **full**
+  demanded input stack (its first layer widens to `spec.in_channels` /
+  `spec.camera_channels`) and emits `(B, 1, T)`; the wrapper concatenates to
+  `(B, S, T)` in `model.traces` order. Nothing is shared, so no signal can
+  interfere with another, and everything after the input layer is exactly
+  the paper's. Cost is S× the parameters, by design.
+- **Style A — widened readout (`widened`):** shared trunk, and the original
+  final layer's output width goes from 1 to S. A `Linear(nb_dense, S)` *is*
+  S independent linear readouts of the shared feature; nothing else changes.
+  The cheapest option, and the right one when the trunk should be shared.
+- **Style B — per-signal head copies (`per_signal`, BigSmall precedent):**
+  shared trunk, one copy of the original dense head (e.g. `fc1+fc2`) per
+  signal. BigSmall does exactly this natively for its three tasks. Justified
+  where signals draw on different spatial regions (ABP from the carotid, CVP
+  from the jugular): because the head reads the flattened spatial map, a
+  per-signal head is a per-signal learned spatial weighting. Not every
+  architecture can express it — PhysFormer cannot, because its readout sees
+  a feature whose token grid has already been averaged away.
 
-Start every migration with Style A. Escalate to Style B only on per-signal
-metric evidence of interference (the trainer already scores per signal, so
-interference is observable, not hypothetical).
+Build style C first: it is the default, it always composes (a full copy needs
+no architectural judgement), and it makes interference impossible rather than
+merely observable. Drop to style A where the parameter cost does not pay for
+itself, or where a shared trunk is the point of the experiment.
+
+**How a builder implements style C.** A `make_copy(trace)` closure that
+builds the architecture for that one trace, handed to `_parallel(spec,
+make_copy)` in `MultiSignalTrainer`. `_build_deepphys` (which wraps its copy
+in a `SignalDictWrapper`), `_build_physmamba` and `_build_physformer` (which
+subclass `DictModel` directly) are the three worked examples — read them
+rather than inventing a fourth shape. The absolute-scale guardrails apply per
+copy, unchanged: `ParallelSignals.output_layers()` returns one readout per
+copy, which is the per-signal shape `init_output_bias` and the weight-decay
+exemption already handle.
 
 Per family:
 
@@ -227,8 +269,12 @@ them):
   disagree with its own statistics.
 - **Masking composes.** Every component reduces per-sample to `(B,)`; the
   `MaskedMultiSignalLoss` structure (masked mean over the batch with clamped
-  denominator, then mean over traces) is retained, so an absent signal
-  contributes exactly 0 — never NaN, never a sentinel.
+  denominator, then mean over modules) is retained, so an absent signal
+  contributes exactly 0 — never NaN, never a sentinel. Under contract v2 the
+  masked components come back unweighted from `PerSignalLoss` and the mean
+  over modules is `weight_losses`'; a module whose spec zeroes every
+  component still contributes its zero, so the denominator is the module
+  count either way.
 - **The loss spec is a per-signal registry** — loss type plus component
   weights per trace. This is how BigSmall's heterogeneous per-task criteria
   (BCE + MSE + MSE) generalise; a future categorical signal would add a loss
@@ -270,13 +316,32 @@ the gradient to try; migrations are not judged on absolute-level accuracy.
 
 ## 5. The prediction contract
 
-`out = model(batch)` returns **the same dict** with `predictions` added —
-nothing is dropped in transit:
+`out = model(batch)` returns **the same dict** with `predictions` *and*
+`raw_losses` added — nothing is dropped in transit:
 
 ```python
 out["predictions"]   # {signal: (B, T)}, ordered by model.traces
+out["raw_losses"]    # {module: {component: () tensor}} — unweighted, model-written
+out["losses"]        # same structure, config-weighted — trainer-written
 out["frames"] is batch["frames"]
 ```
+
+**A migration writes no loss code.** `DictModel.forward` calls the model's own
+`PerSignalLoss` and contributes one `raw_losses` entry per predicted signal,
+named by the signal; `build_model` has already attached the config-resolved
+criterion. The trainer weights and sums, and writes `losses` beside it. Two
+dicts, not one, so a component's raw magnitude stays comparable against its
+weighted contribution — which is how a drowned or dominating term is spotted
+and `TRAIN.LOSS` re-tuned. See
+[the contract-v2 design](2026-09-01-contract-v2-design.md), Part 2.
+
+Only a **composite** architecture with internal stages (PhysHydra) adds
+anything: it declares `loss_modules()` (the stage names) and implements
+`stage_losses(out)`, returning `{stage: {component: () tensor}}` read off the
+intermediate keys it put on the batch itself. Config then scales those stages
+through the same `TRAIN.LOSS` registry, `WEIGHTS` only and no `TYPE` — the
+model is what defines what a stage loss *is*. If the architecture has no
+internal stages, skip both; the base returns `()` and `{}`.
 
 - Absolute-class predictions are in **physical units** (mmHg); shape-class
   predictions are in the per-window normalised space. `label_stats` rides in
@@ -299,9 +364,11 @@ Implemented **once**, in `MultiSignalTrainer` / `evaluation/metrics_report.py`
 
 1. **Training curves** — train/valid loss and LR (exists; currently inherited
    from `BaseTrainer`, absorbed into `MultiSignalTrainer` when `BaseTrainer`
-   dies in Phase 6), extended with **per-signal** and **per-component**
+   dies in Phase 6), extended with **per-module** and **per-component**
    curves (CCC vs mean vs peak terms separately — which term dominates is
-   the first thing debugging needs).
+   the first thing debugging needs). Under contract v2 each component draws
+   twice: solid/dashed for its weighted contribution, dotted for its raw
+   magnitude.
 2. **HR Bland-Altman** scatter/difference plots for pulsatile signals
    (exists, in `metrics_report`).
 3. **Per-signal waveform overlays** — prediction vs label for a few test
@@ -327,8 +394,8 @@ every later migration assumes it. Where each piece lands:
 - Checkpoint-authority channel alignment (§4): `stack_frames` in
   `neural_methods/batch.py` zero-fills expected-but-absent channels
   instead of raising.
-- Per-signal composite loss (§3): new module beside
-  `neural_methods/loss/MaskedMultiSignalLoss.py`, reusing the CCC /
+- Per-signal composite loss (§3): `neural_methods/loss/PerSignalLoss.py`
+  (which replaced `MaskedMultiSignalLoss.py`), reusing the CCC /
   soft-peak / spectral machinery from `neural_methods/loss/PhysHydraLoss.py`
   with components reduced per-sample. **The pilot defines the concrete
   per-signal config keys** (norm mode, loss type, component weights);
@@ -348,8 +415,11 @@ Per model, in one change:
 4. Add the builder to `MODEL_REGISTRY` in
    `neural_methods/trainer/MultiSignalTrainer.py` — derives all widths per
    §1, applies bias init + weight-decay exemption for absolute-class
-   signals, exposes the head-style option (Style A default). The existing
-   `_build_physmamba` / `_build_deepphys` are the pattern.
+   signals, and handles the head styles the architecture supports (§2):
+   a `make_copy(trace)` closure through `_parallel(...)` for style C, the
+   default, and a refusal naming the styles it does support for anything
+   else. The existing `_build_physmamba` / `_build_deepphys` /
+   `_build_physformer` are the pattern.
 5. Add `configs/neckflix/NECKFLIX_<MODEL>.yaml` in the DATA / INTERFACE /
    MODEL schema (`NECKFLIX_PHYSMAMBA.yaml` is the worked example; the
    `_SMOKE` variant is `BASE: [<real config>]` plus a handful of overrides).
@@ -358,9 +428,18 @@ Per model, in one change:
 6. **One smoke test** — the ceiling, per the testing rule
    (`tests/test_deepphys_multisignal.py` is the pattern). The contract
    tests already cover dict plumbing; do not re-test it per model.
-7. **Delete the legacy `<Model>Trainer.py`** in the same change.
+7. **Delete the legacy `<Model>Trainer.py`** in the same change. Check
+   `neural_methods/trainer/__init__.py` (it imports every trainer module, so
+   a stale line there breaks `main.py`'s import chain) and `grep` the tests
+   — `PhysMambaTrainer`'s removal needed both, plus a `docs/architecture.md`
+   edit.
 8. Write a short **config retro** (what was awkward, duplicated, forced by
    the yacs tree) — these feed the Phase 5 schema design.
+8a. **Docstrings carry the batch contract.** Every module the migration
+   touches states `Reads:` / `Modifies:` lines for the batch keys it reads
+   and writes (contract v2, repo-wide). Declare `loss_modules()` /
+   `stage_losses()` **only** if the architecture has internal stages — rare,
+   and PhysHydra is the case it exists for.
 9. Validate: full suite green, then a
    `--limit_windows 8 --test_participants P015` smoke run.
 
