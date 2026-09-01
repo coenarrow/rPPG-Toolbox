@@ -20,8 +20,9 @@ and others as they appear.
 
 ## The pipeline
 
-One store per recording in a **zarr cache** written by an external
-preprocessor, a lazy `torch.utils.data.Dataset` over that cache, and a
+One store per recording in a **zarr cache** written by the preprocessor
+vendored as a submodule at [`external/neckflix`](external/neckflix) (its own
+env and lock, never a dependency of this project), a lazy `torch.utils.data.Dataset` over that cache, and a
 **batch-dict contract** everywhere downstream: nested dicts keyed by canonical
 channel (`R`, `G`, `B`, `I`, `D`) and signal (`ABP`, `CVP`, `ECG`, …) names,
 with per-window label stats for exact inversion to physical units and presence
@@ -52,9 +53,28 @@ uv run python tools/summarise_neckflix_outputs.py runs/neckflix_physmamba --by s
 
 ## Install
 
+```bash
+git clone --recurse-submodules https://github.com/coenarrow/remote-physiology.git
+# already cloned without it:
+git submodule update --init --recursive
+# so the preprocessor submodule sits on main and can be committed from:
+git submodule foreach 'git checkout main'
+git config push.recurseSubmodules check
+```
+
 `uv sync` is the whole install on Linux, macOS and **Windows** — no conda, no
 WSL. `pyproject.toml` + `uv.lock` are the single source of truth for
 dependencies; add packages with `uv add`, never pip.
+
+`uv sync` does **not** need the submodule — training works fine in a
+non-recursive clone. Only cache-building does. The preprocessor at
+`external/neckflix` is deliberately outside this project's dependency graph: a
+path source would make `uv lock` fail wherever the submodule was skipped, and
+keeping the envs apart keeps `av` / `opencv-python-headless` / `hdf5plugin`
+and its `zarr>=3.3,<4` cap out of the training environment. Build a cache with
+`uv run --project external/neckflix neckflix-preprocess ...`, which resolves
+from that repo's own `uv.lock` — the same lock its published GHCR image builds
+from — and its own Python 3.12.
 
 Windows needs the CUDA toolkit (>= 11.6) and MSVC build tools on the machine,
 because `mamba-ssm` and `causal-conv1d` publish no Windows wheels and so compile

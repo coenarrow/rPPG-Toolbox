@@ -86,6 +86,24 @@ override-dependencies = ["triton==3.8.0 ; sys_platform == 'linux'"]
 # first. `setup.sh` has always done the same thing by hand.
 no-build-isolation-package = ["mamba-ssm", "causal-conv1d"]
 
+# The Neckflix preprocessor is a git submodule at external/neckflix, NOT a
+# dependency of this project, and deliberately has no tool.uv.sources entry.
+# A path source there makes uv fail in any clone that skipped
+# --recurse-submodules, because such a clone leaves external/neckflix as an
+# EMPTY DIRECTORY:
+#   empty dir   -> `uv lock` / `uv sync` exit 1: "does not appear to be a
+#                  Python project, as neither `pyproject.toml` nor `setup.py`
+#                  are present in the directory"
+#   absent dir  -> `uv lock` exit 2: "Distribution not found at: file:///..."
+# This holds even for a NON-DEFAULT dependency group: a `preprocess` group
+# under [dependency-groups] still breaks a plain `uv sync --no-dev`, i.e. it
+# would break training, not just cache-building. Cache builds therefore run
+# against Neckflix's OWN lock, in its own venv:
+#   uv run --project external/neckflix neckflix-preprocess --input-dir ... --output-dir ...
+# which also keeps av / opencv-python-headless / hdf5plugin and Neckflix's
+# `zarr>=3.3,<4` cap out of the HPC training environment. Do not add a
+# [tool.uv.workspace] table either: it would pull the submodule into this
+# resolution and undo all of the above.
 [tool.uv.sources]
 # Windows only: the published sdist does not compile with MSVC. vendor/mamba-ssm
 # is the same 2.3.1 release with three mechanical fixes, regenerated (and
@@ -112,3 +130,21 @@ explicit = true
 name = "pytorch-cu126"
 url = "https://download.pytorch.org/whl/cu126"
 explicit = true
+
+
+# external/ is the Neckflix submodule: a separate project with its own repo,
+# lock and style. Every tool that walks this tree has to be told to leave it
+# alone, or a `black .` here lands as a diff in someone else's repository.
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Overriding norecursedirs REPLACES pytest's defaults, so they are restated.
+norecursedirs = ["external", "*.egg", ".*", "_darcs", "build", "CVS", "dist",
+                 "node_modules", "venv", "{arch}"]
+
+[tool.black]
+# A regex, and the leading ^/ anchors it to the project root.
+extend-exclude = "^/external/"
+
+[tool.isort]
+# extend_skip_glob, not skip_glob, so isort's own defaults survive.
+extend_skip_glob = ["external/*"]

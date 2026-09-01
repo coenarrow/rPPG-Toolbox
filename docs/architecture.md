@@ -15,13 +15,16 @@ Our extension adds support for **cardiovascular pressure waveform estimation** (
 ## Data Flow
 
 The cache is an *external input*: zarr stores written by a dataset's
-preprocessor (for Neckflix, the `ghcr.io/coenarrow/neckflix` container),
-which this repo reads and never writes. There is no in-repo preprocessing
-step, no `.npy` cache, and no file-list CSVs; the legacy pipeline that did
+preprocessor (for Neckflix, the submodule at `external/neckflix`, also
+published as the `ghcr.io/coenarrow/neckflix` container), which this repo
+reads and never writes. The submodule is vendored for co-editing, not
+imported: it is not in this project's dependency graph and runs from its own
+lock. There is no preprocessing step *on the training path*, no `.npy` cache,
+and no file-list CSVs; the legacy pipeline that did
 all of that lives at the `pre-overhaul` tag.
 
 ```
-External preprocessor (per dataset; Neckflix: ghcr.io/coenarrow/neckflix)
+External preprocessor (per dataset; Neckflix: external/neckflix, uv run --project)
     |
     v
 Zarr cache: one *.zarr store per recording (raw frames + traces)
@@ -118,10 +121,11 @@ remote-physiology/
 |-- configs/
 |   |-- neckflix/              The experiment configs (the only config tree)
 |
+|-- external/neckflix         Git submodule: the cache preprocessor (own env + lock)
 |-- .slurm_scripts/            SLURM reference templates (copy and adapt)
 |-- logs/                      SLURM job stdout/stderr files (gitignored)
 |-- runs/                      Training run outputs, checkpoints, plots (gitignored)
-|-- tools/                     LOSO fold listing, output summarising, mamba vendoring
+|-- tools/                     LOSO fold listing, output summarising, cache validation, PURE caching, mamba vendoring
 |-- vendor/mamba-ssm           Patched mamba-ssm for the Windows build
 ```
 
@@ -342,7 +346,7 @@ load time. One cache serves every experiment.
 
 ## Neckflix Dataset
 
-The Neckflix dataset is a multimodal collection for cardiovascular pressure estimation — the worked example of the cache contract above. Its stores are produced by the external Neckflix preprocessor (`ghcr.io/coenarrow/neckflix` >= 1.0.0); the HDF5 loader they replaced is gone.
+The Neckflix dataset is a multimodal collection for cardiovascular pressure estimation — the worked example of the cache contract above. Its stores are produced by the Neckflix preprocessor vendored at `external/neckflix` (run as `uv run --project external/neckflix neckflix-preprocess`; the `ghcr.io/coenarrow/neckflix` image is the same code, but its tags are cut from `v*` git tags only and so lag `main`); the HDF5 loader they replaced is gone.
 
 **Cache layout** (`{cache_dir}/{recording}.zarr`, zarr v3):
 
@@ -454,7 +458,7 @@ Models targeting pressure estimation (e.g., PhysHydra) may use multi-output arch
 
 | Dataset | Path | Notes |
 |---------|------|-------|
-| Neckflix (raw) | `/group/pgh004/carrow/repo/Neckflix/dataset` | Raw captures; input to the external preprocessor |
+| Neckflix (raw) | `/group/pgh004/carrow/repo/Neckflix/dataset` | Raw captures — a data drop, **not** the code repo (now the `external/neckflix` submodule); confirm before use |
 | Neckflix (zarr cache) | set by `CACHED_PATH` in the config | One `*.zarr` store per recording; what this repo reads |
 | PURE | `/group/pgh004/carrow/zipped_datasets/PURE` | Standard rPPG dataset |
 | UBFC-rPPG | `/group/pgh004/carrow/zipped_datasets/UBFC-rPPG` | Standard rPPG dataset |
@@ -480,9 +484,10 @@ All scripts are invoked via `uv run python` to ensure the correct environment is
 
 ## Related Repositories
 
-**Neckflix** (`/mmfs1/data/group/pgh004/carrow/repo/Neckflix`, container `ghcr.io/coenarrow/neckflix`):
-- Raw data preprocessing pipeline for Kinect Azure captures
-- Writes the zarr cache this repo consumes; the coupling is the store schema plus two root-attr gates (`complete`, `tool_version`), not a Python import
+**Neckflix** — git submodule at `external/neckflix`, tracking `main` at github.com/coenarrow/Neckflix; also published as `ghcr.io/coenarrow/neckflix` (image tags are cut only from `v*` git tags, so `:latest` is v1.0.0 and lags `main`):
+- Raw-data preprocessing for Kinect Azure captures: temporal alignment and optional resize only — no normalisation, no filtering, no windowing
+- Writes the zarr cache this repo consumes. The coupling is the store schema (`external/neckflix/cache_structure.md` against the contract below — the two must be edited together, which is why it is a submodule), not a Python import and not a dependency: it runs from its own lock, `uv run --project external/neckflix neckflix-preprocess`
+- `--perspectives 1 2` avoids needing the ECF HDF5 codec that only the docker image builds
 - Configuration examples for different modalities and physiological traces
 - Utilities for frame processing and trace filtering
 - Shares similar config patterns (YAML structure) and package management (uv) with this repository

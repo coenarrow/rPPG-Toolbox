@@ -15,7 +15,9 @@ production, `salloc` for interactive debugging. No exceptions:
 - Not "just a quick test"
 - Not "only a few epochs"
 - Not "just to see if it imports" (use `salloc`)
-- Not preprocessing, which is CPU/IO heavy and will still get you killed
+- Not preprocessing, which is CPU/IO heavy and will still get you killed —
+  and not the first `uv run --project external/neckflix ...` either, which
+  syncs a second 249 MB environment before it does any work
 
 ## GPU Resources
 
@@ -137,6 +139,37 @@ shorter chunks) → read `logs/*.err` → scale back up via `sbatch` once it wor
 - Working directory: `/mmfs1/data/group/pgh004/carrow/repo/remote-physiology` (also reachable as
   `/group/pgh004/carrow/repo/remote-physiology`, which is what the SLURM scripts use)
 - Group storage: `/group/pgh004/` — accessible from compute nodes
+- The cache preprocessor is a **git submodule**, and the HPC checkout predates
+  it, so `external/neckflix` is an empty directory there until someone runs
+  `git submodule update --init` once in the working directory (then
+  `git -C external/neckflix checkout main`). An empty submodule does not fail
+  loudly: `uv run --project external/neckflix` silently falls through to this
+  project instead, downloads torch, and dies in a compiler. Check
+  `test -f external/neckflix/pyproject.toml` before trusting a cache-build job.
+
+## Building a Cache (CPU, no GPU)
+
+Preprocessing is a SLURM job like any other — CPU partition, no `module load
+cuda`, no `--gres`. Budget **~12 GB RAM per worker** (`--mem`); the event
+camera dominates that, so `--perspectives 1 2` is both cheaper and avoids the
+ECF HDF5 codec that only the docker image builds.
+
+```bash
+#SBATCH --partition=work
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=32G
+
+cd "/group/pgh004/carrow/repo/remote-physiology"
+uv run --project external/neckflix neckflix-preprocess \
+    --input-dir <raw Neckflix root> --output-dir <cache dir> \
+    --resize 256 256 --perspectives 1 2 --num-workers 2
+uv run python tools/validate_cache.py <cache dir>
+```
+
+Model it on `.slurm_scripts/Neckflix_Unsupervised.slurm`, the other CPU-only
+template. The submodule resolves from its own `uv.lock` and its own Python
+3.12, so the first run in a fresh checkout syncs a second environment — do
+that inside the job, not on the login node.
 
 ## Red Flags — Stop
 

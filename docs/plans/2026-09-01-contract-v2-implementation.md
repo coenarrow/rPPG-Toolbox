@@ -1167,6 +1167,53 @@ git commit -m "docs: migration contract updated to contract v2"
 Confirm the gate first: `uv run python tools/validate_cache.py <new-cache-path>`
 prints all-PASS. The user supplies the path.
 
+### What the gate currently costs — the divergence list
+
+The preprocessor is now a submodule at `external/neckflix`, so this list is
+checkable rather than inferred. Against its `main` (`3896458`), **two disjoint
+sets of failures** stand between here and a working v2 pipeline. Do not
+conflate them: fixing every validator complaint still leaves the cache
+unreadable.
+
+**Blocks VALIDATION** — a store with rgb+ir+depth on one perspective plus `ev`
+fails `tools/validate_cache.py` with exactly four violations. Three of the four
+are, on the evidence, *this repo's* over-strictness rather than the cacher's
+bug:
+
+| Violation | Whose fix |
+| --- | --- |
+| `1/ir`, `1/depth`: `video/data` dtype uint16, want uint8 | **Ours.** uint16 is correct for a 16-bit IR/depth sensor; `_check_modality` should take the dtype from `MODALITY_CHANNELS`, not demand uint8 globally |
+| `ev`: missing required perspective attr `fps` | **Ours.** An event camera legitimately has no frame rate; `fps` should be required per *video* perspective only |
+| `ev/ev`: missing `video/data` | **Ours.** `ev` legitimately carries no video |
+| `participant` written as an int (`scan.py`, `_i(row["Participant_ID"])`) | **Theirs.** Should be the zero-padded string, as at `9094815`. The validator does not even catch this — it checks presence only |
+
+Three further `ev` violations are **masked** today by `_check_modality`'s early
+return once `video` is absent, and will surface the moment `ev` is pinned:
+`ev/ev/{x,y,p}` are out-of-vocabulary trace groups, the native-rate `(M,)`
+traces are not index-aligned to the `(N,)` event array, and event timestamps
+are not strictly increasing. Record them as `ev`'s backlog, not as a surprise.
+
+**Blocks READING** (this Part's actual work, independent of the above):
+`BaseZarrDataset` rejects every v2 store at the `complete is True` gate —
+`mark_complete()` now writes a coverage dict, not `true` — and removing that
+gate then fails on `video/frames`, `video.attrs['num_frames']` and
+`video.attrs['fps']`, none of which v2 has.
+
+**Two silent filter breaks**, worth fixing early because neither warns:
+`_filter_by_attribute` only warns on an *absent* attr, so a present-but-wrong
+value just drops the sample. `participant` (int `15` vs the reader's
+normalised `'015'`) and `posture` (`'supine'` vs the configs' `'0'`) both fall
+into that hole, and `light` was dropped from the cacher entirely at `e9bf7c2`
+while configs still filter on it. A LOSO run against a v2 cache would produce
+an empty split with no diagnostic at all.
+
+Not yet verified against real data: the trace-set-identical-across-modalities
+and first-frame-alignment clauses. The cacher reads each modality's trace set
+from that MKV's own container metadata and never reconciles across modalities,
+and never adjusts a stream's start timestamp — so both are assumptions about
+the capture, enforced nowhere. Run the validator over a real regenerated cache
+before treating either as settled.
+
 ### Task 11: `BaseZarrDataset` reads v2; one dataset class
 
 **Files:**

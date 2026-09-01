@@ -2,9 +2,10 @@
 
 PURE ships as timestamped PNG sequences plus a JSON sidecar of pulse-oximeter
 readings; the pipeline reads ``{recording}.zarr`` stores. This is the offline
-bridge between the two -- the PURE equivalent of the external Neckflix
-preprocessor, kept in ``tools/`` because nothing on the training path may write
-the cache. The mapping it implements is ``dataset/data_loader/PURE.md``.
+bridge between the two -- the PURE equivalent of the Neckflix preprocessor
+vendored at ``external/neckflix`` (``uv run --project external/neckflix
+neckflix-preprocess``), kept in ``tools/`` because nothing on the training path
+may write the cache. The mapping it implements is ``dataset/data_loader/PURE.md``.
 
     uv run python tools/cache_pure.py --src <raw PURE> --dest D:/pure_zarr
 
