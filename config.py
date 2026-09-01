@@ -373,8 +373,23 @@ def _validate(config: ExperimentConfig) -> None:
     interface.LABEL_NORM = resolve_label_norms(interface.TRACES,
                                                interface.LABEL_NORM)
     if config.MODE == "train_and_test":
+        # TRAIN.LOSS is a registry over signals *and* model stages (contract
+        # v2), and only the model knows its stage names, so the load-time pass
+        # can only check the half that names signals. build_model refuses the
+        # rest once the model exists — a stage key here is not yet a typo.
         from neural_methods.loss.PerSignalLoss import resolve_loss_specs
-        resolve_loss_specs(interface.TRACES, config.TRAIN.LOSS)
+        from neural_methods.signals import canonical_signal
+
+        def _names_a_signal(key):
+            try:
+                canonical_signal(key)
+            except KeyError:
+                return False
+            return True
+
+        resolve_loss_specs(interface.TRACES,
+                           {k: v for k, v in (config.TRAIN.LOSS or {}).items()
+                            if _names_a_signal(k)})
 
 
 # ---------------------------------------------------------------------------

@@ -15,7 +15,9 @@ from torch.utils.data import DataLoader
 from config import RunPaths, load_config
 from dataset.data_loader.NeckflixLoader import NeckflixDataset
 from dataset.data_loader.neckflix_config import zarr_config
-from neural_methods.batch import PREDICTIONS, RAW_LOSSES, move_to_device
+from neural_methods.batch import (
+    LOSSES, PREDICTIONS, RAW_LOSSES, move_to_device,
+)
 from neural_methods.trainer.MultiSignalTrainer import (
     MODEL_REGISTRY, MultiSignalTrainer, build_model,
 )
@@ -164,6 +166,23 @@ def test_model_output_still_carries_the_loader_keys(config):
     assert set(out) == set(batch) | {PREDICTIONS, RAW_LOSSES}
     assert set(out[PREDICTIONS]) == {"ABP", "CVP"}
     assert out["metadata"]["recording_id"] == batch["metadata"]["recording_id"]
+
+
+def test_the_two_loss_dicts_ride_the_batch(config):
+    """Contract v2: the model writes raw_losses, the trainer writes losses."""
+    loaders = loaders_for(config)
+    trainer = MultiSignalTrainer(config, loaders, rank=0, world_size=1, debug=False)
+    batch = move_to_device(next(iter(loaders["train"])), trainer.device)
+    total, weighted, out = trainer._loss_for(batch)
+    assert RAW_LOSSES in out and LOSSES in out
+    assert out[LOSSES] is weighted
+    assert set(out[LOSSES]) == set(out[RAW_LOSSES]) == {"ABP", "CVP"}
+    for module, entries in out[LOSSES].items():
+        assert "total" in entries
+        # The raw dict carries components only; the weights live one step out.
+        assert "total" not in out[RAW_LOSSES][module]
+        assert set(entries) == set(out[RAW_LOSSES][module]) | {"total"}
+    assert total.requires_grad
 
 
 def test_validation_split_drives_best_epoch_selection(config, cache):

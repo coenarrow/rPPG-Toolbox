@@ -36,11 +36,11 @@ from evaluation.plots import draw as draw_plots
 from evaluation.records import from_saved
 from evaluation.report import build_frame, digest, write as write_report
 from neural_methods.batch import (
-    ATTRS, LABEL_MASK, LABEL_STATS, LABELS, METADATA, PREDICTIONS,
-    detach_to_cpu, iter_samples, move_to_device,
+    ATTRS, LABEL_MASK, LABEL_STATS, LABELS, LOSSES, METADATA, PREDICTIONS,
+    RAW_LOSSES, detach_to_cpu, iter_samples, move_to_device,
 )
 from neural_methods.frame_transforms import FrameTransform
-from neural_methods.loss.PerSignalLoss import PerSignalLoss
+from neural_methods.loss.PerSignalLoss import PerSignalLoss, weight_losses
 from neural_methods.signals import signal_prior
 
 NCOLS = 80
@@ -340,11 +340,34 @@ class MultiSignalTrainer:
                         output_device=self.local_rank if device_ids else None)
         self.model = model
 
-        self.criterion = PerSignalLoss(
-            self.traces, specs=getattr(config.TRAIN, 'LOSS', None),
-            fs=self.frame_rate)
+        # Contract v2: the model computes raw_losses; the trainer only weights
+        # and sums, so it owns no criterion. The signal half of the weights is
+        # read off the model's own criterion rather than resolved a second
+        # time — build_model has already applied TRAIN.LOSS there, and a second
+        # resolution could drift silently (a zero weight is filtered out of a
+        # spec, so the disagreement would surface as an unweighted term, not an
+        # error). Stage names come from the model; the config may only scale
+        # them, because the model is what defines what a stage loss *is*.
+        criterion = self._unwrap_model().loss
+        self.signal_specs = criterion.specs
+        self.loss_weights = {signal: dict(spec['weights'])
+                             for signal, spec in criterion.specs.items()}
+        registry = dict(getattr(config.TRAIN, 'LOSS', None) or {})
+        for stage in self._unwrap_model().loss_modules():
+            spec = dict(registry.get(stage) or {})
+            if set(spec) - {'WEIGHTS'}:
+                raise ValueError(
+                    f"TRAIN.LOSS[{stage}] is a model stage: WEIGHTS only "
+                    f"(the model defines what its stage losses are); got "
+                    f"{sorted(set(spec) - {'WEIGHTS'})}")
+            self.loss_weights[stage] = {
+                str(component).lower(): float(weight)
+                for component, weight in dict(spec.get('WEIGHTS') or {}).items()}
         if self.is_main:
-            print(f"Loss per signal:\n{self.criterion.extra_repr()}")
+            listing = "\n".join(
+                f"{module}: " + ", ".join(f"{c}={w:g}" for c, w in weights.items())
+                for module, weights in self.loss_weights.items())
+            print(f"Loss weights per module:\n{listing}")
 
         self.use_amp = bool(getattr(config.TRAIN, 'USE_AMP', False)) and self.device.type == 'cuda'
         self.amp_dtype = torch.float16 if getattr(config.TRAIN, 'AMP_DTYPE', '') == 'float16' \
@@ -396,11 +419,23 @@ class MultiSignalTrainer:
 
     # --- training --------------------------------------------------------
     def _loss_for(self, batch):
-        """Forward one batch and reduce it to the per-signal composite loss."""
+        """Forward one batch; weight the model's raw losses into the total.
+
+        Reads    : the model's out["raw_losses"]
+        Modifies : out["losses"] (the weighted mirror, floats, with totals)
+        Returns  : (total, weighted, out)
+        """
         out = self.model(batch)
-        loss, breakdown = self.criterion(out[PREDICTIONS], batch[LABELS],
-                                         batch[LABEL_MASK])
-        return loss, breakdown, out
+        total, weighted = weight_losses(out[RAW_LOSSES], self.loss_weights)
+        out[LOSSES] = weighted
+        return total, weighted, out
+
+    @staticmethod
+    def _raw_floats(out):
+        """The model's raw_losses as plain floats, for the logging history."""
+        return {module: {component: float(value.detach())
+                         for component, value in components.items()}
+                for module, components in out[RAW_LOSSES].items()}
 
     @staticmethod
     def _accumulate(totals, breakdown):
@@ -419,7 +454,7 @@ class MultiSignalTrainer:
         # Per epoch, the mean of every loss component of every signal. Which
         # term dominates is the first thing debugging a multi-signal run needs,
         # and a single scalar curve cannot answer it.
-        component_history = []
+        component_history, raw_history = [], []
         for epoch in range(self.max_epoch_num):
             if self.train_sampler is not None:
                 self.train_sampler.set_epoch(epoch)
@@ -427,13 +462,13 @@ class MultiSignalTrainer:
                 print(f"\n====Training Epoch: {epoch}====")
             self.model.train()
             train_loss = []
-            components = defaultdict(list)
+            components, raw_components = defaultdict(list), defaultdict(list)
             tbar = tqdm(data_loader["train"], ncols=NCOLS) if self.is_main else data_loader["train"]
             for batch in tbar:
                 batch = move_to_device(batch, self.device)
                 self.optimizer.zero_grad(set_to_none=True)
                 with self._autocast():
-                    loss, breakdown, _ = self._loss_for(batch)
+                    loss, breakdown, out = self._loss_for(batch)
                 if self.scaler is not None:
                     self.scaler.scale(loss).backward()
                     self.scaler.step(self.optimizer)
@@ -445,6 +480,7 @@ class MultiSignalTrainer:
                 self.scheduler.step()
                 train_loss.append(loss.item())
                 self._accumulate(components, breakdown)
+                self._accumulate(raw_components, self._raw_floats(out))
                 if self.is_main:
                     tbar.set_description(f"Train epoch {epoch}")
                     tbar.set_postfix(loss=loss.item())
@@ -453,6 +489,8 @@ class MultiSignalTrainer:
             mean_training_losses.append(epoch_loss)
             component_history.append(
                 {key: float(np.mean(values)) for key, values in components.items()})
+            raw_history.append(
+                {key: float(np.mean(values)) for key, values in raw_components.items()})
             if self.is_main:
                 # The progress bar only ever showed the last batch; the epoch
                 # mean is what tells you whether training is going anywhere.
@@ -478,7 +516,7 @@ class MultiSignalTrainer:
             print(f"best trained epoch: {self.best_epoch}, min_val_loss: {self.min_valid_loss}")
         if self.is_main:
             self.plot_losses_and_lrs(mean_training_losses, mean_valid_losses, lrs)
-            self.plot_loss_components(component_history)
+            self.plot_loss_components(component_history, raw_history)
 
     def valid(self, data_loader):
         if data_loader.get("valid") is None:
@@ -624,12 +662,19 @@ class MultiSignalTrainer:
         plt.close(figure)
         print('Saving plots of losses and learning rates to:', output_dir)
 
-    def plot_loss_components(self, history):
-        """Per-signal and per-component training curves (contract §6, plot 1).
+    def plot_loss_components(self, history, raw_history=None):
+        """Per-module and per-component training curves (contract §6, plot 1).
 
         The scalar loss curve says whether training is going anywhere; these say
         *which signal* and *which term* is responsible, which is the first
         question any multi-signal run raises.
+
+        Two curves per component under contract v2: the solid/dashed ones are
+        the **weighted** contribution (what the optimiser actually sees — these
+        used to be the unweighted value), and the dotted ones are the raw
+        magnitude. Reading them against each other is how a term that is
+        drowned by its weight, or one that dominates despite a small one, gets
+        spotted and the weights re-tuned.
         """
         if not history:
             return
@@ -647,10 +692,18 @@ class MultiSignalTrainer:
                 axis.plot(epochs, values, label=component,
                           linewidth=2.0 if component == 'total' else 1.2,
                           linestyle='-' if component == 'total' else '--')
-            axis.set_title(f"{signal} ({self.criterion.specs[signal]['type']})",
-                           fontsize=10)
+                if raw_history and component != 'total':
+                    raw_values = [epoch.get((signal, component), np.nan)
+                                  for epoch in raw_history]
+                    axis.plot(epochs, raw_values, label=f"{component} (raw)",
+                              linewidth=1.0, linestyle=':', alpha=0.6)
+            # A stage module has no per-signal spec — it is the model's, and the
+            # config only scales it — so it is labelled as one rather than
+            # KeyError-ing the whole plot.
+            kind = self.signal_specs.get(signal, {}).get('type', 'stage')
+            axis.set_title(f"{signal} ({kind})", fontsize=10)
             axis.set_xlabel('Epoch')
-            axis.set_ylabel('Masked mean loss')
+            axis.set_ylabel('Masked mean loss (dotted: unweighted)')
             axis.legend(fontsize=7)
         figure.suptitle(f"{self._filename_id()} — loss components", fontsize=11)
         figure.tight_layout()
