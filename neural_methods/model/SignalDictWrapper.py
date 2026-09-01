@@ -33,6 +33,11 @@ class SignalDictWrapper(DictModel):
             raise ValueError(f"Unknown input_mode {input_mode!r}; known: {INPUT_MODES}")
         self.backbone = backbone
         self.input_mode = input_mode
+        # The window constraint is the backbone's, like the readout is — a
+        # wrapper that reported its own defaults would silently drop it, and a
+        # silently shortened window is a silently different experiment.
+        self.temporal_divisor = getattr(backbone, 'temporal_divisor', 1)
+        self.temporal_length = getattr(backbone, 'temporal_length', None)
 
     def output_layers(self):
         """Whatever the wrapped backbone declares — the readout is its, not ours."""

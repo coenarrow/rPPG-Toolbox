@@ -253,3 +253,27 @@ def test_iter_samples_passes_batch_level_scalars_through():
     for sample in samples:
         assert sample[bt.RAW_LOSSES]["ABP"].keys() == out[bt.RAW_LOSSES]["ABP"].keys()
         assert sample[bt.FRAMES]["R"].shape == (1, 6, 4, 5)   # still per-sample
+
+
+def test_parallel_signals_is_one_copy_per_trace():
+    from neural_methods.model.ParallelSignals import ParallelSignals
+    from neural_methods.model.SignalDictWrapper import SignalDictWrapper
+
+    def make_copy(trace):
+        backbone = torch.nn.Sequential(
+            torch.nn.Flatten(), torch.nn.Linear(3 * 4 * 4, 1))
+        return SignalDictWrapper(backbone, channels=("R", "G", "B"),
+                                 traces=[trace], input_mode='frames2d')
+
+    model = ParallelSignals(make_copy, channels=("R", "G", "B"),
+                            traces=("ABP", "CVP"))
+    video = torch.randn(2, 3, 5, 4, 4)               # (B, C, T, H, W)
+    out = model.forward_video(video)
+    assert out.shape == (2, 2, 5)                     # (B, S, T)
+    assert len(model.copies) == 2
+    # Copies are independent: zeroing one branch only kills its signal.
+    with torch.no_grad():
+        for parameter in model.copies[0].parameters():
+            parameter.zero_()
+    out = model.forward_video(video)
+    assert torch.all(out[:, 0] == 0) and not torch.all(out[:, 1] == 0)
