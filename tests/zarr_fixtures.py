@@ -8,6 +8,8 @@ docs/architecture.md.
 import numpy as np
 import zarr
 
+from neural_methods.signals import MODALITY_CHANNELS
+
 TOOL_VERSION = "1.0.0"
 
 # stream group -> (channel count, dtype), matching the preprocessor output.
@@ -18,7 +20,7 @@ STREAM_SPECS = {
 }
 
 # Distinct, deterministic base offsets so traces are tellable-apart in tests.
-TRACE_OFFSETS = {"abp": 100.0, "cvp": 5.0, "ecg": 0.5}
+TRACE_OFFSETS = {"abp": 100.0, "cvp": 5.0, "ecg": 0.5, "ppg": 2.0, "rr": 3.0}
 
 
 def default_attrs(name):
@@ -163,3 +165,78 @@ def base_cfg(cache_dir, **overrides):
     if "label_norms" not in overrides:
         cfg["label_norms"] = {label: "zscore" for label in cfg["labels"]}
     return cfg
+
+
+# --- contract v2 ---------------------------------------------------------
+# docs/plans/2026-09-01-contract-v2-design.md, Part 1. The v1 make_store above
+# stays until the reader adopts v2 (Part 3 of that plan); until then the two
+# layouts coexist, one per fixture.
+
+#: Per trace, the unit string the store's ``units`` attr carries. "arb" is what
+#: a shape-class signal is expected to say.
+V2_UNITS = {"abp": "mmHg", "cvp": "mmHg", "ecg": "arb",
+            "ppg": "arb", "rr": "arb"}
+
+
+def make_v2_store(cache_dir, name="P030_S01_R1_0_D", *, attrs=None,
+                  perspectives=("1",), modalities=("rgb", "ir", "depth"),
+                  traces=("abp", "cvp"), num_frames=12, hw=(8, 8), fps=30.0,
+                  units=None, modality_lengths=None,
+                  first_frame_offsets_us=None):
+    """A contract-v2 store (docs/plans/2026-09-01-contract-v2-design.md).
+
+    v2 layout: root attrs carry only ``participant`` (+ free attrs), each
+    perspective carries ``fps``, each modality carries ``timestamps_us/data``
+    and ``video/data``, each trace carries a ``units`` attr.
+
+    ``modality_lengths``   : {modality: int} frame count for that modality,
+                             which its timestamps and every one of its traces
+                             follow. It builds a store whose modalities have
+                             unequal-but-internally-consistent durations - a
+                             sensor that died early, which the contract allows
+                             and the reader reconciles by truncating.
+    ``first_frame_offsets_us``: {modality: float} shifts that modality's clock,
+                             for the first-frame alignment check.
+    ``attrs``              : merged over the defaults. Removing a key is not
+                             supported here; reopen with ``mode="a"`` and
+                             ``del root.attrs[key]``, as the validator tests do.
+
+    Deliberately inconsistent stores (a trace whose length disagrees with its
+    own video, an unknown modality, a missing attr) are built by mutating a
+    conformant store afterwards, not by a keyword here - the fixture writes
+    what the contract says, and each test breaks exactly one clause.
+    """
+    # Derived from the one global table rather than restated: a modality's
+    # channel count IS len(MODALITY_CHANNELS[modality]). ``ev`` is unpinned
+    # (None), so the fixture writes it single-plane until the contract says.
+    channel_counts = {modality: 1 if channels is None else len(channels)
+                      for modality, channels in MODALITY_CHANNELS.items()}
+    units = {**V2_UNITS, **(units or {})}
+    height, width = hw
+    path = cache_dir / f"{name}.zarr"
+    root = zarr.open_group(str(path), mode="w")
+    root.attrs.update({"participant": name.split("_")[0][1:],
+                       "posture": name.split("_")[-2],
+                       **(attrs or {})})
+    for perspective in perspectives:
+        cam = root.create_group(perspective)
+        cam.attrs["fps"] = fps
+        for modality in modalities:
+            group = cam.create_group(modality)
+            length = (modality_lengths or {}).get(modality, num_frames)
+            offset = (first_frame_offsets_us or {}).get(modality, 0.0)
+            step = 1e6 / fps
+            stamps = offset + step * np.arange(length)
+            group.create_group("timestamps_us")["data"] = stamps.astype(np.int64)
+            channels = channel_counts[modality]
+            # A pattern, not zeros: a reader test that lands on the wrong frame
+            # or the wrong channel plane has to be able to tell.
+            video = (np.arange(channels * length * height * width) % 251)
+            video = video.reshape(channels, length, height, width).astype(np.uint8)
+            group.create_group("video")["data"] = video
+            for trace in traces:
+                trace_group = group.create_group(trace)
+                trace_group["data"] = TRACE_OFFSETS.get(trace, 1.0) + np.arange(
+                    length, dtype=np.float64)
+                trace_group.attrs["units"] = units.get(trace, "arb")
+    return path
