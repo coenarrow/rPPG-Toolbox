@@ -3,7 +3,7 @@ import numpy as np
 import zarr
 
 from tests.zarr_fixtures import make_v2_store
-from tools.validate_cache import validate_store
+from tools.validate_cache import main, validate_store
 
 
 def test_conformant_store_passes(tmp_path):
@@ -67,3 +67,11 @@ def test_violations_are_itemised(tmp_path):
     root = zarr.open_group(str(path), mode="a")
     root["1"]["rgb"]["ecg"] = np.zeros(12, np.float64)
     assert "array child" in _messages(path)
+
+
+def test_a_single_store_path_is_validated_not_swept(tmp_path, capsys):
+    # A .zarr store is a directory too, so the cache sweep must not glob inside
+    # one: the documented "store.zarr" form used to find nothing and exit 1.
+    path = make_v2_store(tmp_path, traces=("abp", "cvp", "ecg"))
+    assert main([str(path)]) == 0
+    assert "PASS" in capsys.readouterr().out

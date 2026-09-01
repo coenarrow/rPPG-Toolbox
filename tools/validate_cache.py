@@ -160,7 +160,13 @@ def main(argv=None) -> int:
     stores = []
     for raw in args.paths:
         path = Path(raw)
-        stores.extend(sorted(path.glob("*.zarr")) if path.is_dir() else [path])
+        # A store is itself a directory, so is_dir() alone globs *inside* it and
+        # finds nothing -- the documented single-store form reported "No *.zarr
+        # stores found" and exited 1. Only a non-store directory is a cache.
+        if path.is_dir() and path.suffix != ".zarr":
+            stores.extend(sorted(path.glob("*.zarr")))
+        else:
+            stores.append(path)
     if not stores:
         print("No *.zarr stores found.")
         return 1
