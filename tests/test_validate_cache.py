@@ -75,3 +75,19 @@ def test_a_single_store_path_is_validated_not_swept(tmp_path, capsys):
     path = make_v2_store(tmp_path, traces=("abp", "cvp", "ecg"))
     assert main([str(path)]) == 0
     assert "PASS" in capsys.readouterr().out
+
+
+def test_malformed_nodes_are_itemised_not_raised(tmp_path):
+    # The validator sweeps a whole cache directory, so raising on one malformed
+    # store would leave every store sorted after it unchecked.
+    path = make_v2_store(tmp_path, name="P010_S01_R1_0_D")
+    root = zarr.open_group(str(path), mode="a")
+    del root["1"]["rgb"]["video"]
+    root["1"]["rgb"]["video"] = np.zeros((3, 12, 8, 8), np.uint8)   # the v1 shape
+    assert "video/data" in _messages(path)
+
+    path = make_v2_store(tmp_path, name="P011_S01_R1_0_D")
+    root = zarr.open_group(str(path), mode="a")
+    del root["1"]["rgb"]["abp"]["data"]
+    root["1"]["rgb"]["abp"].create_group("data")                    # a group, not an array
+    assert "abp" in _messages(path)

@@ -29,13 +29,38 @@ class Violation(NamedTuple):
         return f"{self.where}: {self.message}"
 
 
+def _array_at(group, name):
+    """The zarr Array at ``<name>/data``, or None if there is not one there.
+
+    v2 puts every array at ``<name>/data``. A store that writes a bare array at
+    ``<name>`` (the v1 shape) or a group at ``<name>/data`` has to come back as
+    a violation like any other: ``main()`` sweeps a whole cache directory, so a
+    validator that raises takes every store after the malformed one with it.
+    """
+    if name not in group or not isinstance(group[name], zarr.Group):
+        return None
+    node = group[name]
+    if "data" not in node or not isinstance(node["data"], zarr.Array):
+        return None
+    return node["data"]
+
+
 def _check_modality(out, where, modality, group):
     """Within-modality checks; returns the first timestamp, or None."""
-    for required in ("timestamps_us", "video"):
-        if required not in group or "data" not in group[required]:
+    # v2 puts every array at <name>/data, so a bare array child is a trace (or a
+    # video) written in the v1 shape. The walks below see groups only, so
+    # without this the store passes clean. Reported before the required-array
+    # check so a v1-shaped video says what is actually wrong with it.
+    for key in group.array_keys():
+        out.append(Violation(
+            f"{where}/{key}",
+            "array child of a modality; v2 puts every array at <name>/data"))
+    video, stamps_array = _array_at(group, "video"), _array_at(group, "timestamps_us")
+    for required, array in (("timestamps_us", stamps_array), ("video", video)):
+        if array is None:
             out.append(Violation(where, f"missing {required}/data"))
-            return None
-    video = group["video"]["data"]
+    if video is None or stamps_array is None:
+        return None
     if video.ndim != 4:
         out.append(Violation(where, f"video/data is {video.ndim}-D, want (C, T, H, W)"))
         return None
@@ -46,7 +71,7 @@ def _check_modality(out, where, modality, group):
         out.append(Violation(
             where, f"video/data has C={video.shape[0]}, {modality} wants "
                    f"{len(expected)} ({', '.join(expected)})"))
-    stamps = group["timestamps_us"]["data"][:]
+    stamps = stamps_array[:]
     frames = video.shape[1]
     if not frames:
         out.append(Violation(where, "video/data has T=0; the recording is empty"))
@@ -56,13 +81,6 @@ def _check_modality(out, where, modality, group):
         stamps = None
     elif frames > 1 and not np.all(np.diff(stamps) > 0):
         out.append(Violation(where, "timestamps_us not strictly increasing"))
-    # v2 puts every array at <name>/data, so a bare array child is a trace (or a
-    # video) written in the v1 shape. The trace walk below sees groups only, and
-    # so does the trace-set comparison — without this the store passes clean.
-    for key in group.array_keys():
-        out.append(Violation(
-            f"{where}/{key}",
-            "array child of a modality; v2 puts every array at <name>/data"))
     for key in group.group_keys():
         if key in ("timestamps_us", "video"):
             continue
@@ -71,10 +89,10 @@ def _check_modality(out, where, modality, group):
             out.append(Violation(
                 sub, f"unknown trace group; vocabulary: {sorted(TRACE_KEYS)}"))
             continue
-        if "data" not in group[key]:
+        trace = _array_at(group, key)
+        if trace is None:
             out.append(Violation(sub, "missing data array"))
             continue
-        trace = group[key]["data"]
         if trace.shape != (frames,):
             out.append(Violation(
                 sub, f"trace length {trace.shape} is not index-aligned to "
