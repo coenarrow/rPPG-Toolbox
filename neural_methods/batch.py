@@ -34,6 +34,9 @@ CHANNEL_MASK = "channel_mask"
 LABEL_MASK = "label_mask"
 METADATA = "metadata"
 PREDICTIONS = "predictions"
+RAW_LOSSES = "raw_losses"    # {module: {component: () tensor}} — model-written, unweighted
+LOSSES = "losses"            # same structure, config-weighted — trainer-written
+LABEL_UNITS = "label_units"  # {signal: str}, from the v2 cache's units attrs
 
 #: Keys the loader emits. ``PREDICTIONS`` is added by models, never by loaders.
 LOADER_KEYS = (FRAMES, LABELS, LABEL_STATS, CHANNEL_MASK, LABEL_MASK, METADATA)
