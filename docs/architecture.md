@@ -86,7 +86,6 @@ remote-physiology/
 |   |-- trainer/               Training/validation/testing routines (one per model)
 |   |   |-- BaseTrainer.py     Shared DDP setup, rank management, model unwrapping
 |   |   |-- MultiSignalTrainer.py  One trainer for every dict-contract model
-|   |   |-- PhysMambaTrainer.py
 |   |   |-- PhysHydraTrainer.py
 |   |   |-- ...
 |   |
@@ -194,7 +193,7 @@ Current models: DeepPhys, EfficientPhys, TS_CAN, PhysNet, PhysMamba, PhysFormer,
 
 ### Trainers (`neural_methods/trainer/`)
 
-`MultiSignalTrainer` is the one trainer for every dict-contract model (see "Training on the contract" below). The per-model `<Model>Trainer.py` files and `BaseTrainer` are legacy: with `main.py`'s old dispatcher gone they are unreachable from the entry point, and each is kept only as migration reference until its model moves onto `MultiSignalTrainer`, then deleted (`BaseTrainer` goes with the last one). `tests/test_legacy_contract.py` drives `PhysMambaTrainer` directly to pin the tuple-contract behavior the unmigrated models still rely on.
+`MultiSignalTrainer` is the one trainer for every dict-contract model (see "Training on the contract" below). The per-model `<Model>Trainer.py` files and `BaseTrainer` are legacy: with `main.py`'s old dispatcher gone they are unreachable from the entry point, and each is kept only as migration reference until its model moves onto `MultiSignalTrainer`, then deleted (`BaseTrainer` goes with the last one). `PhysMambaTrainer.py` is already gone — PhysMamba was the first model to finish moving, so its legacy trainer went with contract v2 (roadmap Phase B). `tests/test_legacy_contract.py` no longer drives a legacy trainer end-to-end; it pins the two pieces the unmigrated models actually reach, the `(B, C, T, H, W) -> (B, T)` tensor shape and the shared metrics path.
 
 
 ## Entry Point

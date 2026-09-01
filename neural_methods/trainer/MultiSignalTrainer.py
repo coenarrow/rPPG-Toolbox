@@ -135,7 +135,7 @@ def model_spec(config) -> ModelSpec:
         fs=fps,
         window=window_frames(interface.WINDOW_SECONDS, fps),
         resize=size,
-        head_style=str(config.MODEL.HEAD_STYLE or 'widened'),
+        head_style=str(config.MODEL.HEAD_STYLE or 'parallel'),
         label_norms=label_norms(interface),
     )
 
@@ -143,8 +143,26 @@ def model_spec(config) -> ModelSpec:
 # ---------------------------------------------------------------------------
 # Builders
 # ---------------------------------------------------------------------------
+def _parallel(spec, make_copy):
+    """Style C: one full single-trace copy of the architecture per signal."""
+    from neural_methods.model.ParallelSignals import ParallelSignals
+    return ParallelSignals(make_copy, channels=spec.channels,
+                           traces=spec.traces, frame_transform=spec.transform,
+                           fs=spec.fs)
+
+
 def _build_physmamba(config, spec):
     from neural_methods.model.PhysMamba import PhysMamba
+    if spec.head_style == 'parallel':
+        return _parallel(spec, lambda trace: PhysMamba(
+            channels=spec.channels, traces=[trace],
+            frame_transform=spec.transform, fs=spec.fs))
+    if spec.head_style != 'widened':
+        # Without this a typo silently downgrades style C to style A, which is
+        # a 1/S parameter count and no message.
+        raise ValueError(
+            f"PhysMamba builds HEAD_STYLE 'parallel' (the default) or "
+            f"'widened'; got {spec.head_style!r}.")
     return PhysMamba(channels=spec.channels, traces=spec.traces,
                      frame_transform=spec.transform, fs=spec.fs)
 
@@ -164,6 +182,16 @@ def _build_deepphys(config, spec):
             "takes the first block and the appearance branch the second. Use "
             "DATA_TYPE: ['DiffNormalized', 'Standardized']; got "
             f"{list(spec.transform.data_types)}.")
+    if spec.head_style == 'parallel':
+        def make_copy(trace):
+            copy = DeepPhys(in_channels=spec.camera_channels, out_signals=1,
+                            img_size=height, head_style='widened')
+            return SignalDictWrapper(copy, channels=spec.channels,
+                                     traces=[trace], input_mode='frames2d',
+                                     frame_transform=spec.transform, fs=spec.fs)
+        return _parallel(spec, make_copy)
+    # DeepPhys validates 'widened'/'per_signal' itself, so a typo is refused
+    # there by name.
     backbone = DeepPhys(in_channels=spec.camera_channels, out_signals=spec.out_signals,
                         img_size=height, head_style=spec.head_style)
     return SignalDictWrapper(backbone, channels=spec.channels, traces=spec.traces,
@@ -173,16 +201,26 @@ def _build_deepphys(config, spec):
 
 def _build_physformer(config, spec):
     from neural_methods.model.PhysFormer import PhysFormer
-    if spec.head_style != 'widened':
-        raise ValueError(
-            "PhysFormer implements head style A (a widened readout) only. Its "
-            "readout reads a feature whose token grid has already been averaged "
-            "away, so per-signal head copies would every one of them see the "
-            "identical vector; the style-B idea of a per-signal spatial "
-            "weighting would mean moving the pooling into the head — a design "
-            f"change, not a builder option. Got HEAD_STYLE {spec.head_style!r}.")
     block = config.MODEL.PHYSFORMER
     height, width = spec.img_size
+    if spec.head_style == 'parallel':
+        return _parallel(spec, lambda trace: PhysFormer(
+            channels=spec.channels, traces=[trace],
+            frame_transform=spec.transform, fs=spec.fs,
+            image_size=(spec.window, height, width),
+            patches=int(block.PATCH_SIZE), dim=int(block.DIM),
+            ff_dim=int(block.FF_DIM), num_heads=int(block.NUM_HEADS),
+            num_layers=int(block.NUM_LAYERS), theta=float(block.THETA),
+            dropout_rate=float(config.MODEL.DROP_RATE)))
+    if spec.head_style != 'widened':
+        raise ValueError(
+            "PhysFormer implements head style C (parallel copies, the default) "
+            "and style A (a widened readout). Style B it cannot: its readout "
+            "reads a feature whose token grid has already been averaged away, "
+            "so per-signal head copies would every one of them see the "
+            "identical vector, and the style-B idea of a per-signal spatial "
+            "weighting would mean moving the pooling into the head — a design "
+            f"change, not a builder option. Got HEAD_STYLE {spec.head_style!r}.")
     return PhysFormer(
         channels=spec.channels, traces=spec.traces, frame_transform=spec.transform,
         fs=spec.fs, image_size=(spec.window, height, width),

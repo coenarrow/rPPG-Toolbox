@@ -2,18 +2,20 @@
 
 PhysMamba became a ``DictModel`` and the shared post-processing was rewritten,
 both of which the non-Neckflix datasets (PURE, UBFC-rPPG, ...) sit on top of.
-Those datasets are not available here, so this drives the real
-``PhysMambaTrainer`` over a synthetic loader that emits exactly the upstream
-``(frames, label, filename, chunk_id)`` tuple.
+Those datasets are not available here, so what is pinned is the two pieces the
+unmigrated models actually reach: the ``(B, C, T, H, W) -> (B, T)`` tensor
+shape a tuple-contract trainer feeds and expects, and the shared metrics path.
+
+``PhysMambaTrainer`` was driven end-to-end here until PhysMamba moved onto
+``MultiSignalTrainer`` for good and its legacy trainer was deleted (contract
+v2, roadmap Phase B). No legacy trainer is exercised end-to-end any more; the
+remaining seven die with their models in Phase C.
 """
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
 import torch
-from torch.utils.data import DataLoader, Dataset
-
-from neural_methods.trainer.PhysMambaTrainer import PhysMambaTrainer
 
 FS = 30
 FRAMES = 32
@@ -28,28 +30,6 @@ def _ns(**kwargs):
     exactly the keys they read rather than resurrecting a schema for them.
     """
     return SimpleNamespace(**kwargs)
-
-
-class TupleContractDataset(Dataset):
-    """``(frames (C,T,H,W), label (T,), filename, chunk_id)`` — the upstream shape."""
-
-    def __init__(self, n_clips=4, subjects=("subject1", "subject2")):
-        self.items = []
-        rng = np.random.default_rng(0)
-        t = np.arange(FRAMES) / FS
-        for i in range(n_clips):
-            pulse = np.sin(2 * np.pi * 1.2 * t + i)
-            frames = (pulse[None, :, None, None]
-                      + rng.normal(0, 0.1, (3, FRAMES, SIZE, SIZE))).astype(np.float32)
-            self.items.append((torch.from_numpy(frames),
-                               torch.from_numpy(pulse.astype(np.float32)),
-                               subjects[i % len(subjects)], i))
-
-    def __len__(self):
-        return len(self.items)
-
-    def __getitem__(self, index):
-        return self.items[index]
 
 
 @pytest.fixture
@@ -88,22 +68,6 @@ def test_physmamba_still_returns_the_legacy_tensor_shape():
         out = PhysMamba()(torch.randn(2, 3, FRAMES, SIZE, SIZE))
     assert out.shape == (2, FRAMES)
     assert torch.isfinite(out).all()
-
-
-def test_legacy_trainer_trains_and_tests(legacy_config, tmp_path, capsys):
-    loaders = {
-        "train": DataLoader(TupleContractDataset(), batch_size=2, shuffle=False),
-        "valid": None,
-        "test": DataLoader(TupleContractDataset(), batch_size=2, shuffle=False),
-    }
-    trainer = PhysMambaTrainer(legacy_config, loaders, rank=0, world_size=1, debug=False)
-    trainer.train(loaders)
-    assert (tmp_path / "models" / "legacy_physmamba_Epoch0.pth").exists()
-
-    trainer.test(loaders)
-    printed = capsys.readouterr().out
-    assert "FFT MAE" in printed
-    assert (tmp_path / "outputs" / "legacy_physmamba_outputs.pickle").exists()
 
 
 def test_legacy_metrics_path_survives_the_post_processing_rewrite(legacy_config):

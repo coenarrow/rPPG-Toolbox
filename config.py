@@ -123,7 +123,7 @@ class ModelConfig:
     """
 
     NAME: str = ""
-    HEAD_STYLE: str = "widened"
+    HEAD_STYLE: str = "parallel"
     DROP_RATE: float = 0.0
 
 

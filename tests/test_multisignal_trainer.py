@@ -152,9 +152,11 @@ def test_saved_outputs_carry_signal_keyed_windows(config, cache):
 def test_one_training_step_moves_the_weights(config):
     loaders = loaders_for(config)
     trainer = MultiSignalTrainer(config, loaders, rank=0, world_size=1, debug=False)
-    before = trainer.model.ConvBlock1[0].weight.detach().clone()
+    # Style C, so the architecture lives one level down, per trace. The test
+    # is about the optimiser stepping, not about the head style.
+    before = trainer.model.copies[0].ConvBlock1[0].weight.detach().clone()
     trainer.train(loaders)
-    after = trainer.model.ConvBlock1[0].weight.detach()
+    after = trainer.model.copies[0].ConvBlock1[0].weight.detach()
     assert not torch.allclose(before, after)
 
 
