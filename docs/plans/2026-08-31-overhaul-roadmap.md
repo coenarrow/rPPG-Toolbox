@@ -100,9 +100,10 @@ end to end.
 The contract: [contract-v2 design, Part 2](2026-09-01-contract-v2-design.md).
 Independent of Phase A — runs against the current `rgbid256` cache.
 
-1. `DictModel` base: `forward(batch) -> batch` with `predictions` **and**
-   `losses` riding the batch; the per-signal loss machinery invoked from the
-   base (written once — simple models inherit it); `Reads:/Modifies:`
+1. `DictModel` base: `forward(batch) -> batch` with `predictions`,
+   `raw_losses` (model-written, unweighted) and `losses` (trainer-weighted)
+   riding the batch; the per-signal loss machinery invoked from the base
+   (written once — simple models inherit it); `Reads:/Modifies:`
    docstring convention.
 2. The **style C wrapper** — S parallel copies of the original
    architecture, input widened to the demanded channels — as
