@@ -6,7 +6,25 @@ dataloaders provide.
 """
 import numpy as np
 
-CHANNELS = ('R', 'G', 'B', 'I', 'D')
+CHANNELS = ('R', 'G', 'B', 'I', 'D', 'Y', 'T')
+
+#: Cache contract v2 (docs/plans/2026-09-01-contract-v2-design.md, Part 1):
+#: modality group name -> the canonical channels its video planes carry, in
+#: stacking order. THE global channel map — per-dataset channel_map
+#: subclasses die against this table in the Part 3 reader adoption.
+#: ``None`` = frame representation not yet pinned (validated loosely).
+MODALITY_CHANNELS = {
+    'gr':    ('Y',),
+    'rgb':   ('R', 'G', 'B'),
+    'ir':    ('I',),
+    'depth': ('D',),
+    't':     ('T',),
+    'ev':    None,
+}
+
+#: Cache trace group name -> canonical signal name.
+TRACE_KEYS = {'ecg': 'ECG', 'abp': 'ABP', 'cvp': 'CVP',
+              'ppg': 'PPG', 'rr': 'RESP'}
 
 #: The two signal classes the migration contract distinguishes (§3).
 #:

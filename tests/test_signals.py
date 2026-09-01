@@ -5,7 +5,7 @@ from neural_methods import signals as S
 
 
 def test_registry_contents():
-    assert S.CHANNELS == ('R', 'G', 'B', 'I', 'D')
+    assert S.CHANNELS == ('R', 'G', 'B', 'I', 'D', 'Y', 'T')
     assert set(S.SIGNALS) == {'PPG', 'ECG', 'ABP', 'CVP', 'RESP', 'EDA', 'SPO2'}
     assert S.EVAL_ONLY == ('HR',)
     for sig, meta in S.SIGNALS.items():
@@ -54,3 +54,17 @@ def test_norm_override():
     assert (lo, hi) == (0.0, 100.0)
     lo, hi = S.norm_range('CVP', overrides={'ABP': (0.0, 100.0)})
     assert (lo, hi) == S.SIGNALS['CVP']['norm']
+
+
+def test_modality_and_trace_vocabularies():
+    # Every pinned modality's channels are canonical channel names.
+    for modality, channels in S.MODALITY_CHANNELS.items():
+        if channels is not None:
+            assert S.validate_channels(list(channels)) == list(channels)
+    assert S.MODALITY_CHANNELS['rgb'] == ('R', 'G', 'B')
+    assert S.MODALITY_CHANNELS['ev'] is None            # not yet pinned
+    assert 'Y' in S.CHANNELS and 'T' in S.CHANNELS      # grayscale, thermal
+    # Every cache trace key maps to a known canonical signal.
+    for cache_key, signal in S.TRACE_KEYS.items():
+        assert S.canonical_signal(signal) == signal
+    assert S.TRACE_KEYS['rr'] == 'RESP'
