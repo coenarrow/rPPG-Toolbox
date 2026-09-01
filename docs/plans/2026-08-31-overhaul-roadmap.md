@@ -1,13 +1,16 @@
 # Overhaul Roadmap: rPPG-Toolbox → remote-physiology
 
-Companion to `updating_plan.md` (the *what*); this document is the *order and
-the mechanics*, plus the repo cleanup that plan doesn't cover. Phases are
-sequenced by dependency: each one makes the next one smaller.
+Companion to [the revised overhaul plan](../../revised_overhaul_plan.md)
+(the *what*; it superseded `updating_plan.md` on 2026-09-01 — git history
+keeps the original). This document is the *order and the mechanics*. Phases
+are sequenced by dependency: each one makes the next one smaller.
 
-Ordering note: config work is **interleaved with model migration**, not done
-up front. A couple of models migrate first against the current config, each
-migration ends with a short config retro, and the consolidation happens once
-real usage has shaped the schema (Phase 5).
+The remaining work was re-planned on 2026-09-01 around **contract v2** —
+[the design](2026-09-01-contract-v2-design.md): cache contract v2
+(validator-gated, `timestamps_us`, per-trace `units`, fixed vocabularies)
+and model contract v2 (style-C parallel copies by default, losses computed
+inside the model and riding the batch). Decision log entry 17 records the
+choices; the original phase texts for 4/6/8 are in git history.
 
 ## Cross-cutting rules
 
@@ -23,253 +26,140 @@ real usage has shaped the schema (Phase 5).
   not production code for consumers. Specs and implementation plans should not
   demand exhaustive test suites: the existing contract tests plus one smoke
   test per migration is the ceiling, and errors get fixed as they appear.
-- **The old base classes go, not get adapted.** `BaseLoader` (preprocessing
-  machinery) and `BaseTrainer` are artifacts of the old contracts;
-  `BaseZarrDataset` and `MultiSignalTrainer` replace them outright. Delete
-  rather than maintain compatibility shims.
+- **The old base classes go, not get adapted.** Delete rather than maintain
+  compatibility shims.
 - Git history is the archive. Anything deleted (loaders, configs, weights,
   scratch) is one checkout of the `pre-overhaul` tag away.
 
 ---
 
-## Phase 0 — Land what's in flight
+## Completed phases (history)
 
-The entire dict-contract changeset (~30 modified + ~30 untracked files,
-including `vendor/`, `MultiSignalTrainer`, `batch.py`, the test suite) is
-uncommitted. Nothing else happens until it's landed in a few logical commits
-(vendoring/pyproject, contract core, tests, tools, docs). Include
-`updating_plan.md` and this roadmap.
+Details live in [project_status.md](../project_status.md) and the linked
+design docs; the summaries here exist so the live phases below read in
+context.
 
-Then tag the result `pre-overhaul` so everything deleted later is one checkout
-away.
+- **Phase 0 — Land what's in flight** (done): the dict-contract changeset
+  landed in logical commits; result tagged `pre-overhaul`.
+- **Phase 1 — Rename + repo hygiene** (done): renamed to
+  `remote-physiology`; root scratch, `final_model_release/`, `figures/`,
+  `requirements.txt`/`setup.sh` deleted; `.slurm_scripts/` tracked as
+  reference material; `.gitignore` fixed.
+- **Phase 2 — Cache contract + delete the legacy pipeline** (done): twelve
+  legacy loaders distilled into markdown cache specs
+  (`dataset/data_loader/*.md`) and deleted with `BaseLoader` and the
+  `.npy`-cache tools; the zarr entry point promoted to `main.py`.
+- **Phase 3 — Dataset & dataloading generalization** (done): generic
+  attribute filters; standard dict keys owned by `neural_methods/batch.py`.
+- **Phase 3.5 — Dependency refresh** (done): torch 2.12.1 + cu126
+  fleet-wide from the three platform reports (decision 11); verified on
+  Windows and HPC.
+- **Phase 4 (original) — wave-1 migrations**: DeepPhys landed as the pilot
+  (decision 12) and PhysFormer ahead of its slot (decision 13); TS-CAN and
+  EfficientPhys were **not** migrated before the 2026-09-01 re-plan folded
+  the remainder into Phases B–C below.
+- **Phase 5 — Config consolidation** (closed 2026-08-31): the
+  DATA / INTERFACE / MODEL typed schema
+  ([design](2026-08-31-interface-config-redesign.md)), yacs and the 141
+  legacy config files deleted, checkpoint-carried `INTERFACE`.
+- **Phase 7 — Evaluation & clinical metrics** (closed 2026-09-01): the
+  layered `evaluation/` library ([design](2026-08-31-evaluation-clinical-metrics.md),
+  decision 16); IEEE 1708 + ISO 81060-3 implemented, thresholds
+  `UNVERIFIED` pending the line-by-line check (spec §17).
 
-## Phase 1 — Rename + repo hygiene
+The original Phase 6 (wave-2 migrations) and Phase 8 (docs finalization)
+never started under their old definitions; their successors are Phases C
+and E below.
 
-Cheap, mechanical, and best done *before* the overhaul so later diffs are
-reviewable.
+---
 
-**Rename** to `remote-physiology` now, not at the end — GitHub redirects old
-URLs, and every doc written in Phases 2–8 then carries the right name.
+## Phase A — Cache contract v2
 
-**Root scratch files** (all tracked, all deletable — git history keeps them):
+The contract: [contract-v2 design, Part 1](2026-09-01-contract-v2-design.md).
+The external preprocessor (the Neckflix repo) is being updated to write it
+in parallel; this repo owns the validator and the reader.
 
-| File | Action |
-| --- | --- |
-| `debug` | delete (captured debug output) |
-| `test.py`, `plt_attention.py` | delete (scratch) |
-| `pytorch_learning.py` | delete (confirmed: no relocation needed) |
-| `metrics.ipynb`, `neckflix_metrics.ipynb`, `neckflix_metrics.py`, `bp_metrics.py`, `neckflix_example_metrics.csv` | park in `evaluation/prototypes/` — raw material for Phase 7; delete when Phase 7 consumes them |
-| `requirements.txt`, `setup.sh` | delete — `pyproject.toml` is the source of truth |
+1. **Validator first, now** — `tools/validate_cache.py` + importable
+   `validate_store`: the contract made executable, runnable against stores
+   as the preprocessor work produces them, *before* this repo's reader
+   changes. One smoke test. This is the only admission mechanism —
+   `complete`/`tool_version` checks are gone.
+2. **Reader adoption, when a regenerated cache exists**: `BaseZarrDataset`
+   reads `video/data`, perspective-level `fps`, `timestamps_us`; unequal
+   modality durations truncated to the shortest at read time; `label_units`
+   added to the batch dict from the traces' `units` attrs.
+3. **One dataset class**: the global modality→channel table replaces
+   per-dataset `channel_map` subclasses; `NeckflixDataset` and `PUREDataset`
+   deleted. The markdown cache specs stay, updated to describe v2 stores.
 
-**Tracked outputs**:
+Gate: the regenerated Neckflix cache passes the validator and a smoke run
+end to end.
 
-- `final_model_release/` — delete from the tree (decided). The 36 upstream
-  single-signal `.pth` weights can't load into multi-signal variants and
-  upstream still hosts them.
-- `model_outputs/PURE_PURE_UBFC_deepphys_outputs.pickle` — untrack, ignore dir.
-- `figures/` — deleted entirely (decision 9): the interim README carries no
-  images, so nothing references it; Phase 8 pulls images back from history if
-  the final README wants any.
+## Phase B — Model contract v2
 
-**`.gitignore` fixes**:
+The contract: [contract-v2 design, Part 2](2026-09-01-contract-v2-design.md).
+Independent of Phase A — runs against the current `rgbid256` cache.
 
-- Remove `uv.lock` from `.gitignore` — it's tracked (and must be, as the
-  reproducible-env artifact); the ignore entry is a no-op lie.
-- Start tracking `.slurm_scripts/` (decided). These are **reference
-  material** — templates to copy and adapt per experiment, not a maintained
-  API — and should be treated as such in docs.
-- Add `model_outputs/`; keep `runs/`, `logs/` ignored.
+1. `DictModel` base: `forward(batch) -> batch` with `predictions` **and**
+   `losses` riding the batch; the per-signal loss machinery invoked from the
+   base (written once — simple models inherit it); `Reads:/Modifies:`
+   docstring convention.
+2. The **style C wrapper** — S parallel copies of the original
+   architecture, input widened to the demanded channels — as
+   `HEAD_STYLE: parallel`, the new default; A/B remain options.
+3. Rework DeepPhys, PhysFormer, PhysMamba onto the new contract;
+   `MultiSignalTrainer` slims to forward / weight-and-sum / step / log.
+   `PhysMambaTrainer.py` (missed in the PhysMamba migration) is deleted
+   here.
+4. Update [the migration contract](2026-08-31-model-migration-contract.md)
+   to contract v2 **before** Phase C dispatches any agent.
 
-## Phase 2 — Cache contract + delete the legacy pipeline
+Gate: smoke runs for all three reworked models; suite green.
 
-The `updating_plan.md` "Caching" stage, plus its forced consequences.
+## Phase C — Remaining migrations
 
-1. **Document the cache contract** in README + `docs/architecture.md`: one zarr
-   store per recording, `perspective → stream → video/frames + trace/data`,
-   root attrs (`complete`, `tool_version`, participant, …), admission rules.
-   Neckflix as the worked example.
-2. **Replace each legacy loader with a markdown cache spec.** Twelve loaders
-   (BP4D+, BP4D+BigSmall, COHFACE, LADH, MMPD, PhysDrive, PURE, SCAMPS, SUMS,
-   UBFC-PHYS, UBFC-rPPG, iBVP). For each: read the loader, capture into
-   `dataset/data_loader/<NAME>.md` everything a future cache-writer needs —
-   raw file layout, video/trace formats, sampling rates, quirks (e.g. PURE's
-   image sequences, SCAMPS' mat files) — *then* delete the `.py`. This is the
-   only record of those parse details once the code is gone; the spec is the
-   deliverable, the deletion is the afterthought.
-3. **Consequences** (legacy loaders are load-bearing for the old pipeline):
-   - `main.py` dies with the loaders → `neckflix_main.py` generalizes into the
-     single entry point (renamed `main.py` at the end of this phase).
-   - `BaseLoader.py` goes entirely (face crop, chunking, `.npy` cache, file
-     lists) — replaced by `BaseZarrDataset`, no shim.
-   - Legacy tools tied to the `.npy` cache (`tools/preprocessing_viz/`,
-     `tools/output_signal_viz/`, `tools/motion_analysis/`) — audit, then
-     delete.
-4. **CLAUDE.md note**: "implementing a cache/loader for a new dataset → read
-   the markdown spec in `dataset/data_loader/`."
+One agent per model against the updated migration contract, in rough order
+of difficulty: TS-CAN, EfficientPhys (2-D, near-mechanical), PhysNet,
+iBVPNet, FactorizePhys (3-D conv), RhythmFormer (transformer), BigSmall
+(multi-task heads onto the signal dict). **PhysHydra last and on its own
+path** — it is the CardioHydra-pattern composite (per-stage losses beside
+the per-signal entries), not a style-C wrap.
 
-Keep: `zarr_dataset.py`, `NeckflixLoader.py`, `neckflix_config.py`,
-`label_transforms.py`, the unsupervised methods (already migrated).
-
-## Phase 3 — Dataset & dataloading generalization
-
-Mostly landed for Neckflix. Remaining work:
-
-- Promote the Neckflix filter model to `BaseZarrDataset` generically:
-  attribute include-filters driven by whatever attrs a store carries, not
-  hardcoded posture/perspective/light.
-- A new dataset = a `channel_map` subclass + a markdown cache spec.
-- Standard dict keys stay owned by `neural_methods/batch.py`.
-
-## Phase 3.5 — Dependency refresh
-
-Deliberately slotted *here*: before this point a bump would break code
-scheduled for deletion; after the migrations every model would need
-revalidating against new APIs. This is the window where the living surface is
-smallest and everything that survives has contract tests.
-
-> **⛔ HARD PAUSE before starting this phase.** Check the system requirements
-> on all three platforms before touching anything: Windows dev box (CUDA
-> toolkit / MSVC for the vendored `mamba-ssm` build, `triton-windows`
-> compatibility), Linux HPC (available CUDA modules and driver versions on the
-> cluster — these cap the torch version), and macOS (`mamba-ssm-macos`, MPS
-> support). No upgrade target is chosen until the constraint set from all
-> three is known. This is a stop-and-review point, not a step in a batch.
-
-Then, in two separate commits:
-
-1. **General pass** — `uv lock --upgrade` for the uncoupled deps (zarr,
-   numpy, scipy, einops, plotting, …); pyproject edits for any deliberate
-   major bumps. Run the contract tests + one smoke run.
-2. **The torch / mamba-ssm / triton cluster** — coupled: the vendored
-   `mamba-ssm` compiles against a specific torch, `triton-windows` has its own
-   torch matrix, and the HPC CUDA modules cap torch from the other side. One
-   commit, verified with a smoke train run on **both** Windows and HPC before
-   anything builds on it. If the cluster's modules aren't ready, defer this
-   half — it must not block Phase 4.
-
-## Phase 4 — Model migration, wave 1 (+ config retros)
-
-Migrate the easiest models first, against the config system as it stands.
-Each migration: `DictModel` with `forward_video(video) -> (B, S, T)`, a
-`MODEL_REGISTRY` builder line, a config, a smoke test — and **delete the
-legacy trainer** as each model moves onto `MultiSignalTrainer`.
-
-The full instruction set for every migration (config sources, head styles,
-per-signal losses and absolute scale, physical-time windowing, the
-prediction contract, plots, the per-model recipe) is
-[the migration contract](2026-08-31-model-migration-contract.md).
-
-Wave 1 = the 2-D per-frame backbones (near-mechanical via
-`SignalDictWrapper(input_mode='frames2d')`):
-
-1. DeepPhys — **done 2026-08-31** (the pilot; §7a re-verified on the new
-   schema)
-2. TS-CAN
-3. EfficientPhys
-
-**After each migration, a config retro**: note what was awkward to express,
-what was duplicated, what the yacs tree forced. These notes drive Phase 5 —
-the schema gets designed from friction observed, not speculation.
-
-## Phase 5 — Config consolidation
-
-**Substantially landed 2026-08-31**, pulled forward after the two pilot
-retros converged on the same friction list — see
-[the design](2026-08-31-interface-config-redesign.md). What landed: the
-DATA / INTERFACE / MODEL schema (`config.py` rewritten as typed dataclasses,
-yacs deleted from the tree and from `pyproject.toml`), one `DATA` block +
-per-split `SPLITS` overrides, `INFERENCE` absorbed into `TEST`,
-checkpoint-carried `INTERFACE` with only_test adoption, demand-driven
-delivery in the zarr loader (dataset-agnostic channel fill, zero-coverage
-warnings, opt-in interpolating upsampling), and all seven
-`configs/neckflix/*.yaml` re-pointed (`_SMOKE` = `BASE:` + overrides).
-
-**Closed 2026-08-31** with a second pass (the design doc's addendum):
-
-- ~~One config system: kill the Hydra split, delete the legacy config
-  piles.~~ **Done** — the 132 files under `configs/train_configs/`,
-  `configs/infer_configs/`, `physhydra_configs/` (plus the pre-overhaul
-  hidden `.configs/`) were distilled into the migration contract's
-  **legacy settings reference** appendix (canonical `T_orig`, resize,
-  data types, LR, architecture blocks, per-dataset variants) and deleted;
-  `configs/` holds only `neckflix/`.
-- ~~§7a of the migration contract: sub-agent re-verification of the converted
-  DeepPhys and PhysFormer configs.~~ **Done 2026-08-31** — both passed with
-  no architectural discrepancy; the schema gaps found are recorded in the two
-  retros.
-- The close-out also slimmed the schema to exactly what a YAML may write:
-  `LOG_PATH` / `UNSUPERVISED_METHODS` flattened to top level,
-  `EVALUATION_WINDOW_SECONDS` replaces the two-key block, dead
-  `PLOT_LOSSES_AND_LR` deleted, runtime-derived paths moved off the schema
-  onto `config.RUN`, `RESIZE` square shorthand, YAML 1.2 float resolution,
-  and `LABEL_NORM` resolved-at-load so checkpoints are self-describing
-  (a §7a finding).
-
-## Phase 6 — Model migration, wave 2
-
-The remaining architectures, written directly against the new config, in
-rough order of difficulty. Per `updating_plan.md`, the multi-signal head
-design is decided collaboratively per model, staying true to each original
-architecture:
-
-1. **3-D conv** — PhysNet, iBVPNet, FactorizePhys: output head widens to S
-   signals.
-2. **Transformers** — PhysFormer, RhythmFormer: head + tokenization decisions.
-3. **Special cases** — BigSmall (already multi-task; map its task heads onto
-   the signal dict) and PhysHydra (our own model, still on the legacy tuple
-   contract).
-
-Standardized plots are implemented **once** in `MultiSignalTrainer` /
-`metrics_report.py`, so cross-model consistency is free.
+Each migration deletes its legacy trainer. With the last one go
+`BaseTrainer` and the legacy evaluation trio it kept alive —
+`evaluation/metrics.py`, `evaluation/BlandAltmanPy.py`,
+`evaluation/bigsmall_multitask_metrics.py` (`evaluation/post_process.py`
+stays: `scoring/rate.py`, `scoring/waveform.py` and the unsupervised
+methods use it).
 
 Exit criterion: `neural_methods/trainer/` contains `MultiSignalTrainer` and
-nothing else — `BaseTrainer` is deleted with the last legacy trainer, not
-kept as a parent.
+nothing else.
 
-## Phase 7 — Evaluation & clinical metrics
+## Phase D — Evaluation follow-ups
 
-**Closed 2026-09-01.** Can overlap Phases 4–6 — it consumes saved outputs
-through the stable batch contract.
+- Verify the ISO 81060 thresholds and aggregation line by line against the
+  purchased texts in `standards/ISO-81060/` (spec §17 of
+  [the Phase 7 design](2026-08-31-evaluation-clinical-metrics.md)); flip
+  `VERIFIED_AGAINST_STANDARD_TEXT` for what passes. Note the on-disk
+  81060-2 edition is 2019+A2:2024, newer than the 2018 edition the design
+  cites.
+- IEEE 1708 stays, `UNVERIFIED`, until its text is sourced (decision 17).
+- Report per-signal `units` from the cache (Phase A's `label_units`)
+  instead of assuming mmHg.
+- Run the beat detector over a full recording and confirm the detected rate
+  against the ECG-derived rate; confirm participant/cohort levels on a real
+  LOSO sweep once one exists.
 
-1. ~~**Design doc first**: map IEEE 1708-2014 / 1708a-2019, ISO 81060-2:2018 /
-   81060-3:2022, and ESH 2023 onto computable metrics — per-beat
-   systolic/diastolic detection, mean-error/SD acceptance bands, per-subject
-   vs pooled aggregation, grading. Be explicit about which criteria are
-   *computable from our data* vs *study-design requirements* (subject counts,
-   reference-device protocol, cuff procedure) that a metrics report can note
-   but not satisfy.~~ **Done** —
-   [the design](2026-08-31-evaluation-clinical-metrics.md); IEEE 1708 and
-   ISO 81060-3 implemented, both marked `UNVERIFIED` pending a line-by-line
-   check against the purchased texts; ESH 2023 and ISO 81060-2 deferred —
-   `standards.py`'s `Criterion`/`CRITERIA` mechanism is generic, so adding
-   either later is rows, not new code.
-2. ~~Extend `evaluation/metrics_report.py`; denormalised (mmHg) reporting via
-   the `label_stats` already carried in every batch.~~ **Done, as a rebuild
-   rather than an extension** — `evaluation/metrics_report.py` is deleted;
-   in its place a layered library (`records` → `beats` → `levels` →
-   `uncertainty` → `scoring/` → `report` → `plots`) that the trainer, the
-   unsupervised predictor and the offline LOSO summariser all consume
-   identically. Physical units (mmHg, etc.) throughout via `label_stats`.
-3. ~~Consume, then delete, `evaluation/prototypes/` from Phase 1.~~ **Done** —
-   every capability confirmed a home before deletion (`find_peaks` →
-   `evaluation/beats.py`; `mean_se` / the moving-block bootstrap →
-   `evaluation/uncertainty.py`; the `get_rmse`/`get_mae`/`get_pearson_r`/
-   `get_ccc`/`get_macc` family → `evaluation/scoring/waveform.py`;
-   `get_hr_fft`/`get_snr` → `evaluation/scoring/rate.py`; `aggregate_data` →
-   `evaluation/levels.py` + `evaluation/report.py`; the Bland-Altman cells →
-   `evaluation/plots.py`); see decision 16 below.
+## Phase E — Templates + docs finalization
 
-## Phase 8 — Docs finalization
-
-- README rewritten for `remote-physiology`: mission, cache contract,
-  batch-dict contract, model table, clinical-metrics summary; any images it
-  wants come back from git history (`figures/` was deleted in Phase 1);
-  upstream rPPG-Toolbox credited as the fork origin. An interim
-  accuracy-pass README/CLAUDE.md landed during Phase 1 — this phase is the
-  final polish, not the first correction.
-- CLAUDE.md refreshed to remove legacy-pipeline instructions.
-- `docs/architecture.md`, `docs/changelog.md`, `docs/project_status.md`
-  updated; `updating_plan.md` retired into `docs/plans/`.
+- The **extend-the-package templates** — new dataset, new model, new trace
+  (label) — written for agent reuse once the contract is proven on Phase
+  B's three reworked models.
+- README rewritten for `remote-physiology`: mission, cache contract v2,
+  batch-dict contract, model table, clinical-metrics summary; images from
+  git history if wanted; upstream rPPG-Toolbox credited.
+- CLAUDE.md and `docs/architecture.md` rewritten to the implemented
+  contract v2; `docs/changelog.md` and `docs/project_status.md` updated.
 
 ---
 
@@ -351,6 +241,8 @@ through the stable batch contract.
     instead — the right slot, but a log-spectrum shape match rather than
     DLDL's soft classification over a bpm grid, and the one place this
     migration is knowingly weaker than the paper.
+    *(2026-09-01: the style-B finding becomes moot under contract v2's
+    style C — full parallel copies always compose.)*
 14. **The Neckflix cache's nominal frame rate is not its exact one.** All
     332 stores of the local `rgb128` cache carry three distinct per-stream
     `video.fps` values — 29.97961373390558 (x329), exactly 30.0 (x325) and
@@ -387,7 +279,8 @@ through the stable batch contract.
 16. **Phase 7 evaluation design (2026-09-01).** The package lives at
     `evaluation/scoring/`, not `evaluation/metrics/` — a package named
     `metrics/` would shadow the retained legacy module `evaluation/metrics.py`
-    and break `main.py`'s import of it. Four design choices, carried through
+    (still imported by the legacy trainers that die in Phase C).
+    Four design choices, carried through
     from [the design doc](2026-08-31-evaluation-clinical-metrics.md):
     (a) **a six-level hierarchy** (beat → window → section → recording →
     participant → cohort) rather than one fixed aggregation, because the
@@ -423,5 +316,33 @@ through the stable batch contract.
     computable machinery, not a verified clinical grade. Verified end to end
     on a real smoke run (`NECKFLIX_PHYSMAMBA_SMOKE`, the 332-store local
     zarr cache, held-out participant 015); suite at 288, green.
+
+17. **Contract v2 (2026-09-01).** `revised_overhaul_plan.md` supersedes
+    `updating_plan.md`; the remaining phases were re-planned around
+    [the contract-v2 design](2026-09-01-contract-v2-design.md). The
+    decisions, settled interactively: **(a)** cache contract v2 — fixed
+    modality (`gr`/`rgb`/`ir`/`depth`/`t`/`ev`) and trace
+    (`ecg`/`abp`/`cvp`/`ppg`/`rr`) vocabularies, per-modality
+    `timestamps_us`, `video/data` replacing `video/frames`,
+    perspective-level nominal `fps` with first-frame alignment under
+    `1/fps`, a required `units` attr per trace, root attrs slimmed to
+    `participant` plus free filter attrs. **(b)** `complete`/`tool_version`
+    admission deleted: stores are assumed complete, and the offline
+    validator (`tools/validate_cache.py`) is the only admission mechanism.
+    **(c)** One dataset class: the modality→channel table is global, so
+    per-dataset `channel_map` subclasses go. **(d)** Model contract v2 à la
+    CardioHydra (github.com/coenarrow/CardioHydra): `forward(batch) ->
+    batch` with `losses` riding the batch, computed inside the model — the
+    per-signal machinery invoked from the `DictModel` base so simple models
+    inherit it, composite models (PhysHydra) adding stage entries;
+    `Reads:/Modifies:` docstrings adopted. **(e)** **Style C** — S full
+    parallel copies of the original architecture, input widened to the
+    demanded channels (mostly 5) — is the default (`HEAD_STYLE: parallel`)
+    for *all* migrations; A/B remain options; DeepPhys/PhysFormer/PhysMamba
+    are reworked before further migrations. **(f)** IEEE 1708 is kept
+    (`UNVERIFIED` until its text is sourced): it is the cuffless-device
+    standard, its A–D grading is the research-progress dial, and it is the
+    number cuffless-BP papers quote. The ISO texts are in
+    `standards/ISO-81060/`, so ISO verification is unblocked.
 
 Last updated: 2026-09-01

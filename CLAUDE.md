@@ -26,7 +26,7 @@ The repo is mid-overhaul from the upstream single-signal design to the
 multi-signal contract described below. **Before proposing structural work,
 read [the roadmap](docs/plans/2026-08-31-overhaul-roadmap.md)** — it carries
 the phase ordering, the decision log, and what is scheduled for deletion.
-Goals: [updating_plan.md](updating_plan.md). Status:
+Goals: [revised_overhaul_plan.md](revised_overhaul_plan.md). Status:
 [docs/project_status.md](docs/project_status.md). The pre-overhaul state is
 tagged `pre-overhaul`.
 
