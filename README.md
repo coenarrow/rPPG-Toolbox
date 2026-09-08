@@ -64,7 +64,7 @@ one.
 
 ## Algorithms
 
-**On the multi-signal contract today**: DeepPhys, PhysFormer, PhysMamba, PhysNet, iBVPNet, TS-CAN.
+**On the multi-signal contract today**: DeepPhys, PhysFormer, PhysMamba, PhysNet, iBVPNet, TS-CAN, FactorizePhys.
 
 Each one trains and tests on the PURE dataset, holding out its first
 participant, on the model's own paper interface and paper training recipe
@@ -74,6 +74,12 @@ participant, on the model's own paper interface and paper training recipe
 ```bash
 # DeepPhys
 uv run python run_experiment.py --datasets pure --test-participant-dataset pure --test-participant-id 01 --model deepphys --interface configs/interfaces/deepphys_interface.yaml --training configs/training/deepphys_training.yaml
+
+# FactorizePhys
+uv run python run_experiment.py --datasets pure \
+    --test-participant-dataset pure --test-participant-id 01 \
+    --model factorizephys --interface configs/interfaces/factorizephys_interface.yaml \
+    --training configs/training/factorizephys_training.yaml
 
 # PhysFormer
 uv run python run_experiment.py --datasets pure --test-participant-dataset pure --test-participant-id 01 --model physformer --interface configs/interfaces/physformer_interface.yaml --training configs/training/physformer_training.yaml

@@ -32,6 +32,7 @@ from neural_methods.model import (
     PhysFormer as physformer, PhysMamba as physmamba, PhysNet as physnet,
     iBVPNet as ibvpnet,
 )
+from neural_methods.model.FactorizePhys import FactorizePhys as factorizephys
 from neural_methods.model.PhysMamba import PhysMamba
 from neural_methods.model.TS_CAN import TSCAN
 from src.interface import InterfaceConfig
@@ -80,6 +81,18 @@ class TSCANConfig:
 
 
 @dataclass
+class FactorizePhysConfig:
+    NAME: str = ""
+    INPUT: str = ""               # INPUT_PREPROCESSING block the stem reads
+    FSAM: bool = True             # run the factorized attention module, the
+                                  # ablation the paper reports; the paper path
+                                  # (FSAM_Res) is true
+
+    def validate(self, interface: InterfaceConfig, where: str) -> None:
+        _require_input_block(self.INPUT, interface, f"{where}: INPUT")
+
+
+@dataclass
 class PhysMambaConfig:
     NAME: str = ""
     INPUT: str = ""               # INPUT_PREPROCESSING block the stem reads
@@ -118,6 +131,7 @@ class iBVPNetConfig:
 #: ``NAME`` -> the dataclass its file is parsed into.
 MODEL_CONFIGS = {
     "DeepPhys": DeepPhysConfig,
+    "FactorizePhys": FactorizePhysConfig,
     "PhysFormer": PhysFormerConfig,
     "PhysMamba": PhysMambaConfig,
     "PhysNet": PhysNetConfig,
@@ -278,6 +292,15 @@ def _build_tscan(cfg: TSCANConfig, interface: InterfaceConfig) -> MultiTraceMode
         input_blocks=[cfg.MOTION_INPUT, cfg.APPEARANCE_INPUT], per_frame=False)
 
 
+def _build_factorizephys(cfg: FactorizePhysConfig, interface: InterfaceConfig) -> MultiTraceModel:
+    _require_min_frame(interface, "FactorizePhys", factorizephys.MIN_FRAME)
+    width = len(interface.CHANNELS)
+    return MultiTraceModel(
+        make_copy=lambda: factorizephys.FactorizePhys(in_channels=width, use_fsam=cfg.FSAM),
+        channels=interface.CHANNELS, traces=interface.TRACES,
+        input_blocks=[cfg.INPUT], per_frame=False)
+
+
 def _build_physmamba(cfg: PhysMambaConfig, interface: InterfaceConfig) -> MultiTraceModel:
     _require_min_frame(interface, "PhysMamba", physmamba.MIN_FRAME)
     width = len(interface.CHANNELS)
@@ -317,6 +340,7 @@ def _build_ibvpnet(cfg: iBVPNetConfig, interface: InterfaceConfig) -> MultiTrace
 #: ``NAME`` -> builder. One line per architecture, beside its config class.
 MODEL_BUILDERS = {
     "DeepPhys": _build_deepphys,
+    "FactorizePhys": _build_factorizephys,
     "PhysFormer": _build_physformer,
     "PhysMamba": _build_physmamba,
     "PhysNet": _build_physnet,

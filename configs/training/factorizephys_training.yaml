@@ -1,0 +1,20 @@
+# FactorizePhys paper recipe. This file IS how rPPG-Toolbox trains
+# FactorizePhys (configs/train_configs/PURE_iBVP_FactorizePhys_FSAM_Res.yaml
+# and its FactorizePhysTrainer, both at the pre-overhaul tag): Adam at 1e-3
+# with no weight decay, OneCycleLR over the run, batch 4, 10 epochs, float32.
+# That upstream file trains on PURE and tests on iBVP — it is the only
+# FactorizePhys recipe at the tag that trains on PURE. Pair it with
+# configs/interfaces/factorizephys_interface.yaml.
+#
+# One trainer-side difference: the readout is exempt from weight decay here
+# (see src/trainer.py); moot upstream, which decays nothing at all.
+EPOCHS: 10
+BATCH_SIZE: 4                # train and test alike
+OPTIMIZER: Adam              # upstream: optim.Adam(lr), no weight decay
+LR: 1e-3
+WEIGHT_DECAY: 0.0
+SCHEDULER: OneCycle          # upstream: OneCycleLR(max_lr=LR) over every step
+PRECISION: float32           # upstream trains in full precision
+DEVICE: gpu                  # gpu | cpu; gpu = CUDA or Apple MPS, refused if neither exists
+NUM_WORKERS: 4               # DataLoader workers (a machine key, not the paper's)
+# MODEL_FILE_NAME: factorizephys  # optional; default <model>_<test dataset>_<participant>
