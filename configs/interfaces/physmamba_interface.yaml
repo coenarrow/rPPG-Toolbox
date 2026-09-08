@@ -1,0 +1,21 @@
+# PhysMamba paper interface. This file IS the rPPG-Toolbox configuration of
+# PhysMamba (128x128 frames, 128-frame chunks at 30 fps, DiffNormalized
+# input, one PPG trace, negative Pearson loss); run it to check the migration
+# against the paper. Nothing Neckflix-specific belongs here: the standard
+# interface is where every model meets the pressure traces.
+#
+# Every key is required — there are no defaults. See docs/adding_a_model.md.
+FS: 30.0                       # frame rate the model sees; faster stores are
+                               # decimated to it
+UPSAMPLING: refuse             # slower stores: refuse | interpolate
+WINDOW_SECONDS: 4.266667       # 128 frames (128 / 30), the upstream
+                               # CHUNK_LENGTH
+WINDOW_STRIDE: 1.0             # seconds the test set steps between windows
+CHANNELS: [R, G, B]            # ordered camera channels, subset of R,G,B,I,D
+TRACES: [PPG]                  # the paper predicts BVP and nothing else
+RESIZE: {H: 128, W: 128}       # upstream PhysMamba frame size
+INPUT_PREPROCESSING: [DiffNormalized]
+LABEL_PREPROCESSING:           # upstream LABEL_TYPE DiffNormalized; zscore is
+  PPG: zscore                  # the nearest of raw | zscore
+LOSS:                          # upstream trains PhysMamba with negative Pearson
+  PPG: {NEGPEARSON: 1.0}

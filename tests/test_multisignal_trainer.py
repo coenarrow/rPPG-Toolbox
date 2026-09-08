@@ -55,7 +55,7 @@ def config(cache):
     # TRACES is narrowed above, so the per-signal registries have to be
     # narrowed with it: naming a signal the run does not predict is an error,
     # not a no-op (LABEL_NORM is resolved to all traces at load).
-    cfg.TRAIN.LOSS.pop("ECG", None)
+    cfg.INTERFACE.LOSS.pop("ECG", None)
     cfg.INTERFACE.LABEL_NORM.pop("ECG", None)
     cfg.TRAIN.EPOCHS = 1
     cfg.TRAIN.BATCH_SIZE = 2

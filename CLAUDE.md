@@ -13,8 +13,10 @@ ESH 2023) and large-scale LOSO sweeps on an HPC cluster.
 
 **Extending the repo should be cheap, because everything shared is written
 once.** A new dataset is a `channel_map` subclass plus a markdown cache spec;
-a new model is a `DictModel` plus a registry line and a config — never a new
-trainer, loader, loss module, or plot set. When new work needs something a
+a new model is a backbone `nn.Module`, a config class and builder in
+`src/models.py`, a YAML in `configs/models/` and one smoke test
+(`docs/adding_a_model.md` is the recipe) — never a new trainer, loader, loss
+module, or plot set. When new work needs something a
 shared piece almost does, extend the shared piece for everyone rather than
 writing a parallel copy beside it; a second implementation of anything is a
 bug in the first one's design. This principle is why the per-model and
@@ -23,12 +25,7 @@ per-dataset recipes below are short — keep them that way.
 ## Overhaul In Progress
 
 The repo is mid-overhaul from the upstream single-signal design to the
-multi-signal contract described below. **Before proposing structural work,
-read [the roadmap](docs/plans/2026-08-31-overhaul-roadmap.md)** — it carries
-the phase ordering, the decision log, and what is scheduled for deletion.
-Goals: [revised_overhaul_plan.md](revised_overhaul_plan.md). Status:
-[docs/project_status.md](docs/project_status.md). The pre-overhaul state is
-tagged `pre-overhaul`.
+multi-signal contract.
 
 ## Cross-Cutting Rules
 
@@ -42,408 +39,30 @@ tagged `pre-overhaul`.
   opportunistically.
 - **Legacy code is deleted, not adapted.** No compatibility shims; git history
   and the `pre-overhaul` tag are the archive.
-
-## Quick Start
-
-- **Entry point**: `main.py` (the zarr pipeline — formerly
-  `neckflix_main.py`; the legacy tuple-contract entry point it replaces is
-  gone, the `pre-overhaul` tag has it).
-- **Run with**: `uv run python main.py --config_file configs/neckflix/<CONFIG>.yaml`
-- **Configs**: `configs/neckflix/` — the only config tree (the legacy piles
-  were distilled into the migration contract's settings appendix and
-  deleted in the Phase 5 close-out).
-- **Clone**: `git clone --recurse-submodules` — the cache preprocessor lives
-  at `external/neckflix`. In an existing clone: `git submodule update --init`,
-  then `git submodule foreach 'git checkout main'` (a fresh submodule lands on a
-  detached HEAD, and committing there orphans the commit). It is **not** a
-  dependency and `uv sync` neither needs nor installs it; it runs from its own
-  lock via `uv run --project external/neckflix`.
-- **HPC**: never run compute on the login node — use the
-  [running-hpc-jobs](.claude/skills/running-hpc-jobs/SKILL.md) skill for
-  SLURM submission, partitions, salloc, monitoring, troubleshooting.
-
-## Codebase Map
-
-**Current (build on this):**
-
-- `config.py` — the typed DATA / INTERFACE / MODEL schema (`load_config`);
-  `INTERFACE` is the model's demand on the data pipeline, serialized into
-  every checkpoint (design:
-  `docs/plans/2026-08-31-interface-config-redesign.md`)
-- `neural_methods/batch.py` — owns the batch-dict key names and shape moves
-- `neural_methods/frame_transforms.py` — consumer-side DATA_TYPE + resize
-- `neural_methods/model/DictModel.py`, `SignalDictWrapper.py` — model contract
-- `neural_methods/trainer/MultiSignalTrainer.py` — the one trainer, plus
-  `MODEL_REGISTRY`, `ModelSpec` (everything a builder derives from the data
-  spec) and the absolute-scale guardrails (output-bias priors, weight-decay
-  exemption, window-constraint check)
-- `neural_methods/loss/PerSignalLoss.py` — the per-signal composite loss:
-  per-sample components (CCC, L1 mean, L1 soft peaks, negpearson, MSE,
-  spectral), masked so an absent signal contributes exactly 0
-- `dataset/data_loader/` — `BaseZarrDataset` / `NeckflixDataset` (lazy, over
-  the external zarr cache), `neckflix_config.py` (typed config pattern), and
-  one markdown **cache spec per legacy dataset** (`PURE.md`, `MMPD.md`, …) —
-  the record of how to build each dataset's zarr stores
-- `evaluation/` — `records`, `beats`, `levels`, `uncertainty`, `scoring/`
-  (`waveform`, `rate`, `clinical`, `standards`), `report`, `plots`:
-  per-signal scoring from beat to cohort. `post_process.py` is the unchanged
-  DSP layer underneath (FFT/peak-detection helpers), shared with the legacy
-  trainers
-- `unsupervised_methods/` — seven traditional methods, migrated to the dict
-  pipeline, scored per trace
-- `tools/list_neckflix_folds.py`, `tools/summarise_neckflix_outputs.py`,
-  `tools/validate_cache.py` (the cache contract made executable — run it on
-  anything the preprocessor writes), `tools/cache_pure.py` (the PURE
-  equivalent of that preprocessor; in `tools/` because nothing on the training
-  path may write the cache)
-- `external/neckflix` — **git submodule**: the preprocessor that writes the
-  Neckflix cache (github.com/coenarrow/Neckflix, tracking `main`). Vendored
-  for co-editing, not imported — edit it in place and push upstream from
-  inside it. See "The Zarr Cache" for the contract-version warning
-- `tests/` — contract tests (`test_batch_contract.py`, `test_legacy_contract.py`, …)
-- `vendor/mamba-ssm` — patched Windows build; regenerated by
-  `tools/vendor_mamba_windows.py`, never hand-edited
-
-**Legacy (dies in Phases 4–6 of the roadmap — do not extend):**
-
-- `neural_methods/trainer/<Model>Trainer.py` files and `BaseTrainer` —
-  unreachable from the entry point since Phase 2, kept as migration
-  reference; each dies as its model moves onto `MultiSignalTrainer`
-- Models not yet on the dict contract: TS-CAN, EfficientPhys, PhysNet,
-  iBVPNet, FactorizePhys, RhythmFormer, BigSmall, PhysHydra
-
-## The Batch-Dict Contract
-
-Everything downstream of the dataset passes nested dicts keyed by canonical
-channel and signal names, so any tensor is identifiable by its key at any
-point. `neural_methods/batch.py` owns the key names and the shape moves.
-
-**Per sample** (dataset `__getitem__`; `default_collate` adds the batch axis):
-
-```python
-{"frames":       {ch:  (1, T, H, W) float32},   # raw pixels, zero-filled where absent
- "labels":       {sig: (T,)         float32},   # per-signal LABEL_NORM (raw for ABP/CVP)
- "label_stats":  {sig: {stat: ()    float32}},  # physical units, for exact inversion
- "channel_mask": {ch:  ()           bool},      # True = real data, not zero fill
- "label_mask":   {sig: ()           bool},
- "metadata":     {"recording_id": str, "camera_id": str, "start_frame": int}}
-```
-
-**Through a model** — the same dict comes back with `predictions` added:
-
-```python
-out = model(batch)
-out["predictions"]                  # {signal: (B, T)}
-out["frames"] is batch["frames"]    # nothing is dropped in transit
-```
-
-**Rules**
-
-- Channel and signal *order* lives on the model (`model.channels`,
-  `model.traces`); dict iteration order is never load-bearing.
-- Frame preprocessing is consumer-side: the loader emits raw pixels and
-  `neural_methods/frame_transforms.py` applies `DATA_TYPE` + resize, carried
-  by the model.
-- `label_mask` is load-bearing, not an edge case: trace coverage genuinely
-  varies per recording, and `PerSignalLoss` makes an absent signal
-  contribute exactly 0 rather than NaN.
-
-## The Zarr Cache
-
-What this repo reads: one zarr store per recording, written by the
-preprocessor vendored as a submodule at `external/neckflix` — the same code
-the `ghcr.io/coenarrow/neckflix` image ships, though that image's tags are cut
-from `v*` git tags only and so lag `main`. `CACHED_PATH` points at the output.
-This repo never writes it.
-
-**Two contract versions are live, and they are one version apart.** The reader
-still enforces v1: stores are admitted only if their root attrs carry
-`complete: true` and `tool_version >= 1.0.0`, anything else skipped with a
-warning (pre-1.0.0 frames were delta-encoded and would decode to garbage). The
-submodule at `main` already writes v2 — `video/data`, perspective-level `fps`,
-`timestamps_us`, and `complete` as a coverage dict rather than `true` — which
-the v1 reader therefore **skips entirely**. `tools/validate_cache.py` is the
-v2 admission check; the reader adopts v2 in contract-v2 Part 3
-(`docs/plans/2026-09-01-contract-v2-implementation.md`, which carries the
-current divergence list). Until that lands, a cache built from the submodule's
-`main` reads as an empty dataset; the existing `D:/neckflix_zarr/rgbid256`
-cache is v1, built from tag `v1.0.0`.
-
-**Layout**: `{recording}.zarr` → perspective (`"1"`/`"2"`) → stream
-(`rgb`/`ir`/`depth`) → `video/frames` `(C, T, H, W)` uint8 plus
-`{abp,cvp,ecg}/data` `(T,)` float64 in physical units, index-aligned to the
-frames. Root attrs carry `participant` **unprefixed** (`"015"`, not `P015`).
-
-**Reading it directly** (for inspection):
-
-```python
-import zarr
-root = zarr.open_group("/path/to/cache/P015_S01_R3_0_D.zarr", mode="r")
-dict(root.attrs)                      # recording, participant "015", posture, ...
-root["1"]["rgb"]["video"]["frames"]   # (C, T, H, W) uint8
-root["1"]["rgb"]["abp"]["data"]       # (T,) float64, physical units
-```
-
-**Neckflix characteristics**: two camera perspectives per recording, treated
-as independent samples; **trace coverage varies per recording** (some have
-ABP+CVP, some CVP+ECG, some all three) — `ALLOW_MISSING` + `label_mask` is
-the normal configuration, not an edge case; splits are participant filters
-(LOSO), never `BEGIN`/`END` percentages.
-
-## Config Keys (current format, `configs/neckflix/`)
-
-The schema is the **DATA / INTERFACE / MODEL split**
-(`docs/plans/2026-08-31-interface-config-redesign.md`), loaded by
-`config.py` (`load_config`): typed dataclasses, unknown keys refused with the
-full path, ints coerced to floats (`STRIDE_SECONDS: 0` is fine), and floats
-resolved with YAML 1.2 semantics (`LR: 9e-3` is a number). `BASE:
-[<file>]` deep-merges include files — the `_SMOKE` variants are
-`BASE: [<real config>]` plus a handful of overrides. Old-schema keys
-(`TOOLBOX_MODE`, `INFERENCE`, the four `*.DATA` blocks) are refused like
-any other unknown key.
-
-- `MODE` — `train_and_test` / `only_test` / `unsupervised_method`
-- `DATA` — **which stores participate**: `CACHED_PATH`; `FILTERS` (attribute
-  include filters keyed by the store's own root attrs plus the `perspective`
-  pseudo-attr, e.g. `{posture: ['0','45'], light: ['D']}`; `[]` = no
-  filter); `PARTICIPANTS` (include list, ids normalised `P015` → `015`;
-  LOSO uses `--test_participants`); `ALLOW_MISSING` / `MIN_CHANNELS` /
-  `MIN_LABELS`; and `SPLITS.TRAIN/VALID/TEST` — per-split policy **only**
-  (`STRIDE_SECONDS`, `0.0` = no overlap; `RANDOM_WINDOWS`; optional
-  `FILTERS`/`PARTICIPANTS` overrides). Unsupervised runs use the TEST
-  split policy
-- `INTERFACE` — **the model's demand on the data pipeline**, serialized into
-  every checkpoint; at `only_test` the checkpoint's copy is adopted over the
-  config's (differences printed). The loader delivers what it demands:
-  channels/traces the data lacks come back as zeros + a False mask — even
-  channels the dataset can never provide — with construction-time warnings
-  for anything that has zero coverage
-  - `FS` — **mandatory**: the frame rate the model sees. Faster stores are
-    decimated to it; slower ones are refused unless
-    `UPSAMPLING: interpolate` opts into linear frame/label blending (never
-    duplication — duplicated frames make DiffNormalized identically zero)
-  - `WINDOW_SECONDS` — the window as a **duration**. The frame count is
-    derived, `T = WINDOW_SECONDS x FS`, snapped to the whole frame within
-    0.01 and refused otherwise — 150 frames is 5 s of physiology at 30 fps
-    and 1 s at 150 fps, and a frame count alone cannot tell them apart. To
-    reproduce a published model's canonical `T_orig`, set
-    `WINDOW_SECONDS = T_orig / FS` (at 30 fps: 128 -> `4.266667`,
-    160 -> `5.333333`, 180 -> `6.0`)
-  - `CHANNELS` — ordered camera channels, subset of `R,G,B,I,D`; the order
-    transfers to `model.channels`
-  - `TRACES` — signals to predict, e.g. `['ABP','CVP','ECG']`; order
-    transfers to `model.traces`
-  - `RESIZE` — what the model sees; a scalar is the square shorthand
-    (`RESIZE: 128` = `{H: 128, W: 128}`). Resizing happens consumer-side, so
-    it need not match the cache resolution (`0` = keep the cache's size)
-  - `DATA_TYPE` — `Raw` / `Standardized` / `DiffNormalized`, applied
-    consumer-side and concatenated along channels if several are listed
-  - `LABEL_NORM` — **per signal**: `{ECG: zscore}`. Omit a signal to take
-    its class default from `neural_methods/signals.py` — absolute-class
-    signals (ABP, CVP) load `raw`, in physical units, because their level is
-    part of the prediction; shape-class signals (PPG, ECG, RESP) are
-    per-window z-scored. Resolved to the full per-signal map at load, so
-    checkpoints serialize the actual modes, not the omission
-- `MODEL` — `NAME`, `HEAD_STYLE` (`widened` = style A, default;
-  `per_signal` = style B), `DROP_RATE`, plus per-model architecture blocks
-  of any size (`MODEL.PHYSFORMER.PATCH_SIZE`, ...)
-- `TRAIN.LOSS` — **a per-signal registry**, not one global base:
-  `ABP: {TYPE: absolute, WEIGHTS: {CCC: 1.0, MEAN: 0.05, MAX: 0.05, MIN: 0.05}}`.
-  `TYPE` picks the component family (`absolute` = CCC + L1 on the window mean
-  and the soft systolic/diastolic peaks, in mmHg; `shape` = negpearson;
-  `mse`); `WEIGHTS` overrides that family's defaults and may name any
-  component (`CCC MEAN MAX MIN NEGPEARSON MSE SPECTRAL`). Omit a signal, or
-  the whole block, to take its class default. **The weights are where the
-  per-signal scale factors live** — raw ABP error is O(10 mmHg), CVP
-  O(1 mmHg) and CCC is O(1), so unweighted the pressures own every gradient.
-  Naming a signal not in `INTERFACE.TRACES` is an error, not a no-op
-- `TEST` — how predictions are scored, in every mode: `BATCH_SIZE`,
-  `USE_LAST_EPOCH`, `EVALUATION_METHOD`, `EVALUATION_WINDOW_SECONDS` (`0` =
-  score each window whole), `MODEL_PATH` (the `only_test` checkpoint), and
-  `REPORT.BOOTSTRAP` / `REPORT.PLOTS` (what applies to a signal follows from
-  its class; these gate only cost)
-- `LOG_PATH` — where the run's outputs land (default `runs/exp`)
-- `UNSUPERVISED_METHODS` — the traditional methods to score
-
-Derived at runtime, never written in YAML: `main.py` builds `config.RUN`
-(`RunPaths`: `exp_name`, `model_dir`, `output_dir`) — the schema holds only
-keys a YAML may write.
-
-## Running Experiments
-
-```bash
-# Build the zarr cache — the submodule's own env and lock, NOT this project's.
-# --perspectives 1 2 skips the event camera, whose ECF HDF5 codec only the
-# docker image builds. Budget ~12 GB RAM per worker. CPU/IO heavy: on the HPC
-# this goes through SLURM like any other compute, never the login node.
-uv run --project external/neckflix neckflix-preprocess \
-    --input-dir <raw Neckflix root> --output-dir <cache dir> \
-    --resize 256 256 --perspectives 1 2 --num-workers 2
-
-# Validate what it wrote (contract v2; PASS/FAIL per store, exit 1 on any FAIL)
-uv run python tools/validate_cache.py <cache dir>
-
-# All seven unsupervised methods (CPU), scored per trace
-uv run python main.py --config_file configs/neckflix/NECKFLIX_UNSUPERVISED.yaml
-
-# DeepPhys (the migration pilot), one LOSO fold
-uv run python main.py --config_file configs/neckflix/NECKFLIX_DEEPPHYS.yaml --test_participants P015
-
-# PhysMamba, one LOSO fold
-uv run python main.py --config_file configs/neckflix/NECKFLIX_PHYSMAMBA.yaml --test_participants P015
-
-# Multi-GPU
-uv run python -m torch.distributed.run --nproc_per_node=4 main.py --config_file configs/neckflix/NECKFLIX_PHYSMAMBA.yaml --test_participants P015
-
-# Enumerate LOSO folds (metadata-only; safe on a login node)
-uv run python tools/list_neckflix_folds.py --config_file configs/neckflix/NECKFLIX_PHYSMAMBA.yaml --prefix P
-
-# Summarise a finished run (per-signal, physical units; --by adds participant etc.)
-uv run python tools/summarise_neckflix_outputs.py runs/neckflix_physmamba --by signal participant --csv windows.csv
-
-# Smoke run before submitting anything
-uv run python main.py --limit_windows 8 --test_participants P015 --config_file configs/neckflix/NECKFLIX_PHYSMAMBA_SMOKE.yaml
-```
-
-`main.py` modes: `train_and_test`, `only_test`,
-`unsupervised_method`. DDP is used under `torch.distributed.run`, skipped
-otherwise. `--limit_windows N` subsamples evenly for smoke runs.
-
-**Outputs**: checkpoints and plots to `LOG_PATH` (default `runs/exp`);
-predictions to `config.RUN.output_dir`; SLURM logs to `logs/`. The standard
-plot set (written once — loss/LR and per-signal per-component loss curves in
-the trainer, everything else in `evaluation/plots.py`, never per model) is:
-per-signal waveform overlays for every signal, plus predicted-vs-true
-agreement scatters (window mean/max/min) and per-subject Bland-Altman, both
-labelled per signal (systolic/MAP/diastolic for ABP, peak/mean/trough for
-CVP) and drawn only for absolute-class signals.
-
-## Adding a Model
-
-**Read [the migration contract](docs/plans/2026-08-31-model-migration-contract.md)
-first** — the authoritative instructions for migrating or adding any model:
-where config values come from, head styles, per-signal losses and absolute
-scale, physical-time windowing (`WINDOW_SECONDS` + `FPS`), the prediction
-contract, plots, and the per-model recipe. The short version:
-
-No new trainer. `MultiSignalTrainer` serves every dict-contract model.
-
-1. Make the architecture a `DictModel` implementing
-   `forward_video(video) -> (B, S, T)`, taking its width from
-   `self.in_channels` / `self.out_signals`. A per-frame 2-D backbone needs no
-   change at all — wrap it in `SignalDictWrapper(..., input_mode='frames2d')`.
-   Declare any constraint on the window length (`temporal_divisor`,
-   `temporal_length`) and expose the activation-free readout via
-   `output_layers()`.
-2. Add a builder to `MODEL_REGISTRY` in
-   `neural_methods/trainer/MultiSignalTrainer.py`. It takes a `ModelSpec`,
-   which has already derived every width from the data blocks — take the
-   first-layer width from `spec.camera_channels` if the model splits the
-   `DATA_TYPE` blocks itself (DeepPhys, TS-CAN), `spec.in_channels` if it
-   consumes them as one tensor (PhysMamba).
-3. Point a config at it with `MODEL.NAME`.
-
-`configs/neckflix/NECKFLIX_DEEPPHYS.yaml` is the worked example of all of it.
-
-When migrating a legacy model, delete its `<Model>Trainer.py` in the same
-change, and follow the migration with a short config retro (what was awkward
-to express) — these notes feed the Phase 5 config consolidation.
-
-## Adding a Dataset
-
-The zarr cache is mandatory for new datasets — **do not** follow the old
-`BaseLoader` `preprocess_dataset`/`read_video`/`read_wave` pattern. A second
-zarr-cached dataset needs only a `channel_map`:
-
-```python
-class MyDataset(BaseZarrDataset):
-    @property
-    def channel_map(self):
-        return {"R": ("rgb", 0), "G": ("rgb", 1), "B": ("rgb", 2)}
-```
-
-plus a markdown cache spec describing what the store for that dataset must
-contain. Specs for all twelve legacy datasets already exist in
-`dataset/data_loader/` — **read the spec first** when asked to implement a
-cache or preprocessor for a known dataset.
-
-## Adding Metrics
-
-Extend the relevant family in `evaluation/scoring/` (per-signal, physical
-units via the `label_stats` carried in every batch, assembled by
-`evaluation/report.py` into one tidy frame). A new clinical criterion is rows
-in `evaluation/scoring/standards.py`, not new code — every number lands in
-the tidy frame. The IEEE 1708 / ISO 81060 / ESH 2023 mapping this rests on is
-[the Phase 7 design](docs/plans/2026-08-31-evaluation-clinical-metrics.md);
-its thresholds are marked `UNVERIFIED` pending a line-by-line check against
-the purchased standard texts — see that doc's §17 before using a report to
-support a clinical claim.
-
-## Dataset Locations
-
-| Dataset | Path | Notes |
-| --- | --- | --- |
-| Neckflix (raw) | `/group/pgh004/carrow/repo/Neckflix/dataset` | Raw captures — a data drop, **not** the code repo (now the submodule); confirm before use |
-| Neckflix (zarr cache) | set by `CACHED_PATH` | One `*.zarr` per recording; what this repo reads |
-| PURE | `/group/pgh004/carrow/zipped_datasets/PURE` | Standard rPPG dataset |
-| UBFC-rPPG | `/group/pgh004/carrow/zipped_datasets/UBFC-rPPG` | Standard rPPG dataset |
-
-The preprocessor is a git submodule at `external/neckflix`
-(github.com/coenarrow/Neckflix, tracking `main`); it writes the zarr cache
-this repo reads. It is deliberately **not** a dependency of this project — a
-`tool.uv.sources` path entry makes `uv lock` fail in any clone that skipped
-`--recurse-submodules`, which would break training and not merely
-cache-building, and separate envs keep `av` / `opencv-python-headless` /
-`hdf5plugin` and its `zarr>=3.3,<4` cap out of the HPC training environment.
-So it runs against its own lock (`uv run --project external/neckflix ...`,
-Python 3.12, its own `.venv`).
-
-It is vendored so a contract change lands in both repos in one sitting:
-`cd external/neckflix && git commit && git push` is a normal push to
-github.com/coenarrow/Neckflix, and the superproject then records the new SHA.
-Run `git config push.recurseSubmodules check` once — without it a push of this
-repo will happily publish a gitlink to a submodule commit that exists only on
-your disk, breaking every other clone.
-
-## Python Environment
-
-**Package manager**: `uv`. Install with `uv sync`; run with `uv run python`.
-`.venv/` is auto-managed.
-
-**Platform split for the Mamba kernels** — `mamba-ssm` publishes Linux wheels
-only, and its CUDA sources do not compile with MSVC as published:
-
-| | source of `mamba-ssm` | `causal-conv1d` | `triton` |
-| --- | --- | --- | --- |
-| Linux | PyPI (prebuilt wheel via its `setup.py`) | PyPI sdist | PyPI |
-| Windows | `vendor/mamba-ssm` (patched, compiled here) | PyPI sdist | `triton-windows` |
-| macOS | `mamba-ssm-macos` | — | — |
-
-`tools/vendor_mamba_windows.py` regenerates the vendored tree and documents
-the three patches; `--check` verifies it still matches upstream. Do not
-hand-edit `vendor/mamba-ssm`. `override-dependencies` in `pyproject.toml`
-confines `triton` to Linux — without it nothing installs on Windows at all.
-
-Where no `mamba_ssm` is installed, `mamba_compat.MambaRef` stands in: a
-pure-PyTorch selective-SSM block, parameter-compatible with the real one,
-that trains but materialises the hidden state. Correctness path, not speed.
-
-## Naming Conventions
-
-- **Models**: PascalCase (`PhysMamba.py`); registry keys via `MODEL.NAME`
-- **Configs**: `configs/neckflix/NECKFLIX_<MODEL>[_<VARIANT>].yaml`
-- **SLURM scripts**: `<Dataset>_<Model>_<Options>.slurm` in `.slurm_scripts/`
-  (tracked reference templates — copy and adapt, not a maintained API)
-- **Commits**: conventional-commit style (`feat:`, `chore:`, `docs:`, …)
-
-## References
-
-- Upstream: [rPPG-Toolbox](https://github.com/ubicomplab/rPPG-Toolbox)
-  ([paper](https://arxiv.org/abs/2210.00716)) — credit it in anything
-  published from this fork
-- PhysMamba: [arXiv:2409.12031](https://doi.org/10.48550/arXiv.2409.12031)
-- BigSmall: [arXiv:2303.11573](https://arxiv.org/abs/2303.11573)
-- Clinical BP validation: IEEE 1708-2014 / 1708a-2019, ISO 81060-2:2018 /
-  81060-3:2022, ESH 2023 recommendations
-
-**Last updated**: 2026-09-01
+- **Every model accepts any frame size and any window length.** Structural
+  constants of the upstream code (patch sizes, sequence lengths, fixed token
+  grids) become constructor arguments derived from the interface, config
+  switches, or adaptive stages around the published network that are exact
+  no-ops at the paper's shape — never hard-coded refusals, and never a silent
+  crop or truncation. The only refusal left is a frame the stem pools to
+  nothing, named by the builder.
+- **`configs/interfaces/<name>_interface.yaml` is the paper.** That directory
+  is what the per-model interfaces are for: when migrating a model, its
+  `<name>_interface.yaml` (the architecture's `NAME` lowercased) *is* the
+  rPPG-Toolbox configuration of it — rate, window, resize, input
+  preprocessing, the single PPG trace the paper predicts, its label
+  preprocessing and its loss. Nothing Neckflix-specific goes in it. Its
+  twin, `configs/training/<name>_training.yaml`, *is* the rPPG-Toolbox
+  training recipe of the model: epochs, batch size, optimiser, rate, decay,
+  schedule, precision, read off the upstream `train_configs/` file *and*
+  the upstream trainer class (the optimiser and schedule live there, not in
+  the YAML). Nothing in code declares or checks the paper setup; the files
+  do. Model comparisons run every model on the same standard interface; the
+  paper files are where a migration is checked against the paper.
+- **A finished migration ends with a command in `README.md`.** When a model
+  migrated from rPPG-Toolbox is done, add under "Algorithms" the exact
+  `run_experiment.py` command that trains and tests it on the PURE dataset
+  (`--datasets pure`) with only the first participant held out
+  (`--test-participant-dataset pure --test-participant-id 01`), on its paper
+  interface and paper training recipe. That command is the migration's proof
+  of life; a model without one is not finished.

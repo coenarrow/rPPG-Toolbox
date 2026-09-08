@@ -7,49 +7,12 @@ every model predicts **multiple signals at once**: blood volume pulse (BVP),
 arterial and central venous pressure waveforms (ABP, CVP), respiration (RR),
 and others as they appear.
 
-> **The overhaul is in progress.** The phased plan lives in
-> [docs/plans/2026-08-31-overhaul-roadmap.md](docs/plans/2026-08-31-overhaul-roadmap.md),
-> the goals in [updating_plan.md](updating_plan.md), and current status in
-> [docs/project_status.md](docs/project_status.md). The legacy single-signal
-> pipeline is gone: its per-dataset loaders are now markdown cache specs in
-> [dataset/data_loader/](dataset/data_loader/), and `main.py` is the zarr
-> entry point. What remains legacy (the per-model trainers and the old
-> config piles) dies as models migrate — don't build on it. The last fully
-> intact legacy state is tagged **`pre-overhaul`**; the upstream README
-> describing it is preserved there and at the upstream repo.
 
 ## The pipeline
 
-One store per recording in a **zarr cache** written by the preprocessor
-vendored as a submodule at [`external/neckflix`](external/neckflix) (its own
-env and lock, never a dependency of this project), a lazy `torch.utils.data.Dataset` over that cache, and a
-**batch-dict contract** everywhere downstream: nested dicts keyed by canonical
-channel (`R`, `G`, `B`, `I`, `D`) and signal (`ABP`, `CVP`, `ECG`, …) names,
-with per-window label stats for exact inversion to physical units and presence
-masks for signals a recording doesn't carry. Any tensor is identifiable by its
-key at any point; `neural_methods/batch.py` owns the key names.
+One store per recording in a **zarr cache** written by the preprocessor.
 
-Models are `DictModel`s implementing `forward_video(video) -> (B, S, T)`; a
-single `MultiSignalTrainer` serves all of them, so adding a model is a builder
-function and a registry line, not a new trainer. How a model is migrated or
-added — config sources, multi-signal heads, per-signal losses, the prediction
-contract — is specified in
-[the migration contract](docs/plans/2026-08-31-model-migration-contract.md).
-See [docs/architecture.md](docs/architecture.md) for the batch-dict and zarr
-cache contracts and [CLAUDE.md](CLAUDE.md) for working conventions;
-per-dataset cache specs live alongside the loaders in
-[dataset/data_loader/](dataset/data_loader/).
 
-```bash
-# All seven traditional methods over Neckflix, scored against every trace
-uv run python main.py --config_file configs/neckflix/NECKFLIX_UNSUPERVISED.yaml
-
-# PhysMamba, one leave-one-subject-out fold
-uv run python main.py --config_file configs/neckflix/NECKFLIX_PHYSMAMBA.yaml --test_participants P015
-
-# Summarise a finished run (per-signal, physical units)
-uv run python tools/summarise_neckflix_outputs.py runs/neckflix_physmamba --by signal participant
-```
 
 ## Install
 
@@ -68,11 +31,11 @@ dependencies; add packages with `uv add`, never pip.
 
 `uv sync` does **not** need the submodule — training works fine in a
 non-recursive clone. Only cache-building does. The preprocessor at
-`external/neckflix` is deliberately outside this project's dependency graph: a
+`dataset/cachers/neckflix` is deliberately outside this project's dependency graph: a
 path source would make `uv lock` fail wherever the submodule was skipped, and
 keeping the envs apart keeps `av` / `opencv-python-headless` / `hdf5plugin`
 and its `zarr>=3.3,<4` cap out of the training environment. Build a cache with
-`uv run --project external/neckflix neckflix-preprocess ...`, which resolves
+`uv run --project dataset/cachers/neckflix neckflix-preprocess ...`, which resolves
 from that repo's own `uv.lock` — the same lock its published GHCR image builds
 from — and its own Python 3.12.
 
@@ -101,16 +64,50 @@ one.
 
 ## Algorithms
 
-**On the multi-signal contract today**: PhysMamba, plus the seven traditional
-unsupervised methods (GREEN, ICA, CHROM, LGI, PBV, POS, OMIT), each scored
-against every trace a recording carries.
+**On the multi-signal contract today**: DeepPhys, PhysFormer, PhysMamba.
 
-**Inherited from upstream, awaiting migration** (per
-[the migration contract](docs/plans/2026-08-31-model-migration-contract.md)
-and the roadmap): DeepPhys, TS-CAN, EfficientPhys, PhysNet, iBVPNet,
-FactorizePhys, PhysFormer, RhythmFormer, BigSmall — and PhysHydra, this
-fork's own architecture. The
-original papers are linked from the
+Each one trains and tests on the PURE dataset, holding out its first
+participant, on the model's own paper interface and paper training recipe
+(the rPPG-Toolbox definition of that model; see `configs/interfaces/` and
+`configs/training/`):
+
+```bash
+# DeepPhys
+uv run python run_experiment.py --datasets pure \
+    --test-participant-dataset pure --test-participant-id 01 \
+    --model deepphys --interface configs/interfaces/deepphys_interface.yaml \
+    --training configs/training/deepphys_training.yaml
+
+# PhysFormer
+uv run python run_experiment.py --datasets pure \
+    --test-participant-dataset pure --test-participant-id 01 \
+    --model physformer --interface configs/interfaces/physformer_interface.yaml \
+    --training configs/training/physformer_training.yaml
+
+# PhysMamba
+uv run python run_experiment.py --datasets pure \
+    --test-participant-dataset pure --test-participant-id 01 \
+    --model physmamba --interface configs/interfaces/physmamba_interface.yaml \
+    --training configs/training/physmamba_training.yaml
+```
+
+Add `--limit-windows 8` for a wiring check. Outputs land in
+`runs/<model>_pure_01/`, starting with a `config.yaml` that compiles every
+config the run executed on (command, git commit, datasets, split, interface,
+model, training recipe, resolved device) into one file. The evaluation
+scores every absolute signal on its level (`windows.csv`) and reads a heart
+rate off every cardiac trace the run predicts (`rates.csv`): PPG, ECG, ABP
+and CVP each against their own label, plus the fused power spectrum of all
+of them and the median of their rates when a window carries more than one.
+`digest.txt` is the readable summary of both.
+
+To put another architecture on the contract, new or migrated from upstream,
+follow [docs/adding_a_model.md](docs/adding_a_model.md): one backbone module,
+one config class and builder, one YAML, one smoke test. Templates to copy sit
+at [`configs/model_template.yaml`](configs/model_template.yaml) and
+[`neural_methods/model/_template.py`](neural_methods/model/_template.py).
+
+The original papers are linked from the
 [upstream README](https://github.com/ubicomplab/rPPG-Toolbox#notebook-algorithms).
 
 ## Citation, license, acknowledgement

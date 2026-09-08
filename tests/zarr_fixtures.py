@@ -167,10 +167,7 @@ def base_cfg(cache_dir, **overrides):
     return cfg
 
 
-# --- contract v2 ---------------------------------------------------------
-# docs/plans/2026-09-01-contract-v2-design.md, Part 1. The v1 make_store above
-# stays until the reader adopts v2 (Part 3 of that plan); until then the two
-# layouts coexist, one per fixture.
+# --- contract ---------------------------------------------------------
 
 #: Per trace, the unit string the store's ``units`` attr carries. "arb" is what
 #: a shape-class signal is expected to say.
@@ -178,14 +175,14 @@ V2_UNITS = {"abp": "mmHg", "cvp": "mmHg", "ecg": "arb",
             "ppg": "arb", "rr": "arb"}
 
 
-def make_v2_store(cache_dir, name="P030_S01_R1_0_D", *, attrs=None,
+def make_store(cache_dir, name="P030_S01_R1_0_D", *, attrs=None,
                   perspectives=("1",), modalities=("rgb", "ir", "depth"),
                   traces=("abp", "cvp"), num_frames=12, hw=(8, 8), fps=30.0,
                   units=None, modality_lengths=None,
                   first_frame_offsets_us=None):
-    """A contract-v2 store (docs/plans/2026-09-01-contract-v2-design.md).
+    """A contract-store.
 
-    v2 layout: root attrs carry only ``participant`` (+ free attrs), each
+    layout: root attrs carry only ``participant`` (+ free attrs), each
     perspective carries ``fps``, each modality carries ``timestamps_us/data``
     and ``video/data``, each trace carries a ``units`` attr.
 

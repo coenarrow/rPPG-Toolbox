@@ -91,3 +91,47 @@ def test_malformed_nodes_are_itemised_not_raised(tmp_path):
     del root["1"]["rgb"]["abp"]["data"]
     root["1"]["rgb"]["abp"].create_group("data")                    # a group, not an array
     assert "abp" in _messages(path)
+
+
+def test_video_dtype_is_unconstrained(tmp_path):
+    # 2026-09-02 amendment (docs/cache-contract.md): the contract says nothing
+    # about frame dtype. A 16-bit IR/depth sensor writes uint16 and a float
+    # store is equally fine; a validator that demands uint8 fails every real
+    # Neckflix store.
+    path = make_v2_store(tmp_path, name="P012_S01_R1_0_D")
+    root = zarr.open_group(str(path), mode="a")
+    for modality, dtype in (("ir", np.uint16), ("depth", np.float32)):
+        video = root["1"][modality]["video"]
+        frames = video["data"][:].astype(dtype)
+        del video["data"]
+        video["data"] = frames
+    assert validate_store(path) == []
+
+
+def test_participant_must_be_a_string(tmp_path):
+    # Any identifier, any format -- but a string: the split machinery matches
+    # it exactly, and an int 13 never equals a configured "013".
+    path = make_v2_store(tmp_path, name="P013_S01_R1_0_D")
+    root = zarr.open_group(str(path), mode="a")
+    root.attrs["participant"] = 13
+    assert "participant" in _messages(path)
+
+
+def test_perspective_fps_may_be_null(tmp_path):
+    # An event camera has no frame rate: the key is still required, its value
+    # may be null, and with no rate there is no 1/fps budget to judge
+    # first-frame alignment against, so that check is skipped.
+    path = make_v2_store(tmp_path, name="P014_S01_R1_0_D",
+                         perspectives=("1", "2"),
+                         first_frame_offsets_us={"ir": 50_000.0})
+    root = zarr.open_group(str(path), mode="a")
+    root["1"].attrs["fps"] = None
+    root["2"].attrs["fps"] = float("nan")     # the other spelling of "none"
+    assert validate_store(path) == []
+
+
+def test_perspective_fps_is_otherwise_a_positive_number(tmp_path):
+    path = make_v2_store(tmp_path, name="P015_S01_R1_0_D")
+    root = zarr.open_group(str(path), mode="a")
+    root["1"].attrs["fps"] = "30"
+    assert "fps" in _messages(path)

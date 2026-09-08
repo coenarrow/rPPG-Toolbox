@@ -31,7 +31,7 @@ def _config(config_file, cache, **test_overrides):
     # TRACES is narrowed above, so the per-signal registries have to be
     # narrowed with it: naming a signal the run does not predict is an error,
     # not a no-op (LABEL_NORM is resolved to all traces at load).
-    config.TRAIN.LOSS.pop("ECG", None)
+    config.INTERFACE.LOSS.pop("ECG", None)
     config.INTERFACE.LABEL_NORM.pop("ECG", None)
     for key, value in test_overrides.items():
         setattr(config.TEST, key, value)

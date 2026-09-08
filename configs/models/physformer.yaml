@@ -1,0 +1,15 @@
+# PhysFormer (Yu et al., CVPR 2022). Selected with --model physformer.
+#
+# A model file carries the architecture's name plus the switches an experiment
+# may flip. Layer sizes are NOT here: the architecture is defined once, in
+# neural_methods/model/PhysFormer.py, at its published values (dim 96, four
+# heads, twelve layers, 4x4x4 tubes). Widths come from the interface — the
+# stem takes len(CHANNELS) inputs, and there is one complete copy of the
+# network per entry of TRACES. Any frame size from 8x8 and any window length
+# run; on configs/interfaces/physformer_interface.yaml (128x128, 160 frames)
+# the forward pass is exactly the paper's.
+NAME: PhysFormer
+
+# Which INPUT_PREPROCESSING block the stem reads, by name. Must be listed in
+# the interface's INPUT_PREPROCESSING. The paper trains on DiffNormalized.
+INPUT: DiffNormalized

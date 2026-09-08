@@ -8,7 +8,7 @@ from torch.autograd import Variable
 import numpy as np
 import torch.nn.functional as F
 import torch.nn as nn
-from evaluation.post_process import calculate_metric_per_video
+from src.evaluation.post_process import calculate_metric_per_video
 
 def normal_sampling(mean, label_k, std):
     return math.exp(-(label_k-mean)**2/(2*std**2))/(math.sqrt(2*math.pi)*std)

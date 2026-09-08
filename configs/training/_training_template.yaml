@@ -1,0 +1,12 @@
+# The training recipe: how the train set is optimised, and the two machine
+# keys a run needs. Every key is required except MODEL_FILE_NAME.
+EPOCHS: 30
+BATCH_SIZE: 4                # train and test alike
+OPTIMIZER: Adam              # Adam | AdamW (src/trainer.py OPTIMIZERS)
+LR: 9e-3
+WEIGHT_DECAY: 5e-4           # applied to everything but the readout
+SCHEDULER: OneCycle          # OneCycle | Constant (src/trainer.py SCHEDULERS)
+PRECISION: bfloat16          # float32 | bfloat16 | float16
+DEVICE: gpu                  # gpu | cpu; gpu = CUDA or Apple MPS, refused if neither exists
+NUM_WORKERS: 4               # DataLoader workers
+# MODEL_FILE_NAME: deepphys  # optional; default <model>_<test dataset>_<participant>

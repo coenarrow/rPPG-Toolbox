@@ -1,0 +1,18 @@
+# PhysMamba paper recipe. This file IS how rPPG-Toolbox trains PhysMamba
+# (configs/train_configs/PURE_PURE_UBFC-rPPG_PHYSMAMBA_BASIC.yaml and its
+# PhysMambaTrainer): Adam at 3e-3 with weight decay 5e-4, OneCycleLR over the
+# run, batch 4, 20 epochs, float32. Pair it with
+# configs/interfaces/physmamba_interface.yaml.
+#
+# One trainer-side difference: the readout is exempt from weight decay here
+# (see src/trainer.py); upstream decays every parameter.
+EPOCHS: 20
+BATCH_SIZE: 4                # train and test alike
+OPTIMIZER: Adam              # upstream: optim.Adam(lr, weight_decay=0.0005)
+LR: 3e-3
+WEIGHT_DECAY: 5e-4
+SCHEDULER: OneCycle          # upstream: OneCycleLR(max_lr=LR) over every step
+PRECISION: float32           # upstream trains in full precision
+DEVICE: gpu                  # gpu | cpu; gpu = CUDA or Apple MPS, refused if neither exists
+NUM_WORKERS: 4               # DataLoader workers (a machine key, not the paper's)
+# MODEL_FILE_NAME: physmamba  # optional; default <model>_<test dataset>_<participant>

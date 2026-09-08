@@ -25,3 +25,6 @@ model_outputs/
 !.claude/skills/
 .configs
 .DS_Store
+
+# not for sharing
+standards/

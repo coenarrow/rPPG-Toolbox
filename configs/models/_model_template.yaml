@@ -1,0 +1,20 @@
+# A model config: the architecture's name plus the switches an experiment may
+# flip for it, and nothing else. Copy to configs/models/<name>.yaml; the stem
+# is what --model <name> selects. See docs/adding_a_model.md.
+#
+# Layer sizes are NOT here. An architecture is defined once, in its module
+# under neural_methods/model/, at its published values. Every width comes
+# from the interface: the first layer takes len(CHANNELS) inputs per
+# preprocessing block it reads, and there is one complete copy of the network
+# per entry of TRACES.
+#
+# Every key below NAME is a field of the model's config dataclass in
+# src/models.py. Every field is required, unknown keys are refused, and a key
+# that names an INPUT_PREPROCESSING block is checked against the interface
+# the run uses.
+NAME: MyNet                  # a key of MODEL_CONFIGS in src/models.py
+
+# One line per config field. The template backbone reads a single
+# preprocessing block; DeepPhys reads two (MOTION_INPUT, APPEARANCE_INPUT).
+INPUT: DiffNormalized        # Raw | Standardized | DiffNormalized; must be
+                             # listed in the interface's INPUT_PREPROCESSING

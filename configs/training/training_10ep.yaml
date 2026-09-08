@@ -1,0 +1,12 @@
+# The default recipe at 10 epochs: a full DeepPhys LOSO fold on the dev GPU
+# in about five hours. Every other key matches training.yaml.
+EPOCHS: 10
+BATCH_SIZE: 4                # train and test alike
+OPTIMIZER: Adam              # a name the trainer implements
+LR: 9e-3
+WEIGHT_DECAY: 5e-4           # applied to everything but the readout
+SCHEDULER: OneCycle          # a name the trainer implements
+PRECISION: bfloat16          # float32 | bfloat16 | float16
+DEVICE: gpu                  # gpu | cpu; gpu = CUDA or Apple MPS, refused if neither exists
+NUM_WORKERS: 4               # DataLoader workers
+# MODEL_FILE_NAME: deepphys  # optional; default <model>_<test dataset>_<participant>

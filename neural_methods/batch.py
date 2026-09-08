@@ -7,20 +7,30 @@ is the single place that knows the key names and the exactly two shape moves the
 contract needs: packing ``frames`` into a backbone tensor, and splitting a
 backbone tensor back into per-signal predictions.
 
-Per-sample (dataset ``__getitem__``)::
+Per-sample (``src.windows.WindowedDataset.__getitem__``)::
 
-    {"frames":       {ch:  (1, T, H, W) float32},   # raw pixel values
-     "labels":       {sig: (T,)         float32},   # per-window normalised
-     "label_stats":  {sig: {stat: ()    float32}},  # physical units
+    {"frames":       {ch:  {prep: (T, H, W) float32}},  # frames["G"]["Raw"]
+     "labels":       {sig: (T,)         float32},       # per-window normalised
+     "label_stats":  {sig: {stat: ()    float32}},      # physical units
      "channel_mask": {ch:  ()           bool},
      "label_mask":   {sig: ()           bool},
-     "metadata":     {"recording_id": str, "camera_id": str, "start_frame": int,
-                      "attrs": {str: str}}}
+     "metadata":     {"dataset": str, "recording": str, "participant": str,
+                      "perspective": str, "start_frame": int}}
+
+``prep`` is each entry of the interface's ``INPUT_PREPROCESSING`` (``Raw``,
+``Standardized``, ``DiffNormalized``): separate preprocessings of the same
+window, kept apart by name so a model picks its blocks without a positional
+convention. Resizing and preprocessing happen in the dataset; the model
+receives exactly what the interface says.
 
 Collated (``default_collate``) every tensor gains a leading batch axis, and the
 metadata strings become lists. A model adds ``PREDICTIONS`` -> ``{sig: (B, T)}``
 and returns the whole dict, so any tensor anywhere in the pipeline is
-identifiable by its key.
+identifiable by its key. ``move_to_device`` walks the nesting to any depth.
+
+The legacy ``(1, T, H, W)`` per-channel form is what ``stack_frames`` /
+``unstack_frames`` still speak; they gain a ``prep`` argument when the models
+move onto the new form.
 """
 
 from einops import rearrange, reduce

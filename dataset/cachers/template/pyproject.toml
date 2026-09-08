@@ -1,0 +1,28 @@
+[project]
+name = "template-cacher"
+version = "0.1.0"
+description = "Template cacher: turn one dataset's raw recordings into zarr stores that satisfy docs/cache-contract.md"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=2.0",
+    "tqdm>=4.67.1",
+    "zarr>=3.3,<4",
+    # Add what *your* decode needs, e.g.
+    #   "av>=15.0.0",                    # MKV / MP4 decode
+    #   "opencv-python-headless>=4.10",  # resize, image decode
+    #   "h5py>=3.12",                    # HDF5 sources
+]
+
+[project.scripts]
+template-preprocess = "template_cacher.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/template_cacher"]
+
+[tool.uv]
+link-mode = "copy"

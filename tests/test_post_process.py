@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 from scipy.sparse import spdiags
 
-from evaluation.post_process import (
+from src.evaluation.post_process import (
     _calculate_fft_hr, _compute_macc, _detrend, calculate_metric_per_video,
 )
 from unsupervised_methods import utils

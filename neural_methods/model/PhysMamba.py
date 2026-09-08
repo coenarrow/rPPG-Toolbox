@@ -4,16 +4,24 @@ Luo et al., https://doi.org/10.48550/arXiv.2409.12031
 
 The architecture is unchanged from the original: the same convolutional stem,
 the same two-stream slow/fast temporal-difference Mamba blocks with lateral
-fusion, the same upsampling head. Two things changed for the Neckflix pipeline:
+fusion, the same upsampling head. One thing differs from the published
+network: the stem takes ``in_channels`` inputs (the interface's channel
+count) instead of 3. The readout stays a single output plane; a multi-signal
+run is one complete copy of this network per trace (``MultiTraceModel``),
+never a widened readout on a shared trunk. At ``3`` this is exactly the
+original, layer for layer.
 
-* it is a :class:`~neural_methods.model.DictModel.DictModel`, so it consumes
-  the loader's batch dict and returns it with a ``predictions`` entry keyed by
-  signal name (a plain tensor in still gets a plain tensor out, which is how
-  the upstream tuple-contract trainers keep working);
-* the input channel count and the number of predicted signals are
-  constructor-configurable, instead of hardcoded 3-in / 1-out.
+Any window length is accepted: the slow stream strides time by 4 and the
+head's two 2x upsamples put it back, so the stem's output is average-pooled
+in time to the nearest multiple of 4 and the prediction is linearly
+interpolated back to the window length. Both are skipped when the window
+already divides by 4, so on ``configs/interfaces/physmamba_interface.yaml``
+(128-frame windows) the forward pass is the published one. Frames may be any
+size from 16x16, the smallest the four 2x spatial pools leave anything of.
 
-All reshaping is einops.
+A clip backbone on the multi-signal contract: ``(B, C_in, T, H, W)`` in,
+``(B, 1, T)`` out, preprocessing done by the dataset, the loss owned by the
+trainer. All reshaping is einops.
 """
 
 import math
@@ -24,7 +32,6 @@ from einops import rearrange
 from timm.layers import trunc_normal_, DropPath
 from torch.nn import functional as F
 
-from neural_methods.model.DictModel import DictModel
 from neural_methods.model.mamba_compat import make_mamba
 
 
@@ -148,27 +155,27 @@ def conv_block(in_channels, out_channels, kernel_size, stride, padding, bn=True,
     return nn.Sequential(*layers)
 
 
-class PhysMamba(DictModel):
-    #: The slow stream strides T by 4 and the two upsamples put it back; a
-    #: window that is not a multiple of 4 comes out a different length than it
-    #: went in.
-    temporal_divisor = 4
+#: Four ``MaxPool3d((1, 2, 2))`` stages between the input and the last Mamba
+#: block; a smaller frame pools to nothing.
+MIN_FRAME = 16
 
-    def __init__(self, channels=("R", "G", "B"), traces=("PPG",), frame_transform=None,
-                 fs=0.0, theta=0.5, drop_rate1=0.25, drop_rate2=0.5):
+#: The slow stream's temporal stride, which the head's upsampling undoes.
+TEMPORAL_STRIDE = 4
+
+
+class PhysMamba(nn.Module):
+    def __init__(self, in_channels=3, theta=0.5, drop_rate1=0.25, drop_rate2=0.5):
         """Definition of PhysMamba.
 
         Args:
-          channels: ordered camera channels the batch dict supplies.
-          traces: ordered signals to predict, one output plane each.
-          frame_transform: raw-pixel preprocessing (resize + ``DATA_TYPE``);
-            its channel multiplier is folded into the stem's input width.
-          fs: frame rate the model is trained at, recorded on the checkpoint.
+          in_channels: the number of input channels. Default: 3.
+          theta: the central-difference weight of every CDC_T conv.
+          drop_rate1, drop_rate2: dropout after the first and later blocks.
         """
-        super().__init__(channels=channels, traces=traces,
-                         frame_transform=frame_transform, fs=fs)
+        super().__init__()
+        self.in_channels = in_channels
 
-        self.ConvBlock1 = conv_block(self.in_channels, 16, [1, 5, 5], stride=1, padding=[0, 2, 2])
+        self.ConvBlock1 = conv_block(in_channels, 16, [1, 5, 5], stride=1, padding=[0, 2, 2])
         self.ConvBlock2 = conv_block(16, 32, [3, 3, 3], stride=1, padding=1)
         self.ConvBlock3 = conv_block(32, 64, [3, 3, 3], stride=1, padding=1)
         self.ConvBlock4 = conv_block(64, 64, [4, 1, 1], stride=[4, 1, 1], padding=0)
@@ -199,7 +206,7 @@ class PhysMamba(DictModel):
             nn.ELU(),
         )
 
-        self.ConvBlockLast = nn.Conv3d(48, self.out_signals, [1, 1, 1], stride=1, padding=0)
+        self.ConvBlockLast = nn.Conv3d(48, 1, [1, 1, 1], stride=1, padding=0)
         self.MaxpoolSpa = nn.MaxPool3d((1, 2, 2), stride=(1, 2, 2))
         self.MaxpoolSpaTem = nn.MaxPool3d((2, 2, 2), stride=2)
 
@@ -214,11 +221,11 @@ class PhysMamba(DictModel):
         self.drop_6 = nn.Dropout(drop_rate2)
 
         # Spatial-only pooling: ``None`` keeps the temporal axis at whatever
-        # length the window happens to be, so one model serves any CHUNK_LENGTH.
+        # length the window happens to be, so one model serves any window.
         self.poolspa = nn.AdaptiveAvgPool3d((None, 1, 1))
 
     def output_layers(self):
-        """The final 1x1x1 conv is the readout: one output plane per trace."""
+        """The activation-free readout: the final 1x1x1 conv."""
         return (self.ConvBlockLast,)
 
     def _build_block(self, channels, theta):
@@ -230,13 +237,25 @@ class PhysMamba(DictModel):
             ChannelAttention3D(in_channels=channels, reduction=2),
         )
 
-    def forward_video(self, x):
-        """``(B, C, T, H, W)`` -> ``(B, S, T)``."""
+    def forward(self, x):
+        """``(B, in_channels, T, H, W)`` -> ``(B, 1, T)``."""
+        frames, height, width = x.shape[2:]
+        if min(height, width) < MIN_FRAME:
+            raise ValueError(
+                f"PhysMamba pools frames 16x, so they must be at least "
+                f"{MIN_FRAME}x{MIN_FRAME}; got {height}x{width}.")
+
         x = self.ConvBlock1(x)
         x = self.MaxpoolSpa(x)
         x = self.ConvBlock2(x)
         x = self.ConvBlock3(x)
         x = self.MaxpoolSpa(x)
+
+        # Any window length: the slow stream needs T to divide by 4. At the
+        # paper's 128-frame windows the target equals T and this is skipped.
+        t4 = max(round(frames / TEMPORAL_STRIDE), 1) * TEMPORAL_STRIDE
+        if t4 != frames:
+            x = F.adaptive_avg_pool3d(x, (t4, x.shape[3], x.shape[4]))
 
         # Process streams
         s_x = self.ConvBlock4(x) # Slow stream
@@ -279,5 +298,9 @@ class PhysMamba(DictModel):
 
         x_final = self.poolspa(x_final)
         x_final = self.ConvBlockLast(x_final)
+        out = rearrange(x_final, "b 1 t 1 1 -> b 1 t")
 
-        return rearrange(x_final, "b s t 1 1 -> b s t")
+        # Back to the window length if the stride did not divide it.
+        if out.shape[-1] != frames:
+            out = F.interpolate(out, size=frames, mode="linear", align_corners=False)
+        return out

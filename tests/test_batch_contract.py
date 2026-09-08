@@ -8,7 +8,6 @@ from neural_methods import batch as bt
 from neural_methods.frame_transforms import (
     FrameTransform, apply_data_types, diff_normalized, resize_video, standardized,
 )
-from neural_methods.model.DictModel import DictModel
 
 
 def make_sample(channels=("R", "G", "B"), signals=("ABP", "CVP"), t=6, hw=(4, 5)):
@@ -219,61 +218,3 @@ def test_metadata_carries_store_attrs_as_strings():
     assert first[bt.METADATA][bt.ATTRS] == {"participant": "015", "posture": "0",
                                             "light": "D"}
 
-
-# --- the model side of the contract -----------------------------------------
-class _Tiny(DictModel):
-    """The smallest thing that satisfies the contract: a constant predictor."""
-
-    def forward_video(self, video):
-        batch_size, _, frames = video.shape[:3]
-        return torch.zeros(batch_size, len(self.traces), frames)
-
-
-def test_forward_writes_raw_losses():
-    """Contract v2: the loss is computed in the model and rides the batch."""
-    model = _Tiny(channels=("R", "G", "B"), traces=("ABP", "CVP"))
-    batch = default_collate([make_sample(), make_sample()])
-    out = model(batch)
-    assert set(out) == set(batch) | {bt.PREDICTIONS, bt.RAW_LOSSES}
-    for signal in model.traces:
-        assert signal in out[bt.RAW_LOSSES]
-        for value in out[bt.RAW_LOSSES][signal].values():
-            assert value.ndim == 0
-    # make_sample masks CVP off, so its components are exactly 0 — not NaN.
-    assert all(float(v) == 0.0 for v in out[bt.RAW_LOSSES]["CVP"].values())
-    assert model.loss_modules() == ()
-
-
-def test_iter_samples_passes_batch_level_scalars_through():
-    """raw_losses is one value for the whole batch, so every sample sees it."""
-    model = _Tiny(channels=("R", "G", "B"), traces=("ABP", "CVP"))
-    out = model(default_collate([make_sample(), make_sample()]))
-    samples = list(bt.iter_samples(out))
-    assert len(samples) == 2
-    for sample in samples:
-        assert sample[bt.RAW_LOSSES]["ABP"].keys() == out[bt.RAW_LOSSES]["ABP"].keys()
-        assert sample[bt.FRAMES]["R"].shape == (1, 6, 4, 5)   # still per-sample
-
-
-def test_parallel_signals_is_one_copy_per_trace():
-    from neural_methods.model.ParallelSignals import ParallelSignals
-    from neural_methods.model.SignalDictWrapper import SignalDictWrapper
-
-    def make_copy(trace):
-        backbone = torch.nn.Sequential(
-            torch.nn.Flatten(), torch.nn.Linear(3 * 4 * 4, 1))
-        return SignalDictWrapper(backbone, channels=("R", "G", "B"),
-                                 traces=[trace], input_mode='frames2d')
-
-    model = ParallelSignals(make_copy, channels=("R", "G", "B"),
-                            traces=("ABP", "CVP"))
-    video = torch.randn(2, 3, 5, 4, 4)               # (B, C, T, H, W)
-    out = model.forward_video(video)
-    assert out.shape == (2, 2, 5)                     # (B, S, T)
-    assert len(model.copies) == 2
-    # Copies are independent: zeroing one branch only kills its signal.
-    with torch.no_grad():
-        for parameter in model.copies[0].parameters():
-            parameter.zero_()
-    out = model.forward_video(video)
-    assert torch.all(out[:, 0] == 0) and not torch.all(out[:, 1] == 0)

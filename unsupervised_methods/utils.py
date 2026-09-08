@@ -1,11 +1,11 @@
 import numpy as np
 from einops import rearrange
 
-from evaluation.post_process import _detrend
+from src.evaluation.post_process import _detrend
 
 
 def detrend(input_signal, lambda_value):
-    """Smoothness-priors detrending — see :func:`evaluation.post_process._detrend`.
+    """Smoothness-priors detrending — see :func:`src.evaluation.post_process._detrend`.
 
     Kept as a name here because every method imports it from this module; the
     implementation is shared so the O(n) banded solve benefits both the

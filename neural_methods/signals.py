@@ -8,7 +8,7 @@ import numpy as np
 
 CHANNELS = ('R', 'G', 'B', 'I', 'D', 'Y', 'T')
 
-#: Cache contract v2 (docs/plans/2026-09-01-contract-v2-design.md, Part 1):
+#: Cache contract:
 #: modality group name -> the canonical channels its video planes carry, in
 #: stacking order. THE global channel map — per-dataset channel_map
 #: subclasses die against this table in the Part 3 reader adoption.
@@ -36,30 +36,39 @@ TRACE_KEYS = {'ecg': 'ECG', 'abp': 'ABP', 'cvp': 'CVP',
 ABSOLUTE, SHAPE = 'absolute', 'shape'
 
 #: Per signal: the legacy clip range, its class, its physical unit, the
-#: physiological prior an absolute-class output bias is initialised to, and
+#: physiological prior an absolute-class output bias is initialised to,
 #: ``scale`` — the error magnitude (in that unit) an L1 loss component is
 #: divided by, which is where the per-signal scale factor of a multi-signal
-#: objective lives (contract §3: no global normalisation constants).
+#: objective lives (contract §3: no global normalisation constants) — and
+#: ``cardiac``: whether the trace beats with the heart, so a heart rate can
+#: be read off it (``src/evaluation/rate.py``). Respiration and EDA do not.
 SIGNALS = {
     'PPG':  {'norm': (-3.0, 3.0),        # a.k.a. BVP; standardized units
-             'class': SHAPE,    'unit': 'a.u.', 'prior': 0.0,  'scale': 1.0},
+             'class': SHAPE,    'unit': 'a.u.', 'prior': 0.0,  'scale': 1.0,
+             'cardiac': True},
     'ECG':  {'norm': (-1500.0, 1500.0),
-             'class': SHAPE,    'unit': 'uV',   'prior': 0.0,  'scale': 1.0},
+             'class': SHAPE,    'unit': 'uV',   'prior': 0.0,  'scale': 1.0,
+             'cardiac': True},
     'ABP':  {'norm': (0.0, 200.0),
              'class': ABSOLUTE, 'unit': 'mmHg', 'prior': 90.0, 'scale': 20.0,
+             'cardiac': True,
              'beat_labels': {'max': 'systolic', 'mean': 'MAP', 'min': 'diastolic'}},
     'CVP':  {'norm': (-20.0, 30.0),
              'class': ABSOLUTE, 'unit': 'mmHg', 'prior': 8.0,  'scale': 5.0,
+             'cardiac': True,
              # CVP has no systole: its waveform is a/c/v waves, and the
              # quantity that matters clinically is the mean. The machinery is
              # shared with ABP; only the wording differs.
              'beat_labels': {'max': 'peak', 'mean': 'mean', 'min': 'trough'}},
     'RESP': {'norm': (0.0, 10.0),        # BP4D Resp_Volts scale; override per dataset
-             'class': SHAPE,    'unit': 'V',    'prior': 0.0,  'scale': 1.0},
+             'class': SHAPE,    'unit': 'V',    'prior': 0.0,  'scale': 1.0,
+             'cardiac': False},
     'EDA':  {'norm': (0.0, 40.0),        # microsiemens; override per dataset
-             'class': SHAPE,    'unit': 'uS',   'prior': 0.0,  'scale': 1.0},
+             'class': SHAPE,    'unit': 'uS',   'prior': 0.0,  'scale': 1.0,
+             'cardiac': False},
     'SPO2': {'norm': (0.0, 100.0),
              'class': ABSOLUTE, 'unit': '%',    'prior': 97.0, 'scale': 3.0,
+             'cardiac': False,
              'beat_labels': {'max': 'max', 'mean': 'mean', 'min': 'min'}},
 }
 
@@ -109,6 +118,11 @@ def signal_class(sig) -> str:
 def is_absolute(sig) -> bool:
     """True for signals whose physical level is part of the prediction."""
     return signal_class(sig) == ABSOLUTE
+
+
+def is_cardiac(sig) -> bool:
+    """True for traces that beat with the heart, so carry a heart rate."""
+    return bool(SIGNALS[canonical_signal(sig)]['cardiac'])
 
 
 def signal_unit(sig) -> str:

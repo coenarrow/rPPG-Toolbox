@@ -47,7 +47,7 @@ dependencies = [
     "scikit-learn>=1.9", # bigsmall_multitask_metrics only; leaves in Phase 6
     "scipy>=1.18",
     "timm>=1.0.29",
-    "tqdm>=4.70", # legacy config machinery; dies in Phase 5
+    "tqdm>=4.70",
     "zarr>=3.3",
     "pillow>=12.3.0",
 ]
@@ -86,10 +86,10 @@ override-dependencies = ["triton==3.8.0 ; sys_platform == 'linux'"]
 # first. `setup.sh` has always done the same thing by hand.
 no-build-isolation-package = ["mamba-ssm", "causal-conv1d"]
 
-# The Neckflix preprocessor is a git submodule at external/neckflix, NOT a
+# The Neckflix preprocessor is a git submodule at dataset/cachers/neckflix, NOT a
 # dependency of this project, and deliberately has no tool.uv.sources entry.
 # A path source there makes uv fail in any clone that skipped
-# --recurse-submodules, because such a clone leaves external/neckflix as an
+# --recurse-submodules, because such a clone leaves dataset/cachers/neckflix as an
 # EMPTY DIRECTORY:
 #   empty dir   -> `uv lock` / `uv sync` exit 1: "does not appear to be a
 #                  Python project, as neither `pyproject.toml` nor `setup.py`
@@ -99,7 +99,7 @@ no-build-isolation-package = ["mamba-ssm", "causal-conv1d"]
 # under [dependency-groups] still breaks a plain `uv sync --no-dev`, i.e. it
 # would break training, not just cache-building. Cache builds therefore run
 # against Neckflix's OWN lock, in its own venv:
-#   uv run --project external/neckflix neckflix-preprocess --input-dir ... --output-dir ...
+#   uv run --project dataset/cachers/neckflix neckflix-preprocess --input-dir ... --output-dir ...
 # which also keeps av / opencv-python-headless / hdf5plugin and Neckflix's
 # `zarr>=3.3,<4` cap out of the HPC training environment. Do not add a
 # [tool.uv.workspace] table either: it would pull the submodule into this

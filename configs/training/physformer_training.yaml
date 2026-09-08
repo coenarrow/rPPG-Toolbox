@@ -1,0 +1,20 @@
+# PhysFormer paper recipe. This file IS how rPPG-Toolbox trains PhysFormer
+# (configs/train_configs/PURE_PURE_UBFC-rPPG_PHYSFORMER_BASIC.yaml and its
+# PhysFormerTrainer): Adam at 1e-4 with weight decay 5e-5, batch 4, 10
+# epochs, float32. Upstream's scheduler is StepLR(step_size=50, gamma=0.5),
+# stepped once per epoch, which never fires inside 10 epochs: the learning
+# rate is constant, and Constant says so. Pair it with
+# configs/interfaces/physformer_interface.yaml.
+#
+# One trainer-side difference: the readout is exempt from weight decay here
+# (see src/trainer.py); upstream decays every parameter.
+EPOCHS: 10
+BATCH_SIZE: 4                # train and test alike
+OPTIMIZER: Adam              # upstream: optim.Adam(lr, weight_decay=0.00005)
+LR: 1e-4
+WEIGHT_DECAY: 5e-5
+SCHEDULER: Constant          # upstream: StepLR(50, 0.5), never reached in 10 epochs
+PRECISION: float32           # upstream trains in full precision
+DEVICE: gpu                  # gpu | cpu; gpu = CUDA or Apple MPS, refused if neither exists
+NUM_WORKERS: 4               # DataLoader workers (a machine key, not the paper's)
+# MODEL_FILE_NAME: physformer  # optional; default <model>_<test dataset>_<participant>

@@ -1,0 +1,22 @@
+# PhysFormer paper interface. This file IS the rPPG-Toolbox configuration of
+# PhysFormer (128x128 frames, 160-frame chunks at 30 fps, DiffNormalized
+# input, one PPG trace, negative Pearson loss); run it to check the migration
+# against the paper. Nothing Neckflix-specific belongs here: the standard
+# interface is where every model meets the pressure traces.
+#
+# Every key is required — there are no defaults. See docs/adding_a_model.md.
+FS: 30.0                       # frame rate the model sees; faster stores are
+                               # decimated to it
+UPSAMPLING: refuse             # slower stores: refuse | interpolate
+WINDOW_SECONDS: 5.333333       # 160 frames (160 / 30), the upstream
+                               # CHUNK_LENGTH
+WINDOW_STRIDE: 1.0             # seconds the test set steps between windows
+CHANNELS: [R, G, B]            # ordered camera channels, subset of R,G,B,I,D
+TRACES: [PPG]                  # the paper predicts BVP and nothing else
+RESIZE: {H: 128, W: 128}       # upstream PhysFormer frame size
+INPUT_PREPROCESSING: [DiffNormalized]
+LABEL_PREPROCESSING:           # upstream LABEL_TYPE Standardized
+  PPG: zscore
+LOSS:                          # upstream: negative Pearson plus a frequency
+  PPG: {NEGPEARSON: 1.0}       # cross-entropy/KL term (the DLDL loss) that the
+                               # loss module does not carry yet

@@ -8,20 +8,22 @@ Two things vary per signal, and they vary together (migration contract §3):
 * a **shape-class** signal (PPG, ECG, RESP) arrives per-window z-scored and
   only its waveform means anything, so it is scored with negpearson.
 
-So the loss is a *registry*: one spec per trace, naming a component family and
-the weight of each component. That is also where the per-signal scale factors
-live — raw ABP error is O(10 mmHg), CVP O(1 mmHg), and a CCC term is O(1) in
-any units, so an unweighted sum would let ABP own every gradient. There are
-deliberately no global or dataset-wide normalisation constants: the model
-predicts physical units off an activation-free readout, and the weights are the
-one place the units are reconciled.
+So the loss is stated per trace, outright: which components, at what weight
+(``INTERFACE.LOSS``, ``{ABP: {CCC: 1.0, MEAN: 0.05, ...}}``). There are no
+presets and no class-implied defaults — the weights *are* the loss. That is
+also where the per-signal scale factors live — raw ABP error is O(10 mmHg),
+CVP O(1 mmHg), and a CCC term is O(1) in any units, so an unweighted sum would
+let ABP own every gradient. There are deliberately no global or dataset-wide
+normalisation constants: the model predicts physical units off an
+activation-free readout, and the weights are the one place the units are
+reconciled.
 
 Every component reduces **per sample** to ``(B,)``, which is what lets the
 masking compose: each is averaged over the batch with the denominator clamped
 to >= 1, so a signal no window in the batch carries contributes exactly 0 —
 never NaN, never a sentinel.
 
-Contract v2 splits the two halves: this module produces the *unweighted*
+Contract splits the two halves: this module produces the *unweighted*
 components (a model calls it inside its own forward, and the values ride the
 batch as ``raw_losses``), and :func:`weight_losses` applies the config weights
 and reduces them to the scalar to backpropagate — the mean over modules, as it
@@ -40,9 +42,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 
-from neural_methods.signals import (
-    ABSOLUTE, canonical_signal, signal_class, signal_scale, validate_traces,
-)
+from neural_methods.signals import canonical_signal, validate_traces
 
 _EPS = 1e-8
 
@@ -186,73 +186,52 @@ COMPONENTS = {
 #: Components that need the frame rate (and so the configured ``FS``).
 _NEEDS_FS = ('spectral',)
 
-#: The component families a ``TYPE`` selects. ``WEIGHTS`` then overrides the
-#: family's defaults, and may name any component in ``COMPONENTS`` — adding a
-#: spectral term to an absolute-class signal is a weight, not a new type.
-LOSS_TYPES = ('absolute', 'shape', 'mse')
-
 #: Frequencies above this carry no cardiac or respiratory content worth
 #: matching; the spectral term stops there when it is used.
 DEFAULT_FMAX = 4.0
 
 
-def default_weights(signal: str, loss_type: str) -> dict:
-    """The component weights a ``TYPE`` implies for one signal.
+def normalise_loss_weights(traces, weights) -> dict:
+    """``{trace: {COMPONENT: weight}}`` (YAML spelling) -> ``{signal: {component: float}}``.
 
-    For the absolute family the L1 components are weighted ``1 / scale`` with
-    the signal's own error scale from the registry (ABP 20 mmHg, CVP 5 mmHg),
-    which is what puts a pressure error and a dimensionless CCC term on the
-    same footing without normalising the data.
-    """
-    if loss_type == 'absolute':
-        weight = 1.0 / signal_scale(signal)
-        return {'ccc': 1.0, 'mean': weight, 'max': weight, 'min': weight}
-    if loss_type == 'shape':
-        return {'negpearson': 1.0}
-    if loss_type == 'mse':
-        return {'mse': 1.0}
-    raise ValueError(f"Unknown loss TYPE {loss_type!r}; known: {list(LOSS_TYPES)}")
-
-
-def default_loss_type(signal: str) -> str:
-    """The family a signal's class implies when the config names none."""
-    return 'absolute' if signal_class(signal) == ABSOLUTE else 'shape'
-
-
-def resolve_loss_specs(traces, overrides=None) -> dict:
-    """``{signal: {'type': str, 'weights': {component: float}}}`` for a trace list.
-
-    ``overrides`` is the config's ``TRAIN.LOSS`` registry, in its YAML spelling
-    (``{ABP: {TYPE: absolute, WEIGHTS: {CCC: 1.0, MEAN: 0.05}}}``). Omitting a
-    signal — or the whole block — takes the default implied by its class.
-    Naming a signal the run does not predict is an error rather than a silently
-    ignored typo.
+    Exactly one entry per trace, no more and no fewer; every component known;
+    every weight positive (a component that should not count is left out, not
+    zeroed). Returned in ``traces`` order with lower-case component keys.
     """
     traces = validate_traces(traces)
-    specs = {}
-    for signal in traces:
-        loss_type = default_loss_type(signal)
-        specs[signal] = {'type': loss_type,
-                         'weights': default_weights(signal, loss_type)}
-
-    for name, spec in dict(overrides or {}).items():
+    if not isinstance(weights, dict):
+        raise ValueError(
+            f"LOSS must be a mapping of trace to {{component: weight}}, got "
+            f"{weights!r}")
+    resolved = {}
+    for name, entry in weights.items():
         signal = canonical_signal(name)
-        if signal not in specs:
+        if not isinstance(entry, dict) or not entry:
             raise ValueError(
-                f"TRAIN.LOSS names {name!r}, which is not in TRACES {traces}")
-        spec = dict(spec or {})
-        loss_type = str(spec.get('TYPE') or specs[signal]['type']).lower()
-        weights = dict(default_weights(signal, loss_type))
-        for component, weight in dict(spec.get('WEIGHTS') or {}).items():
+                f"LOSS.{name} must be a non-empty mapping of component to "
+                f"weight, components {sorted(c.upper() for c in COMPONENTS)}; "
+                f"got {entry!r}")
+        out = {}
+        for component, weight in entry.items():
             key = str(component).lower()
             if key not in COMPONENTS:
                 raise ValueError(
-                    f"TRAIN.LOSS[{signal}] weights unknown component "
-                    f"{component!r}; known: {sorted(COMPONENTS)}")
-            weights[key] = float(weight)
-        specs[signal] = {'type': loss_type,
-                         'weights': {k: w for k, w in weights.items() if w}}
-    return specs
+                    f"LOSS.{name}: unknown component {component!r}; known "
+                    f"{sorted(c.upper() for c in COMPONENTS)}")
+            if isinstance(weight, bool) or not isinstance(weight, (int, float)) \
+                    or weight <= 0:
+                raise ValueError(
+                    f"LOSS.{name}.{component} must be a positive number, got "
+                    f"{weight!r}")
+            out[key] = float(weight)
+        resolved[signal] = out
+    missing = [t for t in traces if t not in resolved]
+    extra = [s for s in resolved if s not in traces]
+    if missing or extra:
+        raise ValueError(
+            f"LOSS must name exactly the TRACES {traces}; missing {missing}, "
+            f"not in TRACES {extra}")
+    return {t: resolved[t] for t in traces}
 
 
 class PerSignalLoss(nn.Module):
@@ -264,22 +243,23 @@ class PerSignalLoss(nn.Module):
     and a per-signal breakdown is what answers whether one signal is drowning
     the others — so the components, not a scalar, are the return value.
 
-    The weights, and the single scalar to backpropagate, are
-    :func:`weight_losses`'s job.
+    ``weights`` is the interface's ``LOSS`` block; it decides *which*
+    components are computed. Applying the weights, and producing the single
+    scalar to backpropagate, is :func:`weight_losses`'s job.
     """
 
-    def __init__(self, traces, specs=None, fs=None, fmax=DEFAULT_FMAX):
+    def __init__(self, traces, weights, fs=None, fmax=DEFAULT_FMAX):
         super().__init__()
         self.traces = validate_traces(traces)
-        self.specs = resolve_loss_specs(self.traces, specs)
+        self.weights = normalise_loss_weights(self.traces, weights)
         self.fs = float(fs) if fs else None
         self.fmax = fmax
-        needs_fs = [s for s, spec in self.specs.items()
-                    if any(spec['weights'].get(c) for c in _NEEDS_FS)]
+        needs_fs = [s for s, w in self.weights.items()
+                    if any(c in w for c in _NEEDS_FS)]
         if needs_fs and not self.fs:
             raise ValueError(
-                f"The loss spec for {needs_fs} uses a spectral component, which "
-                "needs the frame rate; set DATA.FS.")
+                f"The loss for {needs_fs} uses a spectral component, which "
+                "needs the frame rate; set FS.")
 
     def _component(self, name, pred, label):
         if name in _NEEDS_FS:
@@ -303,15 +283,14 @@ class PerSignalLoss(nn.Module):
             raw[signal] = {
                 component: (self._component(component, pred, label) * mask).sum()
                            / denominator
-                for component in self.specs[signal]['weights']
+                for component in self.weights[signal]
             }
         return raw
 
     def extra_repr(self):
         return "\n".join(
-            f"{signal}: {spec['type']} " + ", ".join(
-                f"{c}={w:g}" for c, w in spec['weights'].items())
-            for signal, spec in self.specs.items())
+            f"{signal}: " + ", ".join(f"{c}={w:g}" for c, w in weights.items())
+            for signal, weights in self.weights.items())
 
 
 def weight_losses(raw, weights):

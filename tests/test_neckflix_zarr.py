@@ -138,6 +138,8 @@ def test_model_consumes_the_dataset_output_unchanged(tmp_path):
 
     model = PhysMamba(channels=("R", "G", "B"), traces=("ABP", "CVP"),
                       frame_transform=FrameTransform(("DiffNormalized",), size=(32, 32)))
+    from tests.test_batch_contract import mse_loss
+    model.attach_loss(mse_loss(model.traces))
     out = model(batch)
     assert set(out) == set(batch) | {PREDICTIONS, RAW_LOSSES}
     assert out[PREDICTIONS]["ABP"].shape == (2, 16)

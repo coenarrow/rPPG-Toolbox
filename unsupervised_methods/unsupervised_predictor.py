@@ -5,8 +5,9 @@ CVP and ECG each carry the cardiac rhythm, so one video yields one HR estimate
 scored against every reference trace that recording actually has.
 ``label_mask`` decides which those are, so a recording missing ABP simply
 contributes nothing to the ABP row instead of being dropped. Every window
-funnels into the same per-window HR comparison and the same rate-family
-aggregation (:mod:`evaluation.scoring.rate`).
+funnels into the same per-window HR comparison and the same heart-rate
+summary the supervised evaluation reports
+(:func:`src.evaluation.evaluate.rate_summary`).
 
 The legacy tuple path ``(frames, labels, filename, chunk_id)`` died with
 ``main.py``; the ``pre-overhaul`` tag has it.
@@ -15,10 +16,11 @@ The legacy tuple path ``(frames, labels, filename, chunk_id)`` died with
 from collections import defaultdict
 
 import numpy as np
+import pandas as pd
 from tqdm import tqdm
 
-from evaluation.post_process import calculate_metric_per_video
-from evaluation.scoring.rate import aggregate_rate
+from src.evaluation.evaluate import rate_summary
+from src.evaluation.post_process import calculate_metric_per_video
 from neural_methods.batch import (
     CHANNEL_MASK, FRAMES, LABEL_MASK, LABELS, METADATA,
     frames_to_rgb_trace, is_batch_dict, iter_samples,
@@ -173,15 +175,15 @@ def _report(config, method_name, signal_groups):
     report = {}
     for signal in sorted(signal_groups):
         group = signal_groups[signal]
-        rows = [{"gt_hr": (gt, float("nan")), "pred_hr": (pred, float("nan")),
-                 "snr": (snr, float("nan")), "macc": (macc, float("nan"))}
-                for gt, pred, snr, macc in zip(group["gt"], group["pred"],
-                                               group["snr"], group["macc"])]
-        summary = aggregate_rate(rows)
+        gt, pred = np.asarray(group["gt"]), np.asarray(group["pred"])
+        rates = pd.DataFrame({"source": signal, "ref_hr": gt, "pred_hr": pred,
+                              "err_hr": pred - gt, "snr": group["snr"],
+                              "macc": group["macc"]})
+        summary = {row["metric"]: float(row["value"]) for row in rate_summary(rates)}
         report[signal] = summary
-        print(f"--- {signal}: {len(rows)} windows ---")
-        for metric, (value, se) in summary.items():
-            print(f"[{signal}] {metric}: {value} +/- {se}")
+        print(f"--- {signal}: {len(rates)} windows ---")
+        for metric, value in summary.items():
+            print(f"[{signal}] {metric}: {value}")
     return report
 
 

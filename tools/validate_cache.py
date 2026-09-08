@@ -1,12 +1,14 @@
-"""Contract-v2 cache validator — the admission mechanism, made executable.
+"""Cache validator — the admission mechanism, made executable.
 
-The contract: docs/plans/2026-09-01-contract-v2-design.md (Part 1). Run this
-after generating a cache; a store this passes is admissible, full stop —
-there is no ``complete``/``tool_version`` gate any more.
+The contract: docs/cache-contract.md (normative; every clause it tabulates
+under "What the validator checks" is a check below). Run this after
+generating a cache; a store this passes is admissible, full stop — there is
+no ``complete``/``tool_version`` gate any more.
 
     uv run python tools/validate_cache.py <cache-dir | store.zarr ...>
 """
 import argparse
+import math
 import sys
 from pathlib import Path
 from typing import NamedTuple
@@ -64,8 +66,6 @@ def _check_modality(out, where, modality, group):
     if video.ndim != 4:
         out.append(Violation(where, f"video/data is {video.ndim}-D, want (C, T, H, W)"))
         return None
-    if video.dtype != np.uint8:
-        out.append(Violation(where, f"video/data dtype {video.dtype}, want uint8"))
     expected = MODALITY_CHANNELS[modality]
     if expected is not None and video.shape[0] != len(expected):
         out.append(Violation(
@@ -104,6 +104,29 @@ def _check_modality(out, where, modality, group):
     return float(stamps[0]) if stamps is not None and stamps.size else None
 
 
+def _nominal_fps(out, where, attrs):
+    """The perspective's nominal frame rate, or None when it has none.
+
+    ``fps`` is required, but its *value* may be null (or NaN): a perspective
+    with no frame rate, which is what an event camera is. Anything else must
+    be a positive finite number. None is returned for the no-rate case so the
+    caller skips every check that needs a rate.
+    """
+    if "fps" not in attrs:
+        out.append(Violation(where, "missing required perspective attr 'fps'"))
+        return None
+    fps = attrs["fps"]
+    if fps is None or (isinstance(fps, float) and math.isnan(fps)):
+        return None
+    if (isinstance(fps, bool) or not isinstance(fps, (int, float))
+            or not math.isfinite(fps) or fps <= 0):
+        out.append(Violation(
+            where, f"perspective attr 'fps' is {fps!r}, want a positive "
+                   f"number or null (no frame rate)"))
+        return None
+    return float(fps)
+
+
 def validate_store(path) -> list:
     """Every contract clause, itemised. Empty list = admissible."""
     path = Path(path)
@@ -114,15 +137,20 @@ def validate_store(path) -> list:
         return [Violation(path.name, f"cannot open as a zarr group: {error}")]
     if "participant" not in root.attrs:
         out.append(Violation(path.name, "missing required root attr 'participant'"))
+    elif not isinstance(root.attrs["participant"], str):
+        # Any identifier in any format, but a string: the split machinery
+        # matches it exactly, and an int 15 never equals a configured "015".
+        participant = root.attrs["participant"]
+        out.append(Violation(
+            path.name, f"root attr 'participant' is {type(participant).__name__} "
+                       f"{participant!r}, want a string"))
     perspectives = list(root.group_keys())
     if not perspectives:
         out.append(Violation(path.name, "store has no perspective groups"))
     for perspective in perspectives:
         cam = root[perspective]
         where = f"{path.name}/{perspective}"
-        fps = cam.attrs.get("fps")
-        if not fps:
-            out.append(Violation(where, "missing required perspective attr 'fps'"))
+        fps = _nominal_fps(out, where, cam.attrs)
         modalities = list(cam.group_keys())
         trace_sets, first_stamps = {}, {}
         for modality in modalities:
@@ -142,8 +170,8 @@ def validate_store(path) -> list:
             listing = "; ".join(f"{m}: {sorted(s)}" for m, s in trace_sets.items())
             out.append(Violation(
                 where, f"modalities carry different trace sets ({listing})"))
-        if fps and len(first_stamps) > 1:
-            budget_us = 1e6 / float(fps)
+        if fps is not None and len(first_stamps) > 1:
+            budget_us = 1e6 / fps
             spread = max(first_stamps.values()) - min(first_stamps.values())
             if spread >= budget_us:
                 out.append(Violation(

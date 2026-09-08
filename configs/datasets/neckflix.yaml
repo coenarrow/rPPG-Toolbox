@@ -1,0 +1,43 @@
+# Neckflix: which stores participate. Nothing here about channels, traces,
+# windows or rates — that is the interface's business.
+#
+# FILTERS is keyed by the store's own root attrs, exactly as the Neckflix
+# cacher (dataset/cachers/neckflix) writes them. Every entry carries both an
+# `include` and an `exclude` list; an empty list is no constraint on that
+# side. A store is admitted when it passes every entry.
+#
+# Values compare as strings. A store lacking an attr (or carrying null) fails
+# an include on it and passes an exclude. Nested attrs are addressed with dots
+# (`arterial_line.site`). `FILTERS: {}` admits every store.
+#
+# Filterable root attrs (one store = one recording; perspectives '1' and '2'
+# live inside it and are not filterable here):
+#   participant          the Participant_ID cell verbatim: '1', '14', '58'
+#   session              session number (int)
+#   recording_id         recording number within the session (int)
+#   posture              supine | recumbent | sitting   (bed angle 0 / 45 / 90)
+#   sex                  as written in dataset_info.csv
+#   age_years            int
+#   weight_kg, height_cm, bmi   floats, null where the CSV had N/A
+#   neck_circumference_cm.{lower, mid, upper}   floats
+#   skin_tone.{scale, self, recorder, clinician}   Monk scale ints
+#   arrhythmia           true | false
+#   central_line.{site, side}    side is lower-cased (left | right)
+#   arterial_line.{site, side}   site radial | brachial; side left | right
+#   neck_side_recorded   left | right
+#   bp_mmhg.{systolic, diastolic}   the clinician's cuff reading (ints)
+#   jvp.{height_cm, status, rater_job_title, rater_years_practicing}
+#                        status is measured | not_visualised | no_clinician
+#   heart_rate.{beats_counted, beats_counted_unc, duration_s, average_bpm,
+#               average_bpm_unc}
+CACHED_PATH: "D:/neckflix_zarr/rgbid128"
+FILTERS:
+  posture:
+    include: [supine, recumbent, sitting]
+    exclude: []
+  participant:                # nobody dropped; list ids here to drop them
+    include: []
+    exclude: []
+  arterial_line.site:         # nested attr, dotted; no constraint as written
+    include: []
+    exclude: []

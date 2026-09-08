@@ -70,7 +70,6 @@ class ModelSpec:
     fs: float
     window: int
     resize: tuple
-    head_style: str
     label_norms: dict
 
     @property
@@ -135,7 +134,6 @@ def model_spec(config) -> ModelSpec:
         fs=fps,
         window=window_frames(interface.WINDOW_SECONDS, fps),
         resize=size,
-        head_style=str(config.MODEL.HEAD_STYLE or 'parallel'),
         label_norms=label_norms(interface),
     )
 
@@ -144,7 +142,14 @@ def model_spec(config) -> ModelSpec:
 # Builders
 # ---------------------------------------------------------------------------
 def _parallel(spec, make_copy):
-    """Style C: one full single-trace copy of the architecture per signal."""
+    """One full single-trace copy of the architecture per signal.
+
+    This is the only multi-signal form: every published single-signal network
+    is instantiated once per trace, with its input widened to the interface's
+    channel count and nothing else changed. ABP and CVP come from different
+    regions of the frame, so each trace gets its own trunk, not a shared one
+    with a widened or per-signal head.
+    """
     from neural_methods.model.ParallelSignals import ParallelSignals
     return ParallelSignals(make_copy, channels=spec.channels,
                            traces=spec.traces, frame_transform=spec.transform,
@@ -153,18 +158,9 @@ def _parallel(spec, make_copy):
 
 def _build_physmamba(config, spec):
     from neural_methods.model.PhysMamba import PhysMamba
-    if spec.head_style == 'parallel':
-        return _parallel(spec, lambda trace: PhysMamba(
-            channels=spec.channels, traces=[trace],
-            frame_transform=spec.transform, fs=spec.fs))
-    if spec.head_style != 'widened':
-        # Without this a typo silently downgrades style C to style A, which is
-        # a 1/S parameter count and no message.
-        raise ValueError(
-            f"PhysMamba builds HEAD_STYLE 'parallel' (the default) or "
-            f"'widened'; got {spec.head_style!r}.")
-    return PhysMamba(channels=spec.channels, traces=spec.traces,
-                     frame_transform=spec.transform, fs=spec.fs)
+    return _parallel(spec, lambda trace: PhysMamba(
+        channels=spec.channels, traces=[trace],
+        frame_transform=spec.transform, fs=spec.fs))
 
 
 def _build_deepphys(config, spec):
@@ -182,51 +178,27 @@ def _build_deepphys(config, spec):
             "takes the first block and the appearance branch the second. Use "
             "DATA_TYPE: ['DiffNormalized', 'Standardized']; got "
             f"{list(spec.transform.data_types)}.")
-    if spec.head_style == 'parallel':
-        def make_copy(trace):
-            copy = DeepPhys(in_channels=spec.camera_channels, out_signals=1,
-                            img_size=height, head_style='widened')
-            return SignalDictWrapper(copy, channels=spec.channels,
-                                     traces=[trace], input_mode='frames2d',
-                                     frame_transform=spec.transform, fs=spec.fs)
-        return _parallel(spec, make_copy)
-    # DeepPhys validates 'widened'/'per_signal' itself, so a typo is refused
-    # there by name.
-    backbone = DeepPhys(in_channels=spec.camera_channels, out_signals=spec.out_signals,
-                        img_size=height, head_style=spec.head_style)
-    return SignalDictWrapper(backbone, channels=spec.channels, traces=spec.traces,
-                             input_mode='frames2d', frame_transform=spec.transform,
-                             fs=spec.fs)
+
+    def make_copy(trace):
+        copy = DeepPhys(in_channels=spec.camera_channels, img_size=height)
+        return SignalDictWrapper(copy, channels=spec.channels, traces=[trace],
+                                 input_mode='frames2d',
+                                 frame_transform=spec.transform, fs=spec.fs)
+    return _parallel(spec, make_copy)
 
 
 def _build_physformer(config, spec):
     from neural_methods.model.PhysFormer import PhysFormer
     block = config.MODEL.PHYSFORMER
     height, width = spec.img_size
-    if spec.head_style == 'parallel':
-        return _parallel(spec, lambda trace: PhysFormer(
-            channels=spec.channels, traces=[trace],
-            frame_transform=spec.transform, fs=spec.fs,
-            image_size=(spec.window, height, width),
-            patches=int(block.PATCH_SIZE), dim=int(block.DIM),
-            ff_dim=int(block.FF_DIM), num_heads=int(block.NUM_HEADS),
-            num_layers=int(block.NUM_LAYERS), theta=float(block.THETA),
-            dropout_rate=float(config.MODEL.DROP_RATE)))
-    if spec.head_style != 'widened':
-        raise ValueError(
-            "PhysFormer implements head style C (parallel copies, the default) "
-            "and style A (a widened readout). Style B it cannot: its readout "
-            "reads a feature whose token grid has already been averaged away, "
-            "so per-signal head copies would every one of them see the "
-            "identical vector, and the style-B idea of a per-signal spatial "
-            "weighting would mean moving the pooling into the head — a design "
-            f"change, not a builder option. Got HEAD_STYLE {spec.head_style!r}.")
-    return PhysFormer(
-        channels=spec.channels, traces=spec.traces, frame_transform=spec.transform,
-        fs=spec.fs, image_size=(spec.window, height, width),
-        patches=int(block.PATCH_SIZE), dim=int(block.DIM), ff_dim=int(block.FF_DIM),
-        num_heads=int(block.NUM_HEADS), num_layers=int(block.NUM_LAYERS),
-        theta=float(block.THETA), dropout_rate=float(config.MODEL.DROP_RATE))
+    return _parallel(spec, lambda trace: PhysFormer(
+        channels=spec.channels, traces=[trace],
+        frame_transform=spec.transform, fs=spec.fs,
+        image_size=(spec.window, height, width),
+        patches=int(block.PATCH_SIZE), dim=int(block.DIM),
+        ff_dim=int(block.FF_DIM), num_heads=int(block.NUM_HEADS),
+        num_layers=int(block.NUM_LAYERS), theta=float(block.THETA),
+        dropout_rate=float(config.MODEL.DROP_RATE)))
 
 
 #: Architectures that speak the batch-dict contract. Add a builder here to make
@@ -275,23 +247,19 @@ def init_output_bias(model, spec):
     priors = spec.priors
     if not layers or not any(priors):
         return
+    if len(layers) != len(priors):
+        raise ValueError(
+            f"{type(model).__name__}.output_layers() returned {len(layers)} "
+            f"layers for {len(priors)} traces; one copy per trace means one "
+            f"readout per trace.")
     with torch.no_grad():
-        if len(layers) == 1:                       # style A: one widened readout
-            bias = layers[0].bias
-            if bias is None or bias.numel() != len(priors):
+        for layer, prior in zip(layers, priors):
+            if layer.bias is None or layer.bias.numel() != 1:
                 raise ValueError(
-                    f"{type(model).__name__}.output_layers() has "
-                    f"{None if bias is None else bias.numel()} bias entries for "
-                    f"{len(priors)} traces; a widened readout needs one each.")
-            bias.copy_(torch.tensor(priors, dtype=bias.dtype, device=bias.device))
-        elif len(layers) == len(priors):            # style B: one head per signal
-            for layer, prior in zip(layers, priors):
-                layer.bias.fill_(prior)
-        else:
-            raise ValueError(
-                f"{type(model).__name__}.output_layers() returned {len(layers)} "
-                f"layers for {len(priors)} traces; expected 1 (widened) or "
-                f"{len(priors)} (per-signal).")
+                    f"{type(model).__name__}: a per-trace readout needs exactly "
+                    f"one bias entry, got "
+                    f"{None if layer.bias is None else layer.bias.numel()}.")
+            layer.bias.fill_(prior)
 
 
 def _parameter_groups(model, readout):
@@ -324,17 +292,15 @@ def build_model(config):
     model = builder(config, spec)
     check_window(model, spec)
     init_output_bias(model, spec)
-    # Contract v2: the criterion belongs to the model, so the config's
-    # TRAIN.LOSS overrides have to reach it here — before .to(device) and
-    # before any DDP wrap. Stage keys are the model's own, weighted by the
-    # trainer; anything else has to name a trace, and resolve_loss_specs
-    # refuses it here if it does not.
-    overrides = dict(getattr(config.TRAIN, 'LOSS', None) or {})
-    stage_names = set(model.loss_modules())
-    signal_overrides = {k: v for k, v in overrides.items()
-                        if k not in stage_names} or None
-    model.attach_loss(PerSignalLoss(spec.traces, specs=signal_overrides,
-                                    fs=spec.fs))
+    # Contract: the criterion belongs to the model, so the interface's LOSS
+    # weights have to reach it here — before .to(device) and before any DDP
+    # wrap. Model stages (loss_modules) are weighted 1.0 by weight_losses.
+    weights = getattr(config.INTERFACE, 'LOSS', None)
+    if not weights:
+        raise ValueError(
+            "INTERFACE.LOSS must state the loss per trace: "
+            "{trace: {component: weight}}; there are no default weights.")
+    model.attach_loss(PerSignalLoss(spec.traces, weights, fs=spec.fs))
     return model
 
 
@@ -379,28 +345,13 @@ class MultiSignalTrainer:
         self.model = model
 
         # Contract v2: the model computes raw_losses; the trainer only weights
-        # and sums, so it owns no criterion. The signal half of the weights is
-        # read off the model's own criterion rather than resolved a second
-        # time — build_model has already applied TRAIN.LOSS there, and a second
-        # resolution could drift silently (a zero weight is filtered out of a
-        # spec, so the disagreement would surface as an unweighted term, not an
-        # error). Stage names come from the model; the config may only scale
-        # them, because the model is what defines what a stage loss *is*.
+        # and sums, so it owns no criterion. The weights are read off the
+        # model's own criterion rather than resolved a second time. A model
+        # stage (loss_modules) has no config entry and is weighted 1.0 by
+        # weight_losses.
         criterion = self._unwrap_model().loss
-        self.signal_specs = criterion.specs
-        self.loss_weights = {signal: dict(spec['weights'])
-                             for signal, spec in criterion.specs.items()}
-        registry = dict(getattr(config.TRAIN, 'LOSS', None) or {})
-        for stage in self._unwrap_model().loss_modules():
-            spec = dict(registry.get(stage) or {})
-            if set(spec) - {'WEIGHTS'}:
-                raise ValueError(
-                    f"TRAIN.LOSS[{stage}] is a model stage: WEIGHTS only "
-                    f"(the model defines what its stage losses are); got "
-                    f"{sorted(set(spec) - {'WEIGHTS'})}")
-            self.loss_weights[stage] = {
-                str(component).lower(): float(weight)
-                for component, weight in dict(spec.get('WEIGHTS') or {}).items()}
+        self.loss_weights = {signal: dict(weights)
+                             for signal, weights in criterion.weights.items()}
         if self.is_main:
             listing = "\n".join(
                 f"{module}: " + ", ".join(f"{c}={w:g}" for c, w in weights.items())
@@ -735,11 +686,7 @@ class MultiSignalTrainer:
                                   for epoch in raw_history]
                     axis.plot(epochs, raw_values, label=f"{component} (raw)",
                               linewidth=1.0, linestyle=':', alpha=0.6)
-            # A stage module has no per-signal spec — it is the model's, and the
-            # config only scales it — so it is labelled as one rather than
-            # KeyError-ing the whole plot.
-            kind = self.signal_specs.get(signal, {}).get('type', 'stage')
-            axis.set_title(f"{signal} ({kind})", fontsize=10)
+            axis.set_title(signal, fontsize=10)
             axis.set_xlabel('Epoch')
             axis.set_ylabel('Masked mean loss (dotted: unweighted)')
             axis.legend(fontsize=7)

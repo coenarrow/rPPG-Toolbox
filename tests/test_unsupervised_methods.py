@@ -11,7 +11,7 @@ import pytest
 import torch
 from torch.utils.data import default_collate
 
-from evaluation.post_process import _calculate_fft_hr, calculate_metric_per_video
+from src.evaluation.post_process import _calculate_fft_hr, calculate_metric_per_video
 from tests.reference.pos_ica_numpy1 import ICA_POH_REF, POS_WANG_REF
 from unsupervised_methods import utils
 from unsupervised_methods.methods.CHROME_DEHAAN import CHROME_DEHAAN
@@ -215,10 +215,10 @@ def test_predictor_reports_one_row_per_signal_over_dict_batches():
                                                  present=("ABP", "CVP"), t=256)])]
     report = unsupervised_predict(_predictor_config(), {"unsupervised": batches}, "POS")
     assert set(report) == {"ABP", "CVP"}
-    # aggregate_rate's full metric set, computed unconditionally now.
-    assert all(set(summary) == {"mae", "rmse", "mape", "pearson", "snr", "macc"}
+    # The supervised evaluation's heart-rate summary, metric by metric.
+    assert all({"mae", "rmse", "mape", "pearson", "bias", "snr", "macc"} <= set(summary)
                for summary in report.values())
-    assert all(np.isfinite(summary["mae"][0]) for summary in report.values())
+    assert all(np.isfinite(summary["mae"]) for summary in report.values())
 
 
 def test_predictor_rejects_a_legacy_tuple_batch():
@@ -246,10 +246,8 @@ def test_predict_many_matches_running_each_method_alone():
             config, {"unsupervised": [default_collate([sample])]}, method)
         # A single-window group leaves pearson undefined (NaN); nan_ok so that
         # doesn't itself read as a mismatch between the two paths.
-        for metric, (value, se) in together[method]["ABP"].items():
-            alone_value, alone_se = alone["ABP"][metric]
-            assert value == pytest.approx(alone_value, nan_ok=True)
-            assert se == pytest.approx(alone_se, nan_ok=True)
+        for metric, value in together[method]["ABP"].items():
+            assert value == pytest.approx(alone["ABP"][metric], nan_ok=True)
 
 
 def test_predictor_rejects_a_non_unsupervised_mode():

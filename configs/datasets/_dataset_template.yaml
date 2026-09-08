@@ -1,0 +1,39 @@
+# PURE: which stores participate. Nothing here about channels, traces, windows
+# or rates — that is the interface's business.
+#
+# FILTERS is keyed by the store's own root attrs, exactly as the PURE cacher
+# (dataset/cachers/pure) writes them. Every entry carries both an `include`
+# and an `exclude` list; an empty list is no constraint on that side. A store
+# is admitted when it passes every entry.
+#
+# Values compare as strings. A store lacking an attr (or carrying null) fails
+# an include on it and passes an exclude. Nested attrs are addressed with dots
+# (`oximeter.flag_counts.probeError`). `FILTERS: {}` admits every store.
+#
+# Filterable root attrs (one store = one recording, one perspective, rgb only):
+#   participant        '01'..'10'; the subject token verbatim from the directory
+#   recording          'SS-TT', the recording directory name
+#   subject            same value as participant
+#   setup              '01'..'06', the setup token
+#   setup_name         steady | talking | slow_translation | fast_translation |
+#                      small_rotation | medium_rotation
+#   capture_start_utc  ISO-8601 timestamp of the first frame
+#   duration_s         recording length in seconds (float)
+#   frame_rate_measured  frames over elapsed time, ~30 (float)
+#   oximeter.*         summary of the sidecar's oximeter fields: num_samples,
+#                      sample_rate_measured, start_offset_ms, end_offset_ms,
+#                      pulseRate/o2saturation/signalStrength/barGraph each
+#                      {min, max, mean}, and flag_counts.{beep, droppingo2Sat,
+#                      probeError, searching, searchingToLong}
+#   alignment          'timestamp' (how the ppg trace was put on the frame grid)
+#   source_resolution  [H, W] of the raw PNGs
+#   resized_to         [H, W] the cacher resized to, or null
+CACHED_PATH: "D:/pure_zarr"
+FILTERS:
+  setup_name:                 # every setup: an explicit no-op, as the example
+    include: [steady, talking, slow_translation, fast_translation,
+              small_rotation, medium_rotation]
+    exclude: []
+  participant:                # nobody dropped; list ids here to drop them
+    include: []
+    exclude: []

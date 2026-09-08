@@ -16,7 +16,7 @@ production, `salloc` for interactive debugging. No exceptions:
 - Not "only a few epochs"
 - Not "just to see if it imports" (use `salloc`)
 - Not preprocessing, which is CPU/IO heavy and will still get you killed —
-  and not the first `uv run --project external/neckflix ...` either, which
+  and not the first `uv run --project dataset/cachers/neckflix ...` either, which
   syncs a second 249 MB environment before it does any work
 
 ## GPU Resources
@@ -140,12 +140,12 @@ shorter chunks) → read `logs/*.err` → scale back up via `sbatch` once it wor
   `/group/pgh004/carrow/repo/remote-physiology`, which is what the SLURM scripts use)
 - Group storage: `/group/pgh004/` — accessible from compute nodes
 - The cache preprocessor is a **git submodule**, and the HPC checkout predates
-  it, so `external/neckflix` is an empty directory there until someone runs
+  it, so `dataset/cachers/neckflix` is an empty directory there until someone runs
   `git submodule update --init` once in the working directory (then
-  `git -C external/neckflix checkout main`). An empty submodule does not fail
-  loudly: `uv run --project external/neckflix` silently falls through to this
+  `git -C dataset/cachers/neckflix checkout main`). An empty submodule does not fail
+  loudly: `uv run --project dataset/cachers/neckflix` silently falls through to this
   project instead, downloads torch, and dies in a compiler. Check
-  `test -f external/neckflix/pyproject.toml` before trusting a cache-build job.
+  `test -f dataset/cachers/neckflix/pyproject.toml` before trusting a cache-build job.
 
 ## Building a Cache (CPU, no GPU)
 
@@ -160,7 +160,7 @@ ECF HDF5 codec that only the docker image builds.
 #SBATCH --mem=32G
 
 cd "/group/pgh004/carrow/repo/remote-physiology"
-uv run --project external/neckflix neckflix-preprocess \
+uv run --project dataset/cachers/neckflix neckflix-preprocess \
     --input-dir <raw Neckflix root> --output-dir <cache dir> \
     --resize 256 256 --perspectives 1 2 --num-workers 2
 uv run python tools/validate_cache.py <cache dir>

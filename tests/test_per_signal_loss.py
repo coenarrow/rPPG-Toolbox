@@ -1,4 +1,4 @@
-"""The per-signal composite loss: the registry, the masking, the components.
+"""The per-signal composite loss: the weights, the masking, the components.
 
 Replaces test_masked_loss.py. The masking assertions are the same ones — that
 structure is retained verbatim from ``MaskedMultiSignalLoss`` and is the part a
@@ -9,15 +9,17 @@ import pytest
 import torch
 
 from neural_methods.loss.PerSignalLoss import (
-    PerSignalLoss, ccc, mean_l1, negpearson, peak_max_l1, peak_min_l1,
-    resolve_loss_specs, soft_peak_stat, weight_losses,
+    PerSignalLoss, ccc, mean_l1, negpearson, normalise_loss_weights,
+    peak_max_l1, peak_min_l1, soft_peak_stat, weight_losses,
 )
+
+ABS = {'CCC': 1.0, 'MEAN': 0.05, 'MAX': 0.05, 'MIN': 0.05}
+MSE = {'MSE': 1.0}
 
 
 def _weigh(criterion, *args):
     """The old one-call `(total, breakdown)`, now the two contract v2 halves."""
-    return weight_losses(criterion(*args),
-                         {s: spec['weights'] for s, spec in criterion.specs.items()})
+    return weight_losses(criterion(*args), criterion.weights)
 
 
 def _mk(B=4, T=32, seed=0):
@@ -27,47 +29,30 @@ def _mk(B=4, T=32, seed=0):
     return preds, labels
 
 
-# --- the registry --------------------------------------------------------
-def test_defaults_follow_the_signal_class():
-    specs = resolve_loss_specs(['ABP', 'ECG'])
-    assert specs['ABP']['type'] == 'absolute'
-    assert set(specs['ABP']['weights']) == {'ccc', 'mean', 'max', 'min'}
-    assert specs['ECG'] == {'type': 'shape', 'weights': {'negpearson': 1.0}}
+# --- the weights ----------------------------------------------------------
+def test_weights_are_stated_outright_in_traces_order():
+    weights = normalise_loss_weights(['ECG', 'ABP'],
+                                     {'ABP': ABS, 'ECG': {'negpearson': 2.0}})
+    assert list(weights) == ['ECG', 'ABP']
+    assert weights['ABP'] == {'ccc': 1.0, 'mean': 0.05, 'max': 0.05, 'min': 0.05}
+    assert weights['ECG'] == {'negpearson': 2.0}
 
 
-def test_absolute_l1_weights_are_one_over_the_signal_scale():
-    """ABP errors are O(20 mmHg) and CVP O(5), so their L1 terms differ 4x."""
-    specs = resolve_loss_specs(['ABP', 'CVP'])
-    assert specs['ABP']['weights']['mean'] == pytest.approx(1 / 20.0)
-    assert specs['CVP']['weights']['mean'] == pytest.approx(1 / 5.0)
-
-
-def test_config_overrides_type_and_weights():
-    specs = resolve_loss_specs(
-        ['ABP'], {'ABP': {'TYPE': 'absolute', 'WEIGHTS': {'CCC': 2.0, 'SPECTRAL': 0.5}}})
-    assert specs['ABP']['weights']['ccc'] == 2.0
-    assert specs['ABP']['weights']['spectral'] == 0.5      # not in the family, still allowed
-    assert specs['ABP']['weights']['mean'] == pytest.approx(1 / 20.0)   # family default kept
-
-
-def test_zero_weight_drops_the_component():
-    specs = resolve_loss_specs(['ABP'], {'ABP': {'WEIGHTS': {'MEAN': 0, 'MAX': 0, 'MIN': 0}}})
-    assert set(specs['ABP']['weights']) == {'ccc'}
-
-
-def test_naming_an_unpredicted_signal_is_an_error():
-    with pytest.raises(ValueError, match="not in TRACES"):
-        resolve_loss_specs(['ABP'], {'CVP': {'TYPE': 'absolute'}})
-
-
-def test_unknown_component_is_an_error():
-    with pytest.raises(ValueError, match="unknown component"):
-        resolve_loss_specs(['ABP'], {'ABP': {'WEIGHTS': {'HUBER': 1.0}}})
+@pytest.mark.parametrize("bad, match", [
+    ({'ABP': ABS}, "missing \\['ECG'\\]"),                    # a trace without a loss
+    ({'ABP': ABS, 'ECG': MSE, 'CVP': ABS}, "not in TRACES"),   # a loss without a trace
+    ({'ABP': {'HUBER': 1.0}, 'ECG': MSE}, "unknown component"),
+    ({'ABP': {'CCC': 0}, 'ECG': MSE}, "positive"),
+    ({'ABP': {}, 'ECG': MSE}, "non-empty"),
+])
+def test_bad_weights_are_refused(bad, match):
+    with pytest.raises(ValueError, match=match):
+        normalise_loss_weights(['ABP', 'ECG'], bad)
 
 
 def test_spectral_without_a_rate_is_refused_at_construction():
     with pytest.raises(ValueError, match="spectral"):
-        PerSignalLoss(['ECG'], {'ECG': {'WEIGHTS': {'SPECTRAL': 1.0}}}, fs=None)
+        PerSignalLoss(['ECG'], {'ECG': {'SPECTRAL': 1.0}}, fs=None)
 
 
 # --- components ----------------------------------------------------------
@@ -115,8 +100,7 @@ def test_peak_terms_are_differentiable_in_raw_units():
 
 # --- masking (retained from MaskedMultiSignalLoss) -----------------------
 def test_hand_computed_masked_mse():
-    loss_fn = PerSignalLoss(['ABP', 'CVP'],
-                            {'ABP': {'TYPE': 'mse'}, 'CVP': {'TYPE': 'mse'}})
+    loss_fn = PerSignalLoss(['ABP', 'CVP'], {'ABP': MSE, 'CVP': MSE})
     preds = {'ABP': torch.zeros(2, 4), 'CVP': torch.zeros(2, 4)}
     labels = {'ABP': torch.ones(2, 4), 'CVP': torch.full((2, 4), 2.0)}
     mask = {'ABP': torch.tensor([1.0, 1.0]), 'CVP': torch.tensor([1.0, 0.0])}
@@ -128,27 +112,25 @@ def test_hand_computed_masked_mse():
 
 
 def test_fully_masked_signal_contributes_zero_no_nan():
-    loss_fn = PerSignalLoss(['ABP', 'CVP'],
-                            {'ABP': {'TYPE': 'mse'}, 'CVP': {'TYPE': 'mse'}})
+    loss_fn = PerSignalLoss(['ABP', 'CVP'], {'ABP': MSE, 'CVP': MSE})
     preds, labels = _mk()
     mask = {'ABP': torch.ones(4), 'CVP': torch.zeros(4)}
     total, weighted = _weigh(loss_fn, preds, labels, mask)
     assert torch.isfinite(total)
     assert weighted['CVP']['total'] == 0.0
-    abp_only = PerSignalLoss(['ABP'], {'ABP': {'TYPE': 'mse'}})
+    abp_only = PerSignalLoss(['ABP'], {'ABP': MSE})
     only_abp, _ = _weigh(abp_only, {'ABP': preds['ABP']}, {'ABP': labels['ABP']},
                          {'ABP': mask['ABP']})
     assert torch.isclose(total, only_abp / 2)
 
 
-def test_absolute_spec_backpropagates_through_every_component():
-    loss_fn = PerSignalLoss(['ABP'], fs=30)
+def test_absolute_weights_backpropagate_through_every_component():
+    loss_fn = PerSignalLoss(['ABP'], {'ABP': ABS}, fs=30)
     pred = torch.randn(3, 64, requires_grad=True) * 10 + 90
     pred.retain_grad()
     labels = {'ABP': torch.randn(3, 64) * 10 + 90}
     raw = loss_fn({'ABP': pred}, labels, {'ABP': torch.ones(3)})
-    total, weighted = weight_losses(
-        raw, {s: spec['weights'] for s, spec in loss_fn.specs.items()})
+    total, weighted = weight_losses(raw, loss_fn.weights)
     total.backward()
     # The raw dict is components only; the 'total' lives on the weighted side.
     assert set(raw['ABP']) == {'ccc', 'mean', 'max', 'min'}
@@ -159,7 +141,7 @@ def test_absolute_spec_backpropagates_through_every_component():
 
 def test_breakdown_keys_every_signal_even_when_absent():
     """The training curves need a row per signal per epoch, present or not."""
-    loss_fn = PerSignalLoss(['ABP', 'ECG'])
+    loss_fn = PerSignalLoss(['ABP', 'ECG'], {'ABP': ABS, 'ECG': {'NEGPEARSON': 1.0}})
     preds = {'ABP': torch.randn(2, 32), 'ECG': torch.randn(2, 32)}
     labels = {'ABP': torch.randn(2, 32), 'ECG': torch.randn(2, 32)}
     raw = loss_fn(preds, labels, {'ABP': torch.ones(2), 'ECG': torch.zeros(2)})
@@ -168,32 +150,13 @@ def test_breakdown_keys_every_signal_even_when_absent():
 
 
 def test_raw_is_unweighted_and_weighting_is_separate():
-    # Zero weights are filtered by resolve_loss_specs, so this spec leaves
-    # exactly one component (ccc) — the arithmetic below relies on that.
-    criterion = PerSignalLoss(["ABP"], specs={"ABP": {"WEIGHTS": {
-        "CCC": 2.0, "MEAN": 0, "MAX": 0, "MIN": 0}}})
+    criterion = PerSignalLoss(["ABP"], {"ABP": {"CCC": 2.0}})
     preds = {"ABP": torch.randn(4, 32, requires_grad=True)}
     labels = {"ABP": torch.randn(4, 32)}
     mask = {"ABP": torch.ones(4, dtype=torch.bool)}
     raw = criterion(preds, labels, mask)
     assert set(raw) == {"ABP"} and "total" not in raw["ABP"]
     assert raw["ABP"]["ccc"].requires_grad
-    total, weighted = weight_losses(raw, {"ABP": {"ccc": 2.0}})
+    total, weighted = weight_losses(raw, criterion.weights)
     assert torch.isclose(total, 2.0 * raw["ABP"]["ccc"])
     assert weighted["ABP"]["total"] == float(total.detach())
-
-
-def test_a_fully_zeroed_module_still_counts_in_the_denominator():
-    """Dropping it would silently double every other module's gradient."""
-    criterion = PerSignalLoss(["ABP", "CVP"], specs={
-        "ABP": {"TYPE": "mse"},
-        "CVP": {"TYPE": "mse", "WEIGHTS": {"MSE": 0}}})
-    preds = {"ABP": torch.zeros(2, 4), "CVP": torch.zeros(2, 4)}
-    labels = {"ABP": torch.ones(2, 4), "CVP": torch.full((2, 4), 2.0)}
-    mask = {"ABP": torch.ones(2), "CVP": torch.ones(2)}
-    raw = criterion(preds, labels, mask)
-    assert raw["CVP"] == {}                       # every component zero-weighted
-    total, weighted = weight_losses(
-        raw, {s: spec["weights"] for s, spec in criterion.specs.items()})
-    assert torch.isclose(total, torch.tensor(0.5))   # (1.0 + 0.0) / 2, not 1.0
-    assert weighted["CVP"]["total"] == 0.0

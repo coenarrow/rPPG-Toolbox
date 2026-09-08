@@ -1,0 +1,39 @@
+# The interface: the model's demand on the data pipeline. Nothing here about
+# which stores participate (the dataset files) or how training runs (the
+# training file).
+#
+# Every key is required — there are no defaults. Every loaded dataset is
+# shaped to this before concatenation, so a batch collates no matter which
+# cache each sample came from. A channel or trace a dataset cannot provide
+# comes back as zeros with a False mask; the loader warns per dataset for
+# anything with zero coverage.
+FS: 30.0                       # frame rate the model sees; faster stores are
+                               # decimated to it
+UPSAMPLING: refuse             # slower stores: refuse | interpolate (linear
+                               # frame/label blending, never duplication)
+WINDOW_SECONDS: 6.0            # T = WINDOW_SECONDS x FS, snapped to a whole
+                               # frame within 0.01 (180 frames here)
+WINDOW_STRIDE: 1.0             # seconds the test set steps between windows;
+                               # at least one frame (1 / FS). Training draws
+                               # random windows and ignores this.
+CHANNELS: [R, G, B]            # ordered camera channels, subset of R,G,B,I,D
+TRACES: [ABP, CVP, ECG]        # ordered signals to predict (no PPG: the
+                               # Neckflix cache carries none)
+RESIZE: {H: 72, W: 72}         # what the model sees; {H: 0, W: 0} = no resize
+INPUT_PREPROCESSING: [DiffNormalized, Standardized]   # Raw | Standardized |
+                               # DiffNormalized; several are concatenated
+                               # along channels, in this order
+LABEL_PREPROCESSING:           # one entry per trace: raw | zscore
+  ABP: raw
+  CVP: raw
+  ECG: zscore
+LOSS:                          # one entry per trace: {component: weight}, every
+                               # weight positive. Components: CCC, MEAN, MAX,
+                               # MIN (L1 on window mean / soft systolic / soft
+                               # diastolic, in the label's units), NEGPEARSON,
+                               # MSE, SPECTRAL (needs FS). The weights are
+                               # where per-signal scale lives: raw ABP error
+                               # is O(10 mmHg), CVP O(1 mmHg), CCC is O(1).
+  ABP: {CCC: 1.0, MEAN: 0.05, MAX: 0.05, MIN: 0.05}
+  CVP: {CCC: 1.0, MEAN: 0.2, MAX: 0.2, MIN: 0.2}
+  ECG: {NEGPEARSON: 1.0}
