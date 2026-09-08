@@ -1,0 +1,24 @@
+# BigSmall paper recipe. This file IS how rPPG-Toolbox trains BigSmall
+# (configs/train_configs/BP4D_BP4D_BIGSMALL_FOLD1.yaml and its
+# BigSmallTrainer, both at the pre-overhaul tag): AdamW at 1e-3 with no
+# weight decay, OneCycleLR over the run, batch 180, 5 epochs, float32.
+# BigSmall was published on BP4D+ and rPPG-Toolbox ships no PURE recipe for
+# it, so this is the BP4D+ fold-1 recipe. Pair it with
+# configs/interfaces/bigsmall_interface.yaml.
+#
+# Two differences from upstream remain. The readout is exempt from weight
+# decay here (see src/trainer.py); moot upstream, which decays nothing at
+# all. And a batch item upstream is a 3-frame chunk, so its batch of 180 is
+# 540 frames, where a batch item here is a whole 180-frame window: keep the
+# number for the paper, but expect to cut it for a run that has to fit in
+# memory.
+EPOCHS: 5
+BATCH_SIZE: 180              # train and test alike
+OPTIMIZER: AdamW              # upstream: optim.AdamW(lr, weight_decay=0)
+LR: 1e-3
+WEIGHT_DECAY: 0.0            # upstream decays nothing
+SCHEDULER: OneCycle          # upstream: OneCycleLR(max_lr=LR) over every step
+PRECISION: float32           # upstream trains in full precision
+DEVICE: gpu                  # gpu | cpu; gpu = CUDA or Apple MPS, refused if neither exists
+NUM_WORKERS: 4               # DataLoader workers (a machine key, not the paper's)
+# MODEL_FILE_NAME: bigsmall  # optional; default <model>_<test dataset>_<participant>
