@@ -1,0 +1,17 @@
+# RhythmFormer (Zou et al., 2024). Selected with --model rhythmformer.
+#
+# A model file carries the architecture's name plus the switches an experiment
+# may flip. Layer sizes are NOT here: the architecture is defined once, in
+# neural_methods/model/RhythmFormer.py, at its published values (64 channels,
+# three TPT stages of depth 2 at 2-, 4- and 8-frame temporal patches, top-40
+# region routing). Widths come from the interface — the stem takes
+# len(CHANNELS) inputs and its difference path 4 x len(CHANNELS), and there is
+# one complete copy of the network per entry of TRACES. Any frame size from
+# 16x16 and any window length run; on
+# configs/interfaces/rhythmformer_interface.yaml (128x128, 160 frames) the
+# forward pass is the paper's.
+NAME: RhythmFormer
+
+# Which INPUT_PREPROCESSING block the stem reads, by name. Must be listed in
+# the interface's INPUT_PREPROCESSING. The paper trains on Standardized.
+INPUT: Standardized

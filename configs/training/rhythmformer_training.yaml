@@ -1,0 +1,20 @@
+# RhythmFormer paper recipe. This file IS how rPPG-Toolbox trains
+# RhythmFormer (configs/train_configs/PURE_PURE_UBFC-rPPG_RHYTHMFORMER_BASIC.yaml
+# and its RhythmFormerTrainer): AdamW at 9e-3 with no weight decay, OneCycleLR
+# over the run, batch 4, 30 epochs, float32. Pair it with
+# configs/interfaces/rhythmformer_interface.yaml.
+#
+# One trainer-side difference: upstream z-scores each predicted window before
+# the criterion sees it, which its scale-free frequency and Pearson terms are
+# built around; src/trainer.py scores the prediction in the label's own units,
+# so an absolute signal stays absolute.
+EPOCHS: 30
+BATCH_SIZE: 4                # train and test alike
+OPTIMIZER: AdamW             # upstream: optim.AdamW(lr, weight_decay=0)
+LR: 9e-3
+WEIGHT_DECAY: 0.0            # upstream decays nothing
+SCHEDULER: OneCycle          # upstream: OneCycleLR(max_lr=LR) over every step
+PRECISION: float32           # upstream trains in full precision
+DEVICE: gpu                  # gpu | cpu; gpu = CUDA or Apple MPS, refused if neither exists
+NUM_WORKERS: 4               # DataLoader workers (a machine key, not the paper's)
+# MODEL_FILE_NAME: rhythmformer  # optional; default <model>_<test dataset>_<participant>
