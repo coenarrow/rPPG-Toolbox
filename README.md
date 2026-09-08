@@ -64,7 +64,7 @@ one.
 
 ## Algorithms
 
-**On the multi-signal contract today**: DeepPhys, PhysFormer, PhysMamba, PhysNet.
+**On the multi-signal contract today**: DeepPhys, PhysFormer, PhysMamba, PhysNet, iBVPNet.
 
 Each one trains and tests on the PURE dataset, holding out its first
 participant, on the model's own paper interface and paper training recipe
@@ -95,6 +95,12 @@ uv run python run_experiment.py --datasets pure \
     --test-participant-dataset pure --test-participant-id 01 \
     --model physnet --interface configs/interfaces/physnet_interface.yaml \
     --training configs/training/physnet_training.yaml
+
+# iBVPNet
+uv run python run_experiment.py --datasets pure \
+    --test-participant-dataset pure --test-participant-id 01 \
+    --model ibvpnet --interface configs/interfaces/ibvpnet_interface.yaml \
+    --training configs/training/ibvpnet_training.yaml
 ```
 
 Add `--limit-windows 8` for a wiring check. Outputs land in

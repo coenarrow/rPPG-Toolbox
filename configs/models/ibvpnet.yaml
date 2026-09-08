@@ -1,0 +1,13 @@
+# iBVPNet (Joshi and Cho, 2024). Selected with --model ibvpnet.
+#
+# A model file carries the architecture's name plus the switches an experiment
+# may flip. Layer sizes are NOT here: the architecture is defined once, in
+# neural_methods/model/iBVPNet.py, at its published values. Widths come from
+# the interface — the stem takes len(CHANNELS) inputs, and there is one
+# complete copy of the network per entry of TRACES. Any window length works:
+# the trunk's two temporal halvings round up to a multiple of 4 first.
+NAME: iBVPNet
+
+# Which INPUT_PREPROCESSING block the stem reads, by name. Must be listed in
+# the interface's INPUT_PREPROCESSING. The paper trains on Raw.
+INPUT: Raw

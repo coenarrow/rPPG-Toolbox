@@ -28,7 +28,10 @@ from src.config import ConfigError, build, load_yaml
 from neural_methods.batch import FRAMES, PREDICTIONS, split_signals
 from neural_methods.frame_transforms import DATA_TYPES
 from neural_methods.model.DeepPhys import DeepPhys
-from neural_methods.model import PhysFormer as physformer, PhysMamba as physmamba, PhysNet as physnet
+from neural_methods.model import (
+    PhysFormer as physformer, PhysMamba as physmamba, PhysNet as physnet,
+    iBVPNet as ibvpnet,
+)
 from neural_methods.model.PhysMamba import PhysMamba
 from src.interface import InterfaceConfig
 
@@ -82,12 +85,22 @@ class PhysNetConfig:
         _require_input_block(self.INPUT, interface, f"{where}: INPUT")
 
 
+@dataclass
+class iBVPNetConfig:
+    NAME: str = ""
+    INPUT: str = ""               # INPUT_PREPROCESSING block the stem reads
+
+    def validate(self, interface: InterfaceConfig, where: str) -> None:
+        _require_input_block(self.INPUT, interface, f"{where}: INPUT")
+
+
 #: ``NAME`` -> the dataclass its file is parsed into.
 MODEL_CONFIGS = {
     "DeepPhys": DeepPhysConfig,
     "PhysFormer": PhysFormerConfig,
     "PhysMamba": PhysMambaConfig,
     "PhysNet": PhysNetConfig,
+    "iBVPNet": iBVPNetConfig,
 }
 
 
@@ -257,12 +270,22 @@ def _build_physnet(cfg: PhysNetConfig, interface: InterfaceConfig) -> MultiTrace
         input_blocks=[cfg.INPUT], per_frame=False)
 
 
+def _build_ibvpnet(cfg: iBVPNetConfig, interface: InterfaceConfig) -> MultiTraceModel:
+    _require_min_frame(interface, "iBVPNet", ibvpnet.MIN_FRAME)
+    width = len(interface.CHANNELS)
+    return MultiTraceModel(
+        make_copy=lambda: ibvpnet.iBVPNet(in_channels=width),
+        channels=interface.CHANNELS, traces=interface.TRACES,
+        input_blocks=[cfg.INPUT], per_frame=False)
+
+
 #: ``NAME`` -> builder. One line per architecture, beside its config class.
 MODEL_BUILDERS = {
     "DeepPhys": _build_deepphys,
     "PhysFormer": _build_physformer,
     "PhysMamba": _build_physmamba,
     "PhysNet": _build_physnet,
+    "iBVPNet": _build_ibvpnet,
 }
 
 
