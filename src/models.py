@@ -33,6 +33,7 @@ from neural_methods.model import (
     iBVPNet as ibvpnet,
 )
 from neural_methods.model.PhysMamba import PhysMamba
+from neural_methods.model.TS_CAN import TSCAN
 from src.interface import InterfaceConfig
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -56,6 +57,26 @@ class DeepPhysConfig:
                 f"{where}: MOTION_INPUT and APPEARANCE_INPUT are both "
                 f"{self.MOTION_INPUT!r}; the two branches read different "
                 f"preprocessings of the frame")
+
+
+@dataclass
+class TSCANConfig:
+    NAME: str = ""
+    MOTION_INPUT: str = ""        # INPUT_PREPROCESSING block for the motion branch
+    APPEARANCE_INPUT: str = ""    # ... and for the appearance branch
+    FRAME_DEPTH: int = 0          # segment length the temporal shift shifts within
+
+    def validate(self, interface: InterfaceConfig, where: str) -> None:
+        for key in ("MOTION_INPUT", "APPEARANCE_INPUT"):
+            _require_input_block(getattr(self, key), interface, f"{where}: {key}")
+        if self.MOTION_INPUT == self.APPEARANCE_INPUT:
+            raise ConfigError(
+                f"{where}: MOTION_INPUT and APPEARANCE_INPUT are both "
+                f"{self.MOTION_INPUT!r}; the two branches read different "
+                f"preprocessings of the frame")
+        if self.FRAME_DEPTH <= 0:
+            raise ConfigError(
+                f"{where}: FRAME_DEPTH must be positive, got {self.FRAME_DEPTH}")
 
 
 @dataclass
@@ -101,6 +122,7 @@ MODEL_CONFIGS = {
     "PhysMamba": PhysMambaConfig,
     "PhysNet": PhysNetConfig,
     "iBVPNet": iBVPNetConfig,
+    "TSCAN": TSCANConfig,
 }
 
 
@@ -243,6 +265,19 @@ def _build_deepphys(cfg: DeepPhysConfig, interface: InterfaceConfig) -> MultiTra
         input_blocks=[cfg.MOTION_INPUT, cfg.APPEARANCE_INPUT], per_frame=True)
 
 
+def _build_tscan(cfg: TSCANConfig, interface: InterfaceConfig) -> MultiTraceModel:
+    if not interface.resizes or interface.RESIZE.H != interface.RESIZE.W:
+        raise ConfigError(
+            f"TSCAN sizes its dense layer from a square frame; the interface "
+            f"RESIZE is {{H: {interface.RESIZE.H}, W: {interface.RESIZE.W}}}")
+    width = len(interface.CHANNELS)
+    size = interface.RESIZE.H
+    return MultiTraceModel(
+        make_copy=lambda: TSCAN(in_channels=width, img_size=size, frame_depth=cfg.FRAME_DEPTH),
+        channels=interface.CHANNELS, traces=interface.TRACES,
+        input_blocks=[cfg.MOTION_INPUT, cfg.APPEARANCE_INPUT], per_frame=False)
+
+
 def _build_physmamba(cfg: PhysMambaConfig, interface: InterfaceConfig) -> MultiTraceModel:
     _require_min_frame(interface, "PhysMamba", physmamba.MIN_FRAME)
     width = len(interface.CHANNELS)
@@ -286,6 +321,7 @@ MODEL_BUILDERS = {
     "PhysMamba": _build_physmamba,
     "PhysNet": _build_physnet,
     "iBVPNet": _build_ibvpnet,
+    "TSCAN": _build_tscan,
 }
 
 
