@@ -30,8 +30,8 @@ from neural_methods.frame_transforms import DATA_TYPES
 from neural_methods.model.DeepPhys import DeepPhys
 from neural_methods.model.EfficientPhys import EfficientPhys
 from neural_methods.model import (
-    PhysFormer as physformer, PhysMamba as physmamba, PhysNet as physnet,
-    iBVPNet as ibvpnet,
+    BigSmall as bigsmall, PhysFormer as physformer, PhysMamba as physmamba,
+    PhysNet as physnet, iBVPNet as ibvpnet,
 )
 from neural_methods.model.FactorizePhys import FactorizePhys as factorizephys
 from neural_methods.model.PhysMamba import PhysMamba
@@ -103,6 +103,24 @@ class EfficientPhysConfig:
 
     def validate(self, interface: InterfaceConfig, where: str) -> None:
         _require_input_block(self.INPUT, interface, f"{where}: INPUT")
+
+
+@dataclass
+class BigSmallConfig:
+    NAME: str = ""
+    BIG_INPUT: str = ""           # INPUT_PREPROCESSING block for the big branch
+    SMALL_INPUT: str = ""         # ... and for the small branch
+    FRAME_DEPTH: int = 0          # segment length the big branch holds a frame
+                                  # for, and the temporal shift shifts within
+
+    def validate(self, interface: InterfaceConfig, where: str) -> None:
+        for key in ("BIG_INPUT", "SMALL_INPUT"):
+            _require_input_block(getattr(self, key), interface, f"{where}: {key}")
+        if self.BIG_INPUT == self.SMALL_INPUT:
+            raise ConfigError(
+                f"{where}: BIG_INPUT and SMALL_INPUT are both "
+                f"{self.BIG_INPUT!r}; the two branches read different "
+                f"preprocessings of the frame")
         if self.FRAME_DEPTH <= 0:
             raise ConfigError(
                 f"{where}: FRAME_DEPTH must be positive, got {self.FRAME_DEPTH}")
@@ -146,6 +164,7 @@ class iBVPNetConfig:
 
 #: ``NAME`` -> the dataclass its file is parsed into.
 MODEL_CONFIGS = {
+    "BigSmall": BigSmallConfig,
     "DeepPhys": DeepPhysConfig,
     "FactorizePhys": FactorizePhysConfig,
     "EfficientPhys": EfficientPhysConfig,
@@ -332,6 +351,16 @@ def _build_efficientphys(cfg: EfficientPhysConfig, interface: InterfaceConfig) -
         input_blocks=[cfg.INPUT], per_frame=False)
 
 
+def _build_bigsmall(cfg: BigSmallConfig, interface: InterfaceConfig) -> MultiTraceModel:
+    _require_min_frame(interface, "BigSmall", bigsmall.MIN_FRAME)
+    width = len(interface.CHANNELS)
+    return MultiTraceModel(
+        make_copy=lambda: bigsmall.BigSmall(in_channels=width,
+                                            frame_depth=cfg.FRAME_DEPTH),
+        channels=interface.CHANNELS, traces=interface.TRACES,
+        input_blocks=[cfg.BIG_INPUT, cfg.SMALL_INPUT], per_frame=False)
+
+
 def _build_physmamba(cfg: PhysMambaConfig, interface: InterfaceConfig) -> MultiTraceModel:
     _require_min_frame(interface, "PhysMamba", physmamba.MIN_FRAME)
     width = len(interface.CHANNELS)
@@ -370,6 +399,7 @@ def _build_ibvpnet(cfg: iBVPNetConfig, interface: InterfaceConfig) -> MultiTrace
 
 #: ``NAME`` -> builder. One line per architecture, beside its config class.
 MODEL_BUILDERS = {
+    "BigSmall": _build_bigsmall,
     "DeepPhys": _build_deepphys,
     "FactorizePhys": _build_factorizephys,
     "EfficientPhys": _build_efficientphys,

@@ -1,0 +1,21 @@
+# BigSmall (Narayanswamy et al., WACV 2024). Selected with --model bigsmall.
+#
+# A model file carries the architecture's name plus the switches an experiment
+# may flip. Layer sizes are NOT here: the architecture is defined once, in
+# neural_methods/model/BigSmall.py, at its published values (including the
+# 9x9 small branch). Widths come from the interface — the first conv of each
+# branch takes len(CHANNELS) inputs, and there is one complete copy of the
+# network per entry of TRACES.
+NAME: BigSmall
+
+# Which INPUT_PREPROCESSING block feeds each branch, by name. Both must be
+# listed in the interface's INPUT_PREPROCESSING. Upstream preprocessed
+# BIG_DATA_TYPE ['Standardized'] and SMALL_DATA_TYPE ['DiffNormalized'].
+BIG_INPUT: Standardized
+SMALL_INPUT: DiffNormalized
+
+# The segment length the big branch holds one frame for and the temporal
+# shift (TSM, wrapping) shifts within. Upstream MODEL.BIGSMALL.FRAME_DEPTH.
+# A window not a multiple of this ends in a shorter segment, shifted and
+# held on its own (see BigSmall.py).
+FRAME_DEPTH: 3

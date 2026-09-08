@@ -1,50 +1,90 @@
-"""BigSmall: Multitask Network for AU / Respiration / PPG
+"""BigSmall: a two-resolution network for physiological measurement.
 
-BigSmall: Efficient Multi-Task Learning
-For Physiological Measurements
-Girish Narayanswamy, Yujia (Nancy) Liu, Yuzhe Yang, Chengqian (Jack) Ma, 
+BigSmall: Efficient Multi-Task Learning For Physiological Measurements
+Girish Narayanswamy, Yujia (Nancy) Liu, Yuzhe Yang, Chengqian (Jack) Ma,
 Xin Liu, Daniel McDuff, Shwetak Patel
 
 https://arxiv.org/abs/2303.11573
+
+The architecture is the published one: a "big" branch of six convolutions on
+a high-resolution frame, run on one frame per segment of ``frame_depth`` and
+held for the rest of that segment, summed with a "small" branch of four
+convolutions on a tiny frame carrying the published wrapping temporal shift
+(WTSM — here the shared ``TSM`` of TS-CAN with ``wrap=True``), then one dense
+readout. Three things differ from the paper.
+
+First, the first conv of each branch takes ``in_channels`` inputs (the
+interface's channel count) instead of 3, as DeepPhys and TS-CAN do. Second,
+the multi-task head is gone: upstream emitted action units, respiration and
+BVP from the shared features, and here a model predicts one trace with one
+complete copy of the network per trace (``MultiTraceModel``), so only the BVP
+readout remains — respiration is a trace like any other on the standard
+interface.
+
+Third, the small branch's resolution is derived here rather than
+preprocessed. Upstream the dataset resized twice, a 144x144 Standardized
+frame for the big branch and a 9x9 DiffNormalized frame for the small one; an
+interface here states one ``RESIZE``, so the small branch average-pools its
+own preprocessing block down to ``small_size`` itself. At the paper's 144x144
+that pool is an exact 16x16 mean, the same reduction the upstream resize
+made; the difference is that it happens after the DiffNormalized
+preprocessing instead of before it.
+
+Any frame size is accepted, from 16x16 (the smallest the big branch's three
+pools leave anything of): the big branch's map is average-pooled to
+``small_size`` before the two branches are summed, which at 144x144 is the
+identity because the published pools already land on 9x9. Any window length
+is accepted too: the temporal shift is in-clip and adaptive, and a window
+that is not a multiple of ``frame_depth`` ends in a shorter segment, shifted
+and held on its own.
+
+A clip backbone on the multi-signal contract: ``(B, C_in, T, H, W)`` in,
+``(B, 1, T)`` out, preprocessing done by the dataset, the loss owned by the
+trainer. All reshaping is einops.
 """
 
 import torch
 import torch.nn as nn
+from einops import rearrange, repeat
+
+from neural_methods.model.TS_CAN import TSM
+
+#: The big branch pools 2x, 2x then 4x; a smaller frame pools to nothing.
+MIN_FRAME = 16
 
 
-#####################################################
-############ Wrapping Time Shift Module #############
-#####################################################
-class WTSM(nn.Module):
-    def __init__(self, n_segment=3, fold_div=3):
-        super(WTSM, self).__init__()
-        self.n_segment = n_segment
-        self.fold_div = fold_div
-
-    def forward(self, x):
-        nt, c, h, w = x.size()
-        n_batch = nt // self.n_segment
-        x = x.view(n_batch, self.n_segment, c, h, w)
-        fold = c // self.fold_div
-        out = torch.zeros_like(x)
-        out[:, :-1, :fold] = x[:, 1:, :fold]  # shift left
-        out[:, -1, :fold] = x[:, 0, :fold] # wrap left
-        out[:, 1:, fold: 2 * fold] = x[:, :-1, fold: 2 * fold]  # shift right
-        out[:, 0, fold: 2 * fold] = x[:, -1, fold: 2 * fold]  # wrap right
-        out[:, :, 2 * fold:] = x[:, :, 2 * fold:]  # no shift for final fold
-        return out.view(nt, c, h, w)
-
-
-
-#######################################################################################
-##################################### BigSmall Model ##################################
-#######################################################################################
 class BigSmall(nn.Module):
 
-    def __init__(self, in_channels=3, nb_filters1=32, nb_filters2=64, kernel_size=3, 
-                 dropout_rate1=0.25, dropout_rate2=0.5, dropout_rate3=0.5, pool_size1=(2, 2), pool_size2=(4,4),
-                 nb_dense=128, out_size_bvp=1, out_size_resp=1, out_size_au=12, n_segment=3):
+    def __init__(self,
+                 in_channels=3,
+                 nb_filters1=32,
+                 nb_filters2=64,
+                 kernel_size=3,
+                 dropout_rate1=0.25,
+                 dropout_rate2=0.5,
+                 dropout_rate3=0.5,
+                 pool_size1=(2, 2),
+                 pool_size2=(4, 4),
+                 nb_dense=128,
+                 frame_depth=3,
+                 small_size=9):
+        """Definition of BigSmall.
 
+        Args:
+          in_channels: the number of input channels of EACH branch (big,
+            small). Default: 3
+          frame_depth: the segment length the big branch holds one frame for
+            and the temporal shift shifts within. Default: 3
+          small_size: height/width the small branch's block is pooled to, and
+            the size the two branches are summed at. Default: 9, the
+            published small resolution.
+        Returns:
+          BigSmall model.
+
+        At the defaults, and at the paper's 144x144 frames, this is the
+        original network's big branch, small branch and BVP head, layer for
+        layer.
+        """
         super(BigSmall, self).__init__()
 
         self.in_channels = in_channels
@@ -57,12 +97,8 @@ class BigSmall(nn.Module):
         self.nb_filters1 = nb_filters1
         self.nb_filters2 = nb_filters2
         self.nb_dense = nb_dense
-
-        self.out_size_bvp = out_size_bvp
-        self.out_size_resp = out_size_resp
-        self.out_size_au = out_size_au
-
-        self.n_segment = n_segment
+        self.frame_depth = frame_depth
+        self.small_size = small_size
 
         # Big Convolutional Layers
         self.big_conv1 = nn.Conv2d(self.in_channels, self.nb_filters1, kernel_size=self.kernel_size, padding=(1, 1), bias=True)
@@ -80,43 +116,54 @@ class BigSmall(nn.Module):
         self.big_avg_pooling3 = nn.AvgPool2d(self.pool_size2)
         self.big_dropout3 = nn.Dropout(self.dropout_rate3)
 
-        # TSM layers
-        self.TSM_1 = WTSM(n_segment=self.n_segment)
-        self.TSM_2 = WTSM(n_segment=self.n_segment)
-        self.TSM_3 = WTSM(n_segment=self.n_segment)
-        self.TSM_4 = WTSM(n_segment=self.n_segment)
-        
+        # The branches are summed, so the big branch's map is pooled to the
+        # small branch's size. At 144x144 the pools above already land on
+        # 9x9 and this is the identity.
+        self.big_to_small = nn.AdaptiveAvgPool2d(self.small_size)
+
+        # The small branch's resolution, taken from the interface's frame
+        # here instead of from a second preprocessing pass. At 144x144 this
+        # is an exact 16x16 mean.
+        self.small_pooling = nn.AdaptiveAvgPool2d(self.small_size)
+
+        # TSM layers: the published WTSM, the shared shift wrapping at the
+        # ends of each segment.
+        self.TSM_1 = TSM(frame_depth=self.frame_depth, wrap=True)
+        self.TSM_2 = TSM(frame_depth=self.frame_depth, wrap=True)
+        self.TSM_3 = TSM(frame_depth=self.frame_depth, wrap=True)
+        self.TSM_4 = TSM(frame_depth=self.frame_depth, wrap=True)
+
         # Small Convolutional Layers
-        self.small_conv1 = nn.Conv2d(self.in_channels, self.nb_filters1, kernel_size=self.kernel_size, padding=(1,1), bias=True)
-        self.small_conv2 = nn.Conv2d(self.nb_filters1, self.nb_filters1, kernel_size=self.kernel_size, padding=(1,1), bias=True)
-        self.small_conv3 = nn.Conv2d(self.nb_filters1, self.nb_filters1, kernel_size=self.kernel_size, padding=(1,1), bias=True)
-        self.small_conv4 = nn.Conv2d(self.nb_filters1, self.nb_filters2, kernel_size=self.kernel_size, padding=(1,1), bias=True)
+        self.small_conv1 = nn.Conv2d(self.in_channels, self.nb_filters1, kernel_size=self.kernel_size, padding=(1, 1), bias=True)
+        self.small_conv2 = nn.Conv2d(self.nb_filters1, self.nb_filters1, kernel_size=self.kernel_size, padding=(1, 1), bias=True)
+        self.small_conv3 = nn.Conv2d(self.nb_filters1, self.nb_filters1, kernel_size=self.kernel_size, padding=(1, 1), bias=True)
+        self.small_conv4 = nn.Conv2d(self.nb_filters1, self.nb_filters2, kernel_size=self.kernel_size, padding=(1, 1), bias=True)
 
-        # AU Fully Connected Layers 
-        self.au_fc1 = nn.Linear(5184, self.nb_dense, bias=True)
-        self.au_fc2 = nn.Linear(self.nb_dense, self.out_size_au, bias=True)
+        # BVP Fully Connected Layers
+        features = self.nb_filters2 * self.small_size * self.small_size   # 5184 published
+        self.bvp_fc1 = nn.Linear(features, self.nb_dense, bias=True)
+        self.bvp_fc2 = nn.Linear(self.nb_dense, 1, bias=True)
 
-        # BVP Fully Connected Layers 
-        self.bvp_fc1 = nn.Linear(5184, self.nb_dense, bias=True)
-        self.bvp_fc2 = nn.Linear(self.nb_dense, self.out_size_bvp, bias=True)
+    def output_layers(self):
+        """The activation-free readout."""
+        return (self.bvp_fc2,)
 
-        # Resp Fully Connected Layers 
-        self.resp_fc1 = nn.Linear(5184, self.nb_dense, bias=True)
-        self.resp_fc2 = nn.Linear(self.nb_dense, self.out_size_resp, bias=True)
+    def forward(self, video: torch.Tensor) -> torch.Tensor:
+        """``(B, 2 * in_channels, T, H, W)`` -> ``(B, 1, T)``: the big block
+        first on the channel axis, the small block second, each folded to one
+        2D frame per row for the published network."""
+        b, _, t, height, width = video.shape
+        if min(height, width) < MIN_FRAME:
+            raise ValueError(
+                f"BigSmall pools frames 16x, so they must be at least "
+                f"{MIN_FRAME}x{MIN_FRAME}; got {height}x{width}.")
+        big_input = video[:, :self.in_channels]
+        small_input = video[:, self.in_channels:2 * self.in_channels]
 
-
-    def forward(self, inputs, params=None):
-
-        big_input = inputs[0] # big res 
-        small_input = inputs[1] # small res
-
-        # reshape Big 
-        nt, c, h, w = big_input.size()
-        n_batch = nt // self.n_segment
-        big_input = big_input.view(n_batch, self.n_segment, c, h, w)
-        big_input = torch.moveaxis(big_input, 1, 2) # color channel to idx 1, sequence channel to idx 2
-        big_input = big_input[:, :, 0, :, :] # use only first frame in sequences 
-
+        # The big branch sees the first frame of each segment only, as
+        # upstream does; a trailing partial segment contributes its own.
+        big_input = rearrange(big_input[:, :, ::self.frame_depth],
+                              "b c s h w -> (b s) c h w")
 
         # Big Conv block 1
         b1 = nn.functional.relu(self.big_conv1(big_input))
@@ -135,43 +182,39 @@ class BigSmall(nn.Module):
         b10 = nn.functional.relu(self.big_conv6(b9))
         b11 = self.big_avg_pooling3(b10)
         b12 = self.big_dropout3(b11)
+        b13 = self.big_to_small(b12)
 
-        # Reformat Big Shape For Concat w/ Small Branch
-        b13 = torch.stack((b12, b12, b12), 2) #TODO: this is hardcoded for num_segs = 3: change this...
-        b14 = torch.moveaxis(b13, 1, 2)
-        bN, bD, bC, bH, bW = b14.size()
-        b15 = b14.reshape(int(bN*bD), bC, bH, bW)
+        # Each segment's one big frame is held for the whole segment, so the
+        # branches line up frame for frame. The last segment is short when
+        # frame_depth does not divide the window.
+        b14 = repeat(b13, "(b s) c h w -> b (s r) c h w", b=b, r=self.frame_depth)
+        b15 = rearrange(b14[:, :t], "b t c h w -> (b t) c h w")
+
+        # Small branch, pooled to its published resolution and unfolded back
+        # around each temporal shift.
+        s0 = rearrange(small_input, "b c t h w -> (b t) c h w")
+        s0 = rearrange(self.small_pooling(s0), "(b t) c h w -> b t c h w", b=b)
 
         # Small Conv block 1
-        s1 = self.TSM_1(small_input)
+        s1 = rearrange(self.TSM_1(s0), "b t c h w -> (b t) c h w")
         s2 = nn.functional.relu(self.small_conv1(s1))
-        s3 = self.TSM_2(s2)
+        s2 = rearrange(s2, "(b t) c h w -> b t c h w", b=b)
+        s3 = rearrange(self.TSM_2(s2), "b t c h w -> (b t) c h w")
         s4 = nn.functional.relu(self.small_conv2(s3))
+        s4 = rearrange(s4, "(b t) c h w -> b t c h w", b=b)
 
         # Small Conv block 2
-        s5 = self.TSM_3(s4)
+        s5 = rearrange(self.TSM_3(s4), "b t c h w -> (b t) c h w")
         s6 = nn.functional.relu(self.small_conv3(s5))
-        s7 = self.TSM_4(s6)
+        s6 = rearrange(s6, "(b t) c h w -> b t c h w", b=b)
+        s7 = rearrange(self.TSM_4(s6), "b t c h w -> (b t) c h w")
         s8 = nn.functional.relu(self.small_conv4(s7))
 
         # Shared Layers
-        concat = b15 + s8 # sum layers
-
-        # share1 = concat.view(concat.size(0), -1) # flatten entire tensors
-        share1 = concat.reshape(concat.size(0), -1)
-
-        # AU Output Layers
-        aufc1 = nn.functional.relu(self.au_fc1(share1))
-        au_out = self.au_fc2(aufc1)
+        shared = rearrange(b15 + s8, "n c h w -> n (c h w)")
 
         # BVP Output Layers
-        bvpfc1 = nn.functional.relu(self.bvp_fc1(share1))
-        bvp_out = self.bvp_fc2(bvpfc1)
+        bvpfc1 = nn.functional.relu(self.bvp_fc1(shared))
+        out = self.bvp_fc2(bvpfc1)
 
-        # Resp Output Layers
-        respfc1 = nn.functional.relu(self.resp_fc1(share1))
-        resp_out = self.resp_fc2(respfc1)
-
-        return au_out, bvp_out, resp_out
-
-
+        return rearrange(out, "(b t) s -> b s t", b=b)

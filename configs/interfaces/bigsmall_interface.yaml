@@ -1,0 +1,35 @@
+# BigSmall paper interface. This file IS the rPPG-Toolbox configuration of
+# BigSmall (144x144 big frames at 25 fps, Standardized + DiffNormalized
+# inputs, one PPG trace, MSE loss); run it to check the migration against the
+# paper. BigSmall was published on BP4D+, and rPPG-Toolbox ships no PURE
+# recipe for it, so this transcribes
+# configs/train_configs/BP4D_BP4D_BIGSMALL_FOLD1.yaml at the pre-overhaul tag.
+# Nothing Neckflix-specific belongs here: the standard interface is where
+# every model meets the pressure traces.
+#
+# Every key is required — there are no defaults. See docs/adding_a_model.md.
+FS: 25.0                       # frame rate the model sees; faster stores are
+                               # decimated to it
+UPSAMPLING: refuse             # slower stores: refuse | interpolate
+WINDOW_SECONDS: 7.2            # 180 frames. Upstream CHUNK_LENGTH is 3, but
+                               # that is a batching device for the 3-frame
+                               # WTSM: every chunk is stitched back into the
+                               # whole video before scoring. Strided windows
+                               # do not stitch, so a 3-frame window would
+                               # score nothing; this is the toolbox's standard
+                               # 180-frame chunk instead, which the in-clip
+                               # WTSM computes exactly (180 = 60 x 3).
+WINDOW_STRIDE: 1.0             # seconds the test set steps between windows
+CHANNELS: [R, G, B]            # ordered camera channels, subset of R,G,B,I,D
+TRACES: [PPG]                  # of the paper's three heads (AU, respiration,
+                               # BVP) only BVP is a trace here; the others are
+                               # separate copies of the network on an
+                               # interface that asks for them
+RESIZE: {H: 144, W: 144}       # upstream BIG_H / BIG_W; the 9x9 small branch
+                               # is pooled from this inside the model
+INPUT_PREPROCESSING: [Standardized, DiffNormalized]   # upstream
+                               # BIG_DATA_TYPE then SMALL_DATA_TYPE
+LABEL_PREPROCESSING:           # upstream LABEL_TYPE DiffNormalized; zscore is
+  PPG: zscore                  # the nearest of raw | zscore
+LOSS:                          # upstream trains the BVP head with MSE
+  PPG: {MSE: 1.0}              # (criterionBVP in BigSmallTrainer)
