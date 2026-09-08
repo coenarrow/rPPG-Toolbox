@@ -1,5 +1,5 @@
 [submodule "external/neckflix"]
-	path = external/neckflix
+	path = dataset/cachers/neckflix
 	url = https://github.com/coenarrow/Neckflix.git
 	branch = main
 	update = merge
