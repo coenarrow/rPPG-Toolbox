@@ -28,6 +28,7 @@ from src.config import ConfigError, build, load_yaml
 from neural_methods.batch import FRAMES, PREDICTIONS, split_signals
 from neural_methods.frame_transforms import DATA_TYPES
 from neural_methods.model.DeepPhys import DeepPhys
+from neural_methods.model.EfficientPhys import EfficientPhys
 from neural_methods.model import (
     PhysFormer as physformer, PhysMamba as physmamba, PhysNet as physnet,
     iBVPNet as ibvpnet,
@@ -44,6 +45,8 @@ MODEL_CONFIG_DIR = REPO_ROOT / "configs" / "models"
 # ---------------------------------------------------------------------------
 # Per-architecture config classes
 # ---------------------------------------------------------------------------
+
+
 @dataclass
 class DeepPhysConfig:
     NAME: str = ""
@@ -93,6 +96,19 @@ class FactorizePhysConfig:
 
 
 @dataclass
+class EfficientPhysConfig:
+    NAME: str = ""
+    INPUT: str = ""               # INPUT_PREPROCESSING block the network reads
+    FRAME_DEPTH: int = 0          # segment length the temporal shift shifts within
+
+    def validate(self, interface: InterfaceConfig, where: str) -> None:
+        _require_input_block(self.INPUT, interface, f"{where}: INPUT")
+        if self.FRAME_DEPTH <= 0:
+            raise ConfigError(
+                f"{where}: FRAME_DEPTH must be positive, got {self.FRAME_DEPTH}")
+
+
+@dataclass
 class PhysMambaConfig:
     NAME: str = ""
     INPUT: str = ""               # INPUT_PREPROCESSING block the stem reads
@@ -132,6 +148,7 @@ class iBVPNetConfig:
 MODEL_CONFIGS = {
     "DeepPhys": DeepPhysConfig,
     "FactorizePhys": FactorizePhysConfig,
+    "EfficientPhys": EfficientPhysConfig,
     "PhysFormer": PhysFormerConfig,
     "PhysMamba": PhysMambaConfig,
     "PhysNet": PhysNetConfig,
@@ -301,6 +318,20 @@ def _build_factorizephys(cfg: FactorizePhysConfig, interface: InterfaceConfig) -
         input_blocks=[cfg.INPUT], per_frame=False)
 
 
+def _build_efficientphys(cfg: EfficientPhysConfig, interface: InterfaceConfig) -> MultiTraceModel:
+    if not interface.resizes or interface.RESIZE.H != interface.RESIZE.W:
+        raise ConfigError(
+            f"EfficientPhys sizes its dense layer from a square frame; the interface "
+            f"RESIZE is {{H: {interface.RESIZE.H}, W: {interface.RESIZE.W}}}")
+    width = len(interface.CHANNELS)
+    size = interface.RESIZE.H
+    return MultiTraceModel(
+        make_copy=lambda: EfficientPhys(in_channels=width, img_size=size,
+                                        frame_depth=cfg.FRAME_DEPTH),
+        channels=interface.CHANNELS, traces=interface.TRACES,
+        input_blocks=[cfg.INPUT], per_frame=False)
+
+
 def _build_physmamba(cfg: PhysMambaConfig, interface: InterfaceConfig) -> MultiTraceModel:
     _require_min_frame(interface, "PhysMamba", physmamba.MIN_FRAME)
     width = len(interface.CHANNELS)
@@ -341,6 +372,7 @@ def _build_ibvpnet(cfg: iBVPNetConfig, interface: InterfaceConfig) -> MultiTrace
 MODEL_BUILDERS = {
     "DeepPhys": _build_deepphys,
     "FactorizePhys": _build_factorizephys,
+    "EfficientPhys": _build_efficientphys,
     "PhysFormer": _build_physformer,
     "PhysMamba": _build_physmamba,
     "PhysNet": _build_physnet,
