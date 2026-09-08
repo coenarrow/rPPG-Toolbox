@@ -2,9 +2,10 @@
 
 How to put a new architecture on the multi-signal contract, whether you are
 writing it from scratch or migrating one of the upstream rPPG-Toolbox models.
-DeepPhys is the worked example throughout: it is the simplest model on the
-contract (PhysMamba and PhysFormer are the others), and every file it touches
-is the file yours will touch.
+DeepPhys is the worked example throughout: it is the simplest of the ten
+models on the contract today (DeepPhys, PhysFormer, PhysMamba, PhysNet,
+iBVPNet, TS-CAN, FactorizePhys, EfficientPhys, BigSmall, RhythmFormer), and
+every file it touches is the file yours will touch.
 
 The authority on *how* a model is run is [`run_experiment.py`](../run_experiment.py)
 and the modules it imports from [`src/`](../src/). `main.py` and the
@@ -49,10 +50,10 @@ Copyable starting points:
 
 - [`neural_methods/model/_template.py`](../neural_methods/model/_template.py)
   for the backbone (step 1);
-- [`configs/model_template.yaml`](../configs/model_template.yaml) for the
-  model config (step 3);
-- [`configs/interface_template.yaml`](../configs/interface_template.yaml) for
-  the paper interface (step 4);
+- [`configs/models/_model_template.yaml`](../configs/models/_model_template.yaml)
+  for the model config (step 3);
+- [`configs/interfaces/_interface_template.yaml`](../configs/interfaces/_interface_template.yaml)
+  for the paper interface (step 4);
 - the code blocks in steps 2 and 5 below for the registration and the test.
 
 ## Step 1: the backbone
@@ -89,8 +90,17 @@ Exactly one of two shapes, declared by the builder's `per_frame` flag:
 
 | `per_frame` | Input | Output | Who |
 | ------------- | ------- | -------- | ----- |
-| `True` | `(N, C_in, H, W)`, one frame per row; `T` is folded into `N` by the wrapper | `(N, 1)` | DeepPhys, TS-CAN, EfficientPhys |
-| `False` | `(B, C_in, T, H, W)`, a whole clip | `(B, 1, T)` | PhysNet, PhysFormer, PhysMamba |
+| `True` | `(N, C_in, H, W)`, one frame per row; `T` is folded into `N` by the wrapper | `(N, 1)` | DeepPhys |
+| `False` | `(B, C_in, T, H, W)`, a whole clip | `(B, 1, T)` | PhysNet, PhysFormer, PhysMamba, iBVPNet, FactorizePhys, RhythmFormer, TS-CAN, EfficientPhys, BigSmall |
+
+TS-CAN, EfficientPhys and BigSmall take clips rather than per-frame rows even
+though they are built around a temporal shift: that shift has to know where
+each clip starts and ends to be adaptive within it, and a batch the wrapper
+has already folded to `(N, C, H, W)` cannot tell it that, so all three fold
+`(b t)` back inside the module instead. The shift itself is the shared `TSM`
+in [`neural_methods/model/TS_CAN.py`](../neural_methods/model/TS_CAN.py),
+imported by EfficientPhys directly and by BigSmall with `wrap=True` for its
+wrap-around variant. DeepPhys is the only backbone that stays `per_frame`.
 
 The output is one trace, width one. Never widen the readout to several
 signals and never add per-signal heads on a shared trunk: the wrapper makes
@@ -148,9 +158,11 @@ temporal_divisor = 4     # the window length must be a multiple of this
 temporal_length = 128    # the window length must be exactly this
 ```
 
-The trainer reads them off the first copy and refuses a mismatched
-`WINDOW_SECONDS` in seconds rather than truncating. They are a stop on the
-way to the adaptive stage, not a destination.
+None of the ten migrated models declares either any more — every one reached
+the adaptive stage described above — but `src/trainer.py` still honours them
+for a model that is mid-migration: it reads them off the first copy and
+refuses a mismatched `WINDOW_SECONDS` rather than truncating. They are a stop
+on the way to the adaptive stage, not a destination.
 
 ### House rules
 
@@ -239,7 +251,7 @@ from neural_methods.model.MyNet import MyNet
 
 **File:** `configs/models/<name>.yaml`. The stem is what `--model <name>`
 resolves; keep it lowercase (`deepphys.yaml`, `mynet.yaml`). Copy
-[`configs/model_template.yaml`](../configs/model_template.yaml).
+[`configs/models/_model_template.yaml`](../configs/models/_model_template.yaml).
 
 ```yaml
 NAME: MyNet          # a key of MODEL_CONFIGS in src/models.py
@@ -262,8 +274,8 @@ architecture's `NAME` lowercased (`PhysFormer` reads
 `physformer_interface.yaml`). This is what the `configs/interfaces/`
 directory is for: when migrating a model, this file **is** the paper's
 configuration of it. Nothing in code declares the paper setup. Copy
-[`configs/interface_template.yaml`](../configs/interface_template.yaml) and
-set every key to the rPPG-Toolbox definition of the model:
+[`configs/interfaces/_interface_template.yaml`](../configs/interfaces/_interface_template.yaml)
+and set every key to the rPPG-Toolbox definition of the model:
 
 | Key | Upstream source |
 | ----- | ----------------- |
@@ -282,14 +294,15 @@ DLDL frequency loss of PhysFormer, say), note it in the file rather than
 substituting something.
 
 **Its twin:** `configs/training/<name>_training.yaml`, the paper's training
-recipe. Copy [`configs/training_template.yaml`](../configs/training_template.yaml)
+recipe. Copy
+[`configs/training/_training_template.yaml`](../configs/training/_training_template.yaml)
 and fill it from two upstream sources, because the YAML alone does not say
 how the model was optimised:
 
 | Key | Upstream source |
 | ----- | ----------------- |
 | `EPOCHS`, `BATCH_SIZE`, `LR` | `TRAIN` block of the `train_configs/` file |
-| `OPTIMIZER`, `WEIGHT_DECAY` | the `optim.*` call in `neural_methods/trainer/<Name>Trainer.py` |
+| `OPTIMIZER`, `WEIGHT_DECAY` | the `optim.*` call in `neural_methods/trainer/<Name>Trainer.py` at the `pre-overhaul` git tag (the legacy per-model trainers are deleted from the working tree; `git show pre-overhaul:neural_methods/trainer/<Name>Trainer.py` is where they still live) |
 | `SCHEDULER` | the `lr_scheduler.*` call in the same trainer; a `StepLR` that never fires inside `EPOCHS` is `Constant` |
 | `PRECISION` | `float32` unless the trainer autocasts |
 
@@ -303,14 +316,21 @@ being exempt from weight decay here when upstream decayed everything.
 Nothing in code checks a run against this file; passing it as
 `--interface` is what makes a run the paper's configuration. Model
 comparisons then run every model on one standard interface instead, which
-is why step 1 insists the model accepts any size. The three paper interfaces
+is why step 1 insists the model accepts any size. The ten paper interfaces
 today:
 
 | Model | Frames | Window | Input | Loss | Recipe |
 | ------- | -------- | -------- | ------- | ------ | -------- |
 | DeepPhys | 72x72 | 180 frames | DiffNormalized + Standardized | MSE | AdamW 9e-3, OneCycle, 30 epochs |
-| PhysMamba | 128x128 | 128 frames | DiffNormalized | negative Pearson | Adam 3e-3, decay 5e-4, OneCycle, 20 epochs |
 | PhysFormer | 128x128 | 160 frames | DiffNormalized | negative Pearson | Adam 1e-4, decay 5e-5, constant, 10 epochs |
+| PhysMamba | 128x128 | 128 frames | DiffNormalized | negative Pearson | Adam 3e-3, decay 5e-4, OneCycle, 20 epochs |
+| PhysNet | 72x72 | 128 frames | DiffNormalized | negative Pearson | Adam 9e-3, OneCycle, 30 epochs |
+| iBVPNet | 72x72 | 160 frames | Raw | negative Pearson | Adam 1e-3, OneCycle, 30 epochs |
+| TS-CAN | 72x72 | 180 frames | DiffNormalized + Standardized | MSE | AdamW 9e-3, OneCycle, 30 epochs |
+| FactorizePhys | 72x72 | 160 frames | Raw | negative Pearson | Adam 1e-3, OneCycle, 10 epochs |
+| EfficientPhys | 72x72 | 180 frames | Standardized | MSE | AdamW 9e-3, OneCycle, 30 epochs |
+| BigSmall | 144x144 | 180 frames | Standardized + DiffNormalized | MSE | AdamW 1e-3, OneCycle, 5 epochs |
+| RhythmFormer | 128x128 | 160 frames | Standardized | negative Pearson | AdamW 9e-3, OneCycle, 30 epochs |
 
 ## Step 5: one smoke test
 
@@ -386,11 +406,14 @@ Outputs land in `runs/<model>_<dataset>_<participant>/`:
 
 ## Migrating an upstream rPPG-Toolbox model
 
-The upstream models in `neural_methods/model/` that are not yet registered
-(PhysNet, TS-CAN, EfficientPhys, PhysFormer, PhysMamba, ...) predict one BVP
-trace from RGB and carry conventions this contract drops. Migrating one is
-editing the module in place, not writing a new one beside it, and the diff is
-almost always these items:
+Ten upstream rPPG-Toolbox models are migrated and registered in
+`MODEL_CONFIGS` today (see the intro). One upstream model in
+`neural_methods/model/` remains unmigrated —
+[`PhysHydra.py`](../neural_methods/model/PhysHydra.py) — and it stays there
+deliberately, out of scope rather than pending. An upstream model, before
+migration, predicts one BVP trace from RGB and carries conventions this
+contract drops. Migrating one is editing the module in place, not writing a
+new one beside it, and the diff is almost always these items:
 
 1. **Widen the first layer.** Replace the hard-coded `3` on the first conv
    with an `in_channels` constructor argument defaulting to `3`.
@@ -411,10 +434,12 @@ almost always these items:
    and wrap what it cannot in an adaptive stage that is the identity at the
    paper's shape (step 1, "Any frame size, any window length"). Only as an
    interim, declare `temporal_divisor` or `temporal_length` instead.
-8. **Decide `per_frame`.** Does the paper feed single frames (with `T`
-   hidden in the batch axis, as TS-CAN's temporal shift does) or clips?
-   That answer is the builder's `per_frame` flag; the module itself does
-   not need to know.
+8. **Decide `per_frame`.** Does the paper feed single frames, with `T` hidden
+   in the batch axis, or clips? A temporal shift that must stay adaptive
+   within a clip (TS-CAN, EfficientPhys, BigSmall) needs the clip, so it
+   folds `(b t)` inside the module instead and takes `per_frame=False`. That
+   answer is the builder's `per_frame` flag; the module itself does not need
+   to know.
 
 Then steps 2 to 5 above. DeepPhys shows the finished form: compare
 `neural_methods/model/DeepPhys.py` against the upstream file to see exactly

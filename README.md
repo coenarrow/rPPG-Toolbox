@@ -116,8 +116,8 @@ of them and the median of their rates when a window carries more than one.
 To put another architecture on the contract, new or migrated from upstream,
 follow [docs/adding_a_model.md](docs/adding_a_model.md): one backbone module,
 one config class and builder, one YAML, one smoke test. Templates to copy sit
-at [`configs/model_template.yaml`](configs/model_template.yaml) and
-[`neural_methods/model/_template.py`](neural_methods/model/_template.py).
+at [`configs/models/_model_template.yaml`](configs/models/_model_template.yaml)
+and [`neural_methods/model/_template.py`](neural_methods/model/_template.py).
 
 The original papers are linked from the
 [upstream README](https://github.com/ubicomplab/rPPG-Toolbox#notebook-algorithms).
