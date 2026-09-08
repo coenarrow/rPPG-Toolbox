@@ -1,0 +1,20 @@
+# TS-CAN paper interface. This file IS the rPPG-Toolbox configuration of
+# TS-CAN (72x72 frames, 180-frame chunks at 30 fps, DiffNormalized +
+# Standardized inputs, one PPG trace, MSE loss); run it to check the
+# migration against the paper. Nothing Neckflix-specific belongs here: the
+# standard interface is where every model meets the pressure traces.
+#
+# Every key is required — there are no defaults. See docs/adding_a_model.md.
+FS: 30.0                       # frame rate the model sees; faster stores are
+                               # decimated to it
+UPSAMPLING: refuse             # slower stores: refuse | interpolate
+WINDOW_SECONDS: 6.0            # 180 frames, the upstream CHUNK_LENGTH
+WINDOW_STRIDE: 1.0             # seconds the test set steps between windows
+CHANNELS: [R, G, B]            # ordered camera channels, subset of R,G,B,I,D
+TRACES: [PPG]                  # the paper predicts BVP and nothing else
+RESIZE: {H: 72, W: 72}         # upstream TS-CAN frame size
+INPUT_PREPROCESSING: [DiffNormalized, Standardized]   # motion + appearance
+LABEL_PREPROCESSING:           # upstream LABEL_TYPE DiffNormalized; zscore is
+  PPG: zscore                  # the nearest of raw | zscore
+LOSS:                          # upstream trains TS-CAN with MSE
+  PPG: {MSE: 1.0}

@@ -1,0 +1,19 @@
+# TS-CAN (Liu et al., NeurIPS 2020). Selected with --model tscan.
+#
+# A model file carries the architecture's name plus the switches an experiment
+# may flip. Layer sizes are NOT here: the architecture is defined once, in
+# neural_methods/model/TS_CAN.py, at its published values. Widths come from
+# the interface — the first conv of each branch takes len(CHANNELS) inputs,
+# and there is one complete copy of the network per entry of TRACES.
+NAME: TSCAN
+
+# Which INPUT_PREPROCESSING block feeds each branch, by name. Both must be
+# listed in the interface's INPUT_PREPROCESSING.
+MOTION_INPUT: DiffNormalized
+APPEARANCE_INPUT: Standardized
+
+# The segment length the temporal shift (TSM) shifts within. Upstream
+# MODEL.TSCAN.FRAME_DEPTH; the PURE recipe trains at 10, not the class
+# default of 20. A window not a multiple of this shifts its trailing
+# frames as their own shorter segment (see TSM in TS_CAN.py).
+FRAME_DEPTH: 10
