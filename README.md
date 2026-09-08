@@ -73,34 +73,19 @@ participant, on the model's own paper interface and paper training recipe
 
 ```bash
 # DeepPhys
-uv run python run_experiment.py --datasets pure \
-    --test-participant-dataset pure --test-participant-id 01 \
-    --model deepphys --interface configs/interfaces/deepphys_interface.yaml \
-    --training configs/training/deepphys_training.yaml
+uv run python run_experiment.py --datasets pure --test-participant-dataset pure --test-participant-id 01 --model deepphys --interface configs/interfaces/deepphys_interface.yaml --training configs/training/deepphys_training.yaml
 
 # PhysFormer
-uv run python run_experiment.py --datasets pure \
-    --test-participant-dataset pure --test-participant-id 01 \
-    --model physformer --interface configs/interfaces/physformer_interface.yaml \
-    --training configs/training/physformer_training.yaml
+uv run python run_experiment.py --datasets pure --test-participant-dataset pure --test-participant-id 01 --model physformer --interface configs/interfaces/physformer_interface.yaml --training configs/training/physformer_training.yaml
 
 # PhysMamba
-uv run python run_experiment.py --datasets pure \
-    --test-participant-dataset pure --test-participant-id 01 \
-    --model physmamba --interface configs/interfaces/physmamba_interface.yaml \
-    --training configs/training/physmamba_training.yaml
+uv run python run_experiment.py --datasets pure --test-participant-dataset pure --test-participant-id 01 --model physmamba --interface configs/interfaces/physmamba_interface.yaml --training configs/training/physmamba_training.yaml
 
 # PhysNet
-uv run python run_experiment.py --datasets pure \
-    --test-participant-dataset pure --test-participant-id 01 \
-    --model physnet --interface configs/interfaces/physnet_interface.yaml \
-    --training configs/training/physnet_training.yaml
+uv run python run_experiment.py --datasets pure --test-participant-dataset pure --test-participant-id 01 --model physnet --interface configs/interfaces/physnet_interface.yaml --training configs/training/physnet_training.yaml
 
 # iBVPNet
-uv run python run_experiment.py --datasets pure \
-    --test-participant-dataset pure --test-participant-id 01 \
-    --model ibvpnet --interface configs/interfaces/ibvpnet_interface.yaml \
-    --training configs/training/ibvpnet_training.yaml
+uv run python run_experiment.py --datasets pure --test-participant-dataset pure --test-participant-id 01 --model ibvpnet --interface configs/interfaces/ibvpnet_interface.yaml --training configs/training/ibvpnet_training.yaml
 ```
 
 Add `--limit-windows 8` for a wiring check. Outputs land in
