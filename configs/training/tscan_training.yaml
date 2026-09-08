@@ -8,7 +8,7 @@
 # (see src/trainer.py); moot upstream, which decays nothing at all.
 EPOCHS: 30
 BATCH_SIZE: 4                # train and test alike
-OPTIMIZER: AdamW              # upstream: optim.AdamW(lr, weight_decay=0)
+OPTIMIZER: AdamW             # upstream: optim.AdamW(lr, weight_decay=0)
 LR: 9e-3
 WEIGHT_DECAY: 0.0            # upstream decays nothing
 SCHEDULER: OneCycle          # upstream: OneCycleLR(max_lr=LR) over every step

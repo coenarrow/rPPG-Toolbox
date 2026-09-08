@@ -64,7 +64,12 @@ one.
 
 ## Algorithms
 
-**On the multi-signal contract today**: DeepPhys, PhysFormer, PhysMamba, PhysNet, iBVPNet, TS-CAN, FactorizePhys, EfficientPhys, BigSmall, RhythmFormer.
+**On the multi-signal contract today**, in name order: BigSmall, DeepPhys,
+EfficientPhys, FactorizePhys, PhysFormer, PhysMamba, PhysNet, RhythmFormer,
+TS-CAN, iBVPNet. Two of them, FactorizePhys and iBVPNet, read `Raw` frames,
+which the standard interface
+([`configs/interfaces/interface_neckflix.yaml`](configs/interfaces/interface_neckflix.yaml))
+does not produce yet; their paper interfaces do.
 
 Each one trains and tests on the PURE dataset, holding out its first
 participant, on the model's own paper interface and paper training recipe
@@ -78,11 +83,11 @@ uv run python run_experiment.py --datasets pure --test-participant-dataset pure 
 # DeepPhys
 uv run python run_experiment.py --datasets pure --test-participant-dataset pure --test-participant-id 01 --model deepphys --interface configs/interfaces/deepphys_interface.yaml --training configs/training/deepphys_training.yaml
 
-# FactorizePhys
-uv run python run_experiment.py --datasets pure --test-participant-dataset pure --test-participant-id 01 --model factorizephys --interface configs/interfaces/factorizephys_interface.yaml --training configs/training/factorizephys_training.yaml
-
 # EfficientPhys
 uv run python run_experiment.py --datasets pure --test-participant-dataset pure --test-participant-id 01 --model efficientphys --interface configs/interfaces/efficientphys_interface.yaml --training configs/training/efficientphys_training.yaml
+
+# FactorizePhys
+uv run python run_experiment.py --datasets pure --test-participant-dataset pure --test-participant-id 01 --model factorizephys --interface configs/interfaces/factorizephys_interface.yaml --training configs/training/factorizephys_training.yaml
 
 # PhysFormer
 uv run python run_experiment.py --datasets pure --test-participant-dataset pure --test-participant-id 01 --model physformer --interface configs/interfaces/physformer_interface.yaml --training configs/training/physformer_training.yaml
@@ -93,14 +98,14 @@ uv run python run_experiment.py --datasets pure --test-participant-dataset pure 
 # PhysNet
 uv run python run_experiment.py --datasets pure --test-participant-dataset pure --test-participant-id 01 --model physnet --interface configs/interfaces/physnet_interface.yaml --training configs/training/physnet_training.yaml
 
-# iBVPNet
-uv run python run_experiment.py --datasets pure --test-participant-dataset pure --test-participant-id 01 --model ibvpnet --interface configs/interfaces/ibvpnet_interface.yaml --training configs/training/ibvpnet_training.yaml
+# RhythmFormer
+uv run python run_experiment.py --datasets pure --test-participant-dataset pure --test-participant-id 01 --model rhythmformer --interface configs/interfaces/rhythmformer_interface.yaml --training configs/training/rhythmformer_training.yaml
 
 # TS-CAN
 uv run python run_experiment.py --datasets pure --test-participant-dataset pure --test-participant-id 01 --model tscan --interface configs/interfaces/tscan_interface.yaml --training configs/training/tscan_training.yaml
 
-# RhythmFormer
-uv run python run_experiment.py --datasets pure --test-participant-dataset pure --test-participant-id 01 --model rhythmformer --interface configs/interfaces/rhythmformer_interface.yaml --training configs/training/rhythmformer_training.yaml
+# iBVPNet
+uv run python run_experiment.py --datasets pure --test-participant-dataset pure --test-participant-id 01 --model ibvpnet --interface configs/interfaces/ibvpnet_interface.yaml --training configs/training/ibvpnet_training.yaml
 ```
 
 Add `--limit-windows 8` for a wiring check. Outputs land in
@@ -115,7 +120,9 @@ of them and the median of their rates when a window carries more than one.
 
 To put another architecture on the contract, new or migrated from upstream,
 follow [docs/adding_a_model.md](docs/adding_a_model.md): one backbone module,
-one config class and builder, one YAML, one smoke test. Templates to copy sit
+one config class and builder, three YAMLs (the model config, the paper
+interface and the paper training recipe), one smoke test, and the command
+above. Templates to copy sit
 at [`configs/models/_model_template.yaml`](configs/models/_model_template.yaml)
 and [`neural_methods/model/_template.py`](neural_methods/model/_template.py).
 

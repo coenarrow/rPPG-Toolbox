@@ -4,7 +4,9 @@
 # over the run, batch 4, 30 epochs, float32. Pair it with
 # configs/interfaces/rhythmformer_interface.yaml.
 #
-# One trainer-side difference: upstream z-scores each predicted window before
+# Two trainer-side differences. The readout is exempt from weight decay here
+# (see src/trainer.py); moot upstream, which decays nothing at all. And
+# upstream z-scores each predicted window before
 # the criterion sees it, which its scale-free frequency and Pearson terms are
 # built around; src/trainer.py scores the prediction in the label's own units,
 # so an absolute signal stays absolute.

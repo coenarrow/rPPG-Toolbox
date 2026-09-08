@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 from einops import rearrange
 
-from neural_methods.model.TS_CAN import TSM, Attention_mask
+from neural_methods.model.shared import TSM, Attention_mask, dense_width
 
 
 class EfficientPhys(nn.Module):
@@ -22,24 +22,26 @@ class EfficientPhys(nn.Module):
                  pool_size=(2, 2),
                  nb_dense=128,
                  frame_depth=20,
-                 img_size=36):
+                 img_size=(36, 36)):
         """Definition of EfficientPhys.
         Args:
           in_channels: the number of input channels of the single branch (the
             interface's channel count). Default: 3
           frame_depth: the segment length the temporal shift shifts within.
             Default: 20
-          img_size: height/width of each frame. Default: 36.
+          img_size: (height, width) of each frame. Default: (36, 36).
         Returns:
           EfficientPhys model.
 
-        Two things differ from the published network. First, the first conv
-        and the input batch norm take ``in_channels`` inputs (the interface's
-        channel count) instead of 3, as DeepPhys does. Second, the temporal
-        shift (``TSM``, the one TS-CAN uses) is adaptive to any clip length
-        ``T``; at a ``T`` that is a multiple of ``frame_depth`` this computes
-        exactly the published shift. At the defaults this is the original
-        network, layer for layer.
+        Three things differ from the published network. First, the first
+        conv and the input batch norm take ``in_channels`` inputs (the
+        interface's channel count) instead of 3, as DeepPhys does. Second,
+        the temporal shift (the shared ``TSM``, the one TS-CAN uses) is
+        adaptive to any clip length ``T``; at a ``T`` that is a multiple of
+        ``frame_depth`` this computes exactly the published shift. Third, the
+        dense layer is sized per axis, so a non-square frame works; at a
+        square frame it is the published width. At the defaults this is the
+        original network, layer for layer.
         """
         super(EfficientPhys, self).__init__()
         self.in_channels = in_channels
@@ -80,9 +82,7 @@ class EfficientPhys(nn.Module):
         self.dropout_3 = nn.Dropout(self.dropout_rate1)
         self.dropout_4 = nn.Dropout(self.dropout_rate2)
         # Dense layers
-        h1 = (img_size - 2) // 2          # conv2 (valid) then pool /2
-        h2 = (h1 - 2) // 2                # conv4 (valid) then pool /2
-        features = self.nb_filters2 * h2 * h2
+        features = dense_width(*img_size, self.nb_filters2)
         self.final_dense_1 = nn.Linear(features, self.nb_dense, bias=True)
         self.final_dense_2 = nn.Linear(self.nb_dense, 1, bias=True)
         # The frame difference is the network's own first stage, not dataset

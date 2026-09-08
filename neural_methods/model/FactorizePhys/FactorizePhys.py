@@ -34,7 +34,7 @@ this contract asks of every model:
 Any window length is accepted as it is: nothing in the network strides or
 pools in time. Frames may be any size from ``MIN_FRAME``: the head's valid
 convolutions take the feature map from 13x13 down to a point, so the
-extractor's output is average-pooled spatially to 13x13 before it. At the
+extractor's output is resampled spatially to 13x13 before it. At the
 paper's 72x72 frames the extractor already emits 13x13 and the pool is
 skipped, so the paper path is the published forward pass.
 
@@ -49,6 +49,7 @@ from einops import rearrange
 from torch.nn import functional as F
 
 from neural_methods.model.FactorizePhys.FSAM import FeaturesFactorizationModule
+from neural_methods.model.shared import require_min_frame
 
 #: The published filter counts of the three stages.
 nf = [8, 12, 16]
@@ -133,7 +134,7 @@ class BVP_Head(nn.Module):
         """``(B, nf[2], T, H', W')`` -> ``(B, 1, T)``."""
         # Any frame size: the convolutions below are all valid and take
         # HEAD_SPATIAL down to a point, so whatever the extractor hands over
-        # is pooled to that. At the paper's 72x72 frames it is already 13x13
+        # is resampled to that. At the paper's 72x72 frames it is already 13x13
         # and this is skipped.
         frames = voxel_embeddings.shape[2]
         if tuple(voxel_embeddings.shape[3:]) != (HEAD_SPATIAL, HEAD_SPATIAL):
@@ -181,10 +182,7 @@ class FactorizePhys(nn.Module):
     def forward(self, x):
         """``(B, in_channels, T, H, W)`` -> ``(B, 1, T)``."""
         height, width = x.shape[3:]
-        if min(height, width) < MIN_FRAME:
-            raise ValueError(
-                f"FactorizePhys's extractor strides and crops frames to nothing "
-                f"below {MIN_FRAME}x{MIN_FRAME}; got {height}x{width}.")
+        require_min_frame("FactorizePhys", MIN_FRAME, height, width)
 
         # The temporal difference the network is built on, one frame short of
         # the window; the zero frame puts it back, as upstream's repeated last

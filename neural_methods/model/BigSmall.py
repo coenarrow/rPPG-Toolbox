@@ -10,7 +10,7 @@ The architecture is the published one: a "big" branch of six convolutions on
 a high-resolution frame, run on one frame per segment of ``frame_depth`` and
 held for the rest of that segment, summed with a "small" branch of four
 convolutions on a tiny frame carrying the published wrapping temporal shift
-(WTSM — here the shared ``TSM`` of TS-CAN with ``wrap=True``), then one dense
+(WTSM — here the shared ``TSM`` with ``wrap=True``), then one dense
 readout. Three things differ from the paper.
 
 First, the first conv of each branch takes ``in_channels`` inputs (the
@@ -31,7 +31,7 @@ made; the difference is that it happens after the DiffNormalized
 preprocessing instead of before it.
 
 Any frame size is accepted, from 16x16 (the smallest the big branch's three
-pools leave anything of): the big branch's map is average-pooled to
+pools leave anything of): the big branch's map is resampled to
 ``small_size`` before the two branches are summed, which at 144x144 is the
 identity because the published pools already land on 9x9. Any window length
 is accepted too: the temporal shift is in-clip and adaptive, and a window
@@ -47,7 +47,7 @@ import torch
 import torch.nn as nn
 from einops import rearrange, repeat
 
-from neural_methods.model.TS_CAN import TSM
+from neural_methods.model.shared import TSM, require_min_frame
 
 #: The big branch pools 2x, 2x then 4x; a smaller frame pools to nothing.
 MIN_FRAME = 16
@@ -116,8 +116,8 @@ class BigSmall(nn.Module):
         self.big_avg_pooling3 = nn.AvgPool2d(self.pool_size2)
         self.big_dropout3 = nn.Dropout(self.dropout_rate3)
 
-        # The branches are summed, so the big branch's map is pooled to the
-        # small branch's size. At 144x144 the pools above already land on
+        # The branches are summed, so the big branch's map is resampled to
+        # the small branch's size. At 144x144 the pools above already land on
         # 9x9 and this is the identity.
         self.big_to_small = nn.AdaptiveAvgPool2d(self.small_size)
 
@@ -153,10 +153,7 @@ class BigSmall(nn.Module):
         first on the channel axis, the small block second, each folded to one
         2D frame per row for the published network."""
         b, _, t, height, width = video.shape
-        if min(height, width) < MIN_FRAME:
-            raise ValueError(
-                f"BigSmall pools frames 16x, so they must be at least "
-                f"{MIN_FRAME}x{MIN_FRAME}; got {height}x{width}.")
+        require_min_frame("BigSmall", MIN_FRAME, height, width)
         big_input = video[:, :self.in_channels]
         small_input = video[:, self.in_channels:2 * self.in_channels]
 

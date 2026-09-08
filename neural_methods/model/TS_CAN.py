@@ -8,60 +8,7 @@ import torch
 import torch.nn as nn
 from einops import rearrange
 
-
-class Attention_mask(nn.Module):
-    def __init__(self):
-        super(Attention_mask, self).__init__()
-
-    def forward(self, x):
-        xsum = torch.sum(x, dim=2, keepdim=True)
-        xsum = torch.sum(xsum, dim=3, keepdim=True)
-        xshape = tuple(x.size())
-        return x / xsum * xshape[2] * xshape[3] * 0.5
-
-
-class TSM(nn.Module):
-    """Temporal shift over segments of ``frame_depth`` consecutive frames of
-    the same clip.
-
-    Operates on ``(B, T, C, H, W)``, one clip per row of ``B``. Each clip's
-    ``T`` frames are cut into chunks of ``frame_depth``, and every chunk is
-    shifted independently, so the shift never crosses a clip boundary. A
-    trailing partial chunk (``T`` not a multiple of ``frame_depth``) is
-    shifted as its own shorter segment — the published shift already
-    zero-pads at segment ends, so a short segment is well defined. At
-    ``T % frame_depth == 0`` this computes exactly the published,
-    single-chunk-size shift.
-
-    ``wrap`` says what happens at a segment's ends. ``False`` (TS-CAN's
-    shift) zero-pads them; ``True`` wraps the frame shifted out of one end
-    round to the other end of the same segment, which is BigSmall's
-    published WTSM (a shorter trailing segment wraps within itself).
-    """
-
-    def __init__(self, frame_depth: int = 20, fold_div: int = 3,
-                 wrap: bool = False):
-        super().__init__()
-        self.frame_depth = frame_depth
-        self.fold_div = fold_div
-        self.wrap = wrap
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        _, t, c, _, _ = x.shape
-        fold = c // self.fold_div
-        out = torch.zeros_like(x)
-        for start in range(0, t, self.frame_depth):
-            end = min(start + self.frame_depth, t)
-            segment = x[:, start:end]
-            shifted = torch.zeros_like(segment)
-            shifted[:, :-1, :fold] = segment[:, 1:, :fold]                  # shift left
-            shifted[:, 1:, fold:2 * fold] = segment[:, :-1, fold:2 * fold]  # shift right
-            shifted[:, :, 2 * fold:] = segment[:, :, 2 * fold:]             # not shifted
-            if self.wrap:
-                shifted[:, -1, :fold] = segment[:, 0, :fold]                # wrap left
-                shifted[:, 0, fold:2 * fold] = segment[:, -1, fold:2 * fold]  # wrap right
-            out[:, start:end] = shifted
-        return out
+from neural_methods.model.shared import TSM, Attention_mask, dense_width
 
 
 class TSCAN(nn.Module):
@@ -76,24 +23,25 @@ class TSCAN(nn.Module):
                  pool_size=(2, 2),
                  nb_dense=128,
                  frame_depth=20,
-                 img_size=36):
+                 img_size=(36, 36)):
         """Definition of TS-CAN.
         Args:
           in_channels: the number of input channels of EACH branch (motion,
             appearance). Default: 3
           frame_depth: the segment length the temporal shift shifts within.
             Default: 20
-          img_size: height/width of each frame. Default: 36.
+          img_size: (height, width) of each frame. Default: (36, 36).
         Returns:
           TSCAN model.
 
-        Two things differ from the published network. First, the first conv
-        of each branch takes ``in_channels`` inputs (the interface's channel
-        count) instead of 3, as DeepPhys does. Second, the temporal shift
-        (``TSM``) is adaptive to any clip length ``T``; at a ``T`` that is a
-        multiple of ``frame_depth`` this computes exactly the published
-        shift. At the defaults this is the original network, layer for
-        layer.
+        Three things differ from the published network. First, the first
+        conv of each branch takes ``in_channels`` inputs (the interface's
+        channel count) instead of 3, as DeepPhys does. Second, the temporal
+        shift (the shared ``TSM``) is adaptive to any clip length ``T``; at a
+        ``T`` that is a multiple of ``frame_depth`` this computes exactly the
+        published shift. Third, the dense layer is sized per axis, so a
+        non-square frame works; at a square frame it is the published width.
+        At the defaults this is the original network, layer for layer.
         """
         super(TSCAN, self).__init__()
         self.in_channels = in_channels
@@ -144,9 +92,7 @@ class TSCAN(nn.Module):
         self.dropout_3 = nn.Dropout(self.dropout_rate1)
         self.dropout_4 = nn.Dropout(self.dropout_rate2)
         # Dense layers
-        h1 = (img_size - 2) // 2          # conv2 (valid) then pool /2
-        h2 = (h1 - 2) // 2                # conv4 (valid) then pool /2
-        features = self.nb_filters2 * h2 * h2
+        features = dense_width(*img_size, self.nb_filters2)
         self.final_dense_1 = nn.Linear(features, self.nb_dense, bias=True)
         self.final_dense_2 = nn.Linear(self.nb_dense, 1, bias=True)
 

@@ -8,21 +8,7 @@ import torch
 import torch.nn as nn
 from einops import rearrange
 
-
-class Attention_mask(nn.Module):
-    def __init__(self):
-        super(Attention_mask, self).__init__()
-
-    def forward(self, x):
-        xsum = torch.sum(x, dim=2, keepdim=True)
-        xsum = torch.sum(xsum, dim=3, keepdim=True)
-        xshape = tuple(x.size())
-        return x / xsum * xshape[2] * xshape[3] * 0.5
-
-    def get_config(self):
-        """May be generated manually. """
-        config = super(Attention_mask, self).get_config()
-        return config
+from neural_methods.model.shared import Attention_mask, dense_width
 
 
 class DeepPhys(nn.Module):
@@ -36,20 +22,22 @@ class DeepPhys(nn.Module):
                 dropout_rate2=0.5, 
                 pool_size=(2, 2), 
                 nb_dense=128, 
-                img_size=36):
+                img_size=(36, 36)):
         """Definition of DeepPhys.
         Args:
           in_channels: the number of input channel. Default: 3
-          img_size: height/width of each frame. Default: 36.
+          img_size: (height, width) of each frame. Default: (36, 36).
         Returns:
           DeepPhys model.
 
-        One thing differs from the published network: the first conv of each
+        Two things differ from the published network. The first conv of each
         branch takes ``in_channels`` inputs (the interface's channel count)
-        instead of 3. The readout stays a single output; a multi-signal run is
-        one complete copy of this network per trace (``MultiTraceModel``),
-        never a widened or per-signal head on a shared trunk. At ``3`` this is
-        exactly the original, layer for layer and name for name.
+        instead of 3. And the dense layer is sized per axis, so a non-square
+        frame works; at a square frame it is the published width. The readout
+        stays a single output; a multi-signal run is one complete copy of this
+        network per trace (``MultiTraceModel``), never a widened or per-signal
+        head on a shared trunk. At ``3`` and a square frame this is exactly the
+        original, layer for layer and name for name.
         """
         super(DeepPhys, self).__init__()
         self.in_channels = in_channels
@@ -89,9 +77,7 @@ class DeepPhys(nn.Module):
         self.dropout_3 = nn.Dropout(self.dropout_rate1)
         self.dropout_4 = nn.Dropout(self.dropout_rate2)
         # Dense layers
-        h1 = (img_size - 2) // 2          # conv2 (valid) then pool /2
-        h2 = (h1 - 2) // 2                # conv4 (valid) then pool /2
-        features = self.nb_filters2 * h2 * h2
+        features = dense_width(*img_size, self.nb_filters2)
         self.final_dense_1 = nn.Linear(features, self.nb_dense, bias=True)
         self.final_dense_2 = nn.Linear(self.nb_dense, 1, bias=True)
 

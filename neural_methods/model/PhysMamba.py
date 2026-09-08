@@ -33,6 +33,7 @@ from timm.layers import trunc_normal_, DropPath
 from torch.nn import functional as F
 
 from neural_methods.model.mamba_compat import make_mamba
+from neural_methods.model.shared import nearest_multiple, require_min_frame
 
 
 class ChannelAttention3D(nn.Module):
@@ -240,10 +241,7 @@ class PhysMamba(nn.Module):
     def forward(self, x):
         """``(B, in_channels, T, H, W)`` -> ``(B, 1, T)``."""
         frames, height, width = x.shape[2:]
-        if min(height, width) < MIN_FRAME:
-            raise ValueError(
-                f"PhysMamba pools frames 16x, so they must be at least "
-                f"{MIN_FRAME}x{MIN_FRAME}; got {height}x{width}.")
+        require_min_frame("PhysMamba", MIN_FRAME, height, width)
 
         x = self.ConvBlock1(x)
         x = self.MaxpoolSpa(x)
@@ -253,7 +251,7 @@ class PhysMamba(nn.Module):
 
         # Any window length: the slow stream needs T to divide by 4. At the
         # paper's 128-frame windows the target equals T and this is skipped.
-        t4 = max(round(frames / TEMPORAL_STRIDE), 1) * TEMPORAL_STRIDE
+        t4 = nearest_multiple(frames, TEMPORAL_STRIDE)
         if t4 != frames:
             x = F.adaptive_avg_pool3d(x, (t4, x.shape[3], x.shape[4]))
 

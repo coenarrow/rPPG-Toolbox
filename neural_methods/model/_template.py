@@ -26,12 +26,17 @@ class TemplateNet(nn.Module):
     is instead ``(N, C_in, H, W) -> (N, 1)``; see ``DeepPhys.py``.
     """
 
-    # OPTIONAL. Declare if the architecture pools or upsamples in time (the
-    # window length must be a multiple of this) ...
+    # INTERIM ONLY, for a migration that has not got there yet. The
+    # destination is an adaptive stage that accepts any window length and is
+    # an exact no-op at the paper's; none of the ten migrated models declares
+    # either of these any more (docs/adding_a_model.md, "Any frame size, any
+    # window length"). Until yours has one, declare that the window must be a
+    # multiple of something ...
     temporal_divisor = 1
-    # ... or if it is built for exactly one clip length. Delete whichever
-    # does not apply; the trainer reads them off the first copy and refuses a
-    # WINDOW_SECONDS that does not fit, naming the fix.
+    # ... or that it must be exactly one clip length. Delete both once the
+    # adaptive stage is in; while they are here the trainer reads them off the
+    # first copy and refuses a WINDOW_SECONDS that does not fit, naming the
+    # fix, rather than truncating.
     # temporal_length = 128
 
     def __init__(self, in_channels: int = 3, hidden: int = 16):

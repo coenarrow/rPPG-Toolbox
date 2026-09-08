@@ -15,7 +15,7 @@
 EPOCHS: 5
 BATCH_SIZE: 3                # train and test alike. Upstream 180 chunks x 3
                              # frames = 540 frames = 3 x 180-frame windows
-OPTIMIZER: AdamW              # upstream: optim.AdamW(lr, weight_decay=0)
+OPTIMIZER: AdamW             # upstream: optim.AdamW(lr, weight_decay=0)
 LR: 1e-3
 WEIGHT_DECAY: 0.0            # upstream decays nothing
 SCHEDULER: OneCycle          # upstream: OneCycleLR(max_lr=LR) over every step

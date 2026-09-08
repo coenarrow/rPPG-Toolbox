@@ -3,9 +3,9 @@
 How to put a new architecture on the multi-signal contract, whether you are
 writing it from scratch or migrating one of the upstream rPPG-Toolbox models.
 DeepPhys is the worked example throughout: it is the simplest of the ten
-models on the contract today (DeepPhys, PhysFormer, PhysMamba, PhysNet,
-iBVPNet, TS-CAN, FactorizePhys, EfficientPhys, BigSmall, RhythmFormer), and
-every file it touches is the file yours will touch.
+models on the contract today (BigSmall, DeepPhys, EfficientPhys,
+FactorizePhys, PhysFormer, PhysMamba, PhysNet, RhythmFormer, TS-CAN,
+iBVPNet), and every file it touches is the file yours will touch.
 
 The authority on *how* a model is run is [`run_experiment.py`](../run_experiment.py)
 and the modules it imports from [`src/`](../src/). `main.py` and the
@@ -32,7 +32,7 @@ Because the wrapper owns channel order, trace order, the dict, and the
 per-frame/clip folding, an architecture never sees a dict at all. It sees a
 tensor and returns a tensor.
 
-## The five things you touch
+## The seven things you touch
 
 | # | What | Where | Exists for DeepPhys as |
 | --- | ------ | ------- | ------------------------ |
@@ -40,7 +40,9 @@ tensor and returns a tensor.
 | 2 | Config class + builder + two registry lines | `src/models.py` | `DeepPhysConfig`, `_build_deepphys`, the `"DeepPhys"` entries |
 | 3 | The model config | `configs/models/<name>.yaml` | [`configs/models/deepphys.yaml`](../configs/models/deepphys.yaml) |
 | 4 | The paper interface | `configs/interfaces/<name>_interface.yaml` | [`configs/interfaces/deepphys_interface.yaml`](../configs/interfaces/deepphys_interface.yaml) |
-| 5 | One smoke test | `tests/test_<name>.py` | (not yet written; see step 5) |
+| 5 | The paper training recipe | `configs/training/<name>_training.yaml` | [`configs/training/deepphys_training.yaml`](../configs/training/deepphys_training.yaml) |
+| 6 | One smoke test | `tests/test_<name>.py` | (not yet written; see step 5) |
+| 7 | The PURE command that proves it runs | `README.md`, "Algorithms" | the `--model deepphys` line |
 
 Nothing else. No new trainer, loader, loss, dataset or plot. If your model
 needs something the shared pieces almost do, extend the shared piece for
@@ -91,16 +93,20 @@ Exactly one of two shapes, declared by the builder's `per_frame` flag:
 | `per_frame` | Input | Output | Who |
 | ------------- | ------- | -------- | ----- |
 | `True` | `(N, C_in, H, W)`, one frame per row; `T` is folded into `N` by the wrapper | `(N, 1)` | DeepPhys |
-| `False` | `(B, C_in, T, H, W)`, a whole clip | `(B, 1, T)` | PhysNet, PhysFormer, PhysMamba, iBVPNet, FactorizePhys, RhythmFormer, TS-CAN, EfficientPhys, BigSmall |
+| `False` | `(B, C_in, T, H, W)`, a whole clip | `(B, 1, T)` | BigSmall, EfficientPhys, FactorizePhys, PhysFormer, PhysMamba, PhysNet, RhythmFormer, TS-CAN, iBVPNet |
 
 TS-CAN, EfficientPhys and BigSmall take clips rather than per-frame rows even
 though they are built around a temporal shift: that shift has to know where
 each clip starts and ends to be adaptive within it, and a batch the wrapper
 has already folded to `(N, C, H, W)` cannot tell it that, so all three fold
 `(b t)` back inside the module instead. The shift itself is the shared `TSM`
-in [`neural_methods/model/TS_CAN.py`](../neural_methods/model/TS_CAN.py),
-imported by EfficientPhys directly and by BigSmall with `wrap=True` for its
-wrap-around variant. DeepPhys is the only backbone that stays `per_frame`.
+in [`neural_methods/model/shared.py`](../neural_methods/model/shared.py),
+imported by TS-CAN and EfficientPhys directly and by BigSmall with
+`wrap=True` for its wrap-around variant. That module is where every piece
+more than one backbone needs lives — `nearest_multiple`, `sum_spatial`,
+`dense_width`, `min_frame_message`, `require_min_frame`, `Attention_mask`,
+`TSM` — and it is where a new shared piece belongs. DeepPhys is the only
+backbone that stays `per_frame`.
 
 The output is one trace, width one. Never widen the readout to several
 signals and never add per-signal heads on a shared trunk: the wrapper makes
@@ -147,9 +153,30 @@ Each of those becomes one of:
 
 Prefer the adaptive stage for anything the architecture cannot derive: it
 keeps one module serving every interface. What is never acceptable is a
-silent crop, truncation or reinterpretation. The one refusal that remains is
-a frame the stem pools to nothing (8 px for PhysFormer, 16 px for
-PhysMamba); the builder names it, via `_require_min_frame`.
+silent crop, truncation or reinterpretation.
+
+The one refusal that remains is a frame the stem pools to nothing. Each
+pooling backbone states its own floor as a module-level `MIN_FRAME`:
+
+| Model | `MIN_FRAME` | Why |
+| ------- | ------------- | ----- |
+| PhysFormer | 8 | three 2x spatial pools in the stem |
+| BigSmall | 16 | the big branch pools 2x, 2x then 4x |
+| PhysMamba | 16 | the stem's two spatial pools before the streams |
+| PhysNet | 16 | four 2x spatial pools before the bottleneck |
+| RhythmFormer | 16 | a 4x stem and a 4x patch embedding |
+| FactorizePhys | 23 | five valid convolutions, two of them strided |
+| iBVPNet | 64 | the encoder's pools, the stride-1 pool and two strided convs |
+
+The builder names it via `_require_min_frame` when the interface resizes;
+the module raises the same sentence at forward time, both taking it from
+`neural_methods.model.shared.min_frame_message`.
+
+The other refusal that stays is for a dense-layer model. DeepPhys, TS-CAN
+and EfficientPhys size their dense head from the frame, so they need an
+interface that states a `RESIZE`; a run with no resize cannot tell them how
+wide that layer is. The frame need not be square — the width is derived per
+axis by `neural_methods.model.shared.dense_width`.
 
 Two interim class attributes exist for a migration that is not there yet:
 
@@ -158,11 +185,11 @@ temporal_divisor = 4     # the window length must be a multiple of this
 temporal_length = 128    # the window length must be exactly this
 ```
 
-None of the ten migrated models declares either any more — every one reached
-the adaptive stage described above — but `src/trainer.py` still honours them
-for a model that is mid-migration: it reads them off the first copy and
-refuses a mismatched `WINDOW_SECONDS` rather than truncating. They are a stop
-on the way to the adaptive stage, not a destination.
+These are an interim stop for a migration in progress, not a destination, and
+none of the ten migrated models declares either any more — every one reached
+the adaptive stage described above. `src/trainer.py` still honours them: it
+reads them off the first copy and refuses a mismatched `WINDOW_SECONDS`
+rather than truncating.
 
 ### House rules
 
@@ -213,8 +240,9 @@ def _build_mynet(cfg: MyNetConfig, interface: InterfaceConfig) -> MultiTraceMode
 
 Inputs: the loaded config and the loaded interface. Output: a
 `MultiTraceModel`. The builder is where every width is derived and where any
-interface requirement beyond the config's is enforced (DeepPhys refuses a
-non-square `RESIZE` here). `MultiTraceModel` takes:
+interface requirement beyond the config's is enforced (DeepPhys refuses an
+interface with no `RESIZE` here, because its dense layer is sized from the
+frame). `MultiTraceModel` takes:
 
 | Argument | Meaning |
 | ---------- | --------- |
@@ -321,16 +349,16 @@ today:
 
 | Model | Frames | Window | Input | Loss | Recipe |
 | ------- | -------- | -------- | ------- | ------ | -------- |
+| BigSmall | 144x144 | 180 frames | Standardized + DiffNormalized | MSE | AdamW 1e-3, OneCycle, 5 epochs |
 | DeepPhys | 72x72 | 180 frames | DiffNormalized + Standardized | MSE | AdamW 9e-3, OneCycle, 30 epochs |
+| EfficientPhys | 72x72 | 180 frames | Standardized | MSE | AdamW 9e-3, OneCycle, 30 epochs |
+| FactorizePhys | 72x72 | 160 frames | Raw | negative Pearson | Adam 1e-3, OneCycle, 10 epochs |
 | PhysFormer | 128x128 | 160 frames | DiffNormalized | negative Pearson | Adam 1e-4, decay 5e-5, constant, 10 epochs |
 | PhysMamba | 128x128 | 128 frames | DiffNormalized | negative Pearson | Adam 3e-3, decay 5e-4, OneCycle, 20 epochs |
 | PhysNet | 72x72 | 128 frames | DiffNormalized | negative Pearson | Adam 9e-3, OneCycle, 30 epochs |
-| iBVPNet | 72x72 | 160 frames | Raw | negative Pearson | Adam 1e-3, OneCycle, 30 epochs |
-| TS-CAN | 72x72 | 180 frames | DiffNormalized + Standardized | MSE | AdamW 9e-3, OneCycle, 30 epochs |
-| FactorizePhys | 72x72 | 160 frames | Raw | negative Pearson | Adam 1e-3, OneCycle, 10 epochs |
-| EfficientPhys | 72x72 | 180 frames | Standardized | MSE | AdamW 9e-3, OneCycle, 30 epochs |
-| BigSmall | 144x144 | 180 frames | Standardized + DiffNormalized | MSE | AdamW 1e-3, OneCycle, 5 epochs |
 | RhythmFormer | 128x128 | 160 frames | Standardized | negative Pearson | AdamW 9e-3, OneCycle, 30 epochs |
+| TS-CAN | 72x72 | 180 frames | DiffNormalized + Standardized | MSE | AdamW 9e-3, OneCycle, 30 epochs |
+| iBVPNet | 72x72 | 160 frames | Raw | negative Pearson | Adam 1e-3, OneCycle, 30 epochs |
 
 ## Step 5: one smoke test
 

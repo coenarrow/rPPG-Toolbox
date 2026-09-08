@@ -27,15 +27,14 @@ from einops import rearrange
 from src.config import ConfigError, build, load_yaml
 from neural_methods.batch import FRAMES, PREDICTIONS, split_signals
 from neural_methods.frame_transforms import DATA_TYPES
-from neural_methods.model.DeepPhys import DeepPhys
-from neural_methods.model.EfficientPhys import EfficientPhys
 from neural_methods.model import (
-    BigSmall as bigsmall, PhysFormer as physformer, PhysMamba as physmamba,
-    PhysNet as physnet, RhythmFormer as rhythmformer, iBVPNet as ibvpnet,
+    BigSmall as bigsmall, DeepPhys as deepphys, EfficientPhys as efficientphys,
+    PhysFormer as physformer, PhysMamba as physmamba, PhysNet as physnet,
+    RhythmFormer as rhythmformer, TS_CAN as tscan, iBVPNet as ibvpnet,
 )
+# The same idiom; FactorizePhys is a package, so its module needs its own line.
 from neural_methods.model.FactorizePhys import FactorizePhys as factorizephys
-from neural_methods.model.PhysMamba import PhysMamba
-from neural_methods.model.TS_CAN import TSCAN
+from neural_methods.model.shared import min_frame_message
 from src.interface import InterfaceConfig
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -45,64 +44,6 @@ MODEL_CONFIG_DIR = REPO_ROOT / "configs" / "models"
 # ---------------------------------------------------------------------------
 # Per-architecture config classes
 # ---------------------------------------------------------------------------
-
-
-@dataclass
-class DeepPhysConfig:
-    NAME: str = ""
-    MOTION_INPUT: str = ""        # INPUT_PREPROCESSING block for the motion branch
-    APPEARANCE_INPUT: str = ""    # ... and for the appearance branch
-
-    def validate(self, interface: InterfaceConfig, where: str) -> None:
-        for key in ("MOTION_INPUT", "APPEARANCE_INPUT"):
-            _require_input_block(getattr(self, key), interface, f"{where}: {key}")
-        if self.MOTION_INPUT == self.APPEARANCE_INPUT:
-            raise ConfigError(
-                f"{where}: MOTION_INPUT and APPEARANCE_INPUT are both "
-                f"{self.MOTION_INPUT!r}; the two branches read different "
-                f"preprocessings of the frame")
-
-
-@dataclass
-class TSCANConfig:
-    NAME: str = ""
-    MOTION_INPUT: str = ""        # INPUT_PREPROCESSING block for the motion branch
-    APPEARANCE_INPUT: str = ""    # ... and for the appearance branch
-    FRAME_DEPTH: int = 0          # segment length the temporal shift shifts within
-
-    def validate(self, interface: InterfaceConfig, where: str) -> None:
-        for key in ("MOTION_INPUT", "APPEARANCE_INPUT"):
-            _require_input_block(getattr(self, key), interface, f"{where}: {key}")
-        if self.MOTION_INPUT == self.APPEARANCE_INPUT:
-            raise ConfigError(
-                f"{where}: MOTION_INPUT and APPEARANCE_INPUT are both "
-                f"{self.MOTION_INPUT!r}; the two branches read different "
-                f"preprocessings of the frame")
-        if self.FRAME_DEPTH <= 0:
-            raise ConfigError(
-                f"{where}: FRAME_DEPTH must be positive, got {self.FRAME_DEPTH}")
-
-
-@dataclass
-class FactorizePhysConfig:
-    NAME: str = ""
-    INPUT: str = ""               # INPUT_PREPROCESSING block the stem reads
-    FSAM: bool = True             # run the factorized attention module, the
-                                  # ablation the paper reports; the paper path
-                                  # (FSAM_Res) is true
-
-    def validate(self, interface: InterfaceConfig, where: str) -> None:
-        _require_input_block(self.INPUT, interface, f"{where}: INPUT")
-
-
-@dataclass
-class EfficientPhysConfig:
-    NAME: str = ""
-    INPUT: str = ""               # INPUT_PREPROCESSING block the network reads
-    FRAME_DEPTH: int = 0          # segment length the temporal shift shifts within
-
-    def validate(self, interface: InterfaceConfig, where: str) -> None:
-        _require_input_block(self.INPUT, interface, f"{where}: INPUT")
 
 
 @dataclass
@@ -127,7 +68,48 @@ class BigSmallConfig:
 
 
 @dataclass
-class PhysMambaConfig:
+class DeepPhysConfig:
+    NAME: str = ""
+    MOTION_INPUT: str = ""        # INPUT_PREPROCESSING block for the motion branch
+    APPEARANCE_INPUT: str = ""    # ... and for the appearance branch
+
+    def validate(self, interface: InterfaceConfig, where: str) -> None:
+        for key in ("MOTION_INPUT", "APPEARANCE_INPUT"):
+            _require_input_block(getattr(self, key), interface, f"{where}: {key}")
+        if self.MOTION_INPUT == self.APPEARANCE_INPUT:
+            raise ConfigError(
+                f"{where}: MOTION_INPUT and APPEARANCE_INPUT are both "
+                f"{self.MOTION_INPUT!r}; the two branches read different "
+                f"preprocessings of the frame")
+
+
+@dataclass
+class EfficientPhysConfig:
+    NAME: str = ""
+    INPUT: str = ""               # INPUT_PREPROCESSING block the network reads
+    FRAME_DEPTH: int = 0          # segment length the temporal shift shifts within
+
+    def validate(self, interface: InterfaceConfig, where: str) -> None:
+        _require_input_block(self.INPUT, interface, f"{where}: INPUT")
+        if self.FRAME_DEPTH <= 0:
+            raise ConfigError(
+                f"{where}: FRAME_DEPTH must be positive, got {self.FRAME_DEPTH}")
+
+
+@dataclass
+class FactorizePhysConfig:
+    NAME: str = ""
+    INPUT: str = ""               # INPUT_PREPROCESSING block the stem reads
+    FSAM: bool = True             # run the factorized attention module, the
+                                  # ablation the paper reports; the paper path
+                                  # (FSAM_Res) is true
+
+    def validate(self, interface: InterfaceConfig, where: str) -> None:
+        _require_input_block(self.INPUT, interface, f"{where}: INPUT")
+
+
+@dataclass
+class PhysFormerConfig:
     NAME: str = ""
     INPUT: str = ""               # INPUT_PREPROCESSING block the stem reads
 
@@ -136,7 +118,7 @@ class PhysMambaConfig:
 
 
 @dataclass
-class PhysFormerConfig:
+class PhysMambaConfig:
     NAME: str = ""
     INPUT: str = ""               # INPUT_PREPROCESSING block the stem reads
 
@@ -154,7 +136,7 @@ class PhysNetConfig:
 
 
 @dataclass
-class iBVPNetConfig:
+class RhythmFormerConfig:
     NAME: str = ""
     INPUT: str = ""               # INPUT_PREPROCESSING block the stem reads
 
@@ -163,7 +145,27 @@ class iBVPNetConfig:
 
 
 @dataclass
-class RhythmFormerConfig:
+class TSCANConfig:
+    NAME: str = ""
+    MOTION_INPUT: str = ""        # INPUT_PREPROCESSING block for the motion branch
+    APPEARANCE_INPUT: str = ""    # ... and for the appearance branch
+    FRAME_DEPTH: int = 0          # segment length the temporal shift shifts within
+
+    def validate(self, interface: InterfaceConfig, where: str) -> None:
+        for key in ("MOTION_INPUT", "APPEARANCE_INPUT"):
+            _require_input_block(getattr(self, key), interface, f"{where}: {key}")
+        if self.MOTION_INPUT == self.APPEARANCE_INPUT:
+            raise ConfigError(
+                f"{where}: MOTION_INPUT and APPEARANCE_INPUT are both "
+                f"{self.MOTION_INPUT!r}; the two branches read different "
+                f"preprocessings of the frame")
+        if self.FRAME_DEPTH <= 0:
+            raise ConfigError(
+                f"{where}: FRAME_DEPTH must be positive, got {self.FRAME_DEPTH}")
+
+
+@dataclass
+class iBVPNetConfig:
     NAME: str = ""
     INPUT: str = ""               # INPUT_PREPROCESSING block the stem reads
 
@@ -175,25 +177,39 @@ class RhythmFormerConfig:
 MODEL_CONFIGS = {
     "BigSmall": BigSmallConfig,
     "DeepPhys": DeepPhysConfig,
-    "FactorizePhys": FactorizePhysConfig,
     "EfficientPhys": EfficientPhysConfig,
+    "FactorizePhys": FactorizePhysConfig,
     "PhysFormer": PhysFormerConfig,
     "PhysMamba": PhysMambaConfig,
     "PhysNet": PhysNetConfig,
-    "iBVPNet": iBVPNetConfig,
-    "TSCAN": TSCANConfig,
     "RhythmFormer": RhythmFormerConfig,
+    "TSCAN": TSCANConfig,
+    "iBVPNet": iBVPNetConfig,
 }
 
 
 def _require_min_frame(interface: InterfaceConfig, name: str, minimum: int) -> None:
     """A backbone whose stem pools spatially needs a frame it leaves something of.
     Only checkable here when the interface resizes; otherwise the backbone
-    refuses at forward time with the same message."""
+    refuses at forward time with the same sentence, which both sides take from
+    ``neural_methods.model.shared.min_frame_message``."""
     if interface.resizes and min(interface.RESIZE.H, interface.RESIZE.W) < minimum:
         raise ConfigError(
-            f"{name} pools frames down to nothing below {minimum}x{minimum}; the "
-            f"interface RESIZE is {{H: {interface.RESIZE.H}, W: {interface.RESIZE.W}}}")
+            f"{min_frame_message(name, minimum)}; the interface RESIZE is "
+            f"{{H: {interface.RESIZE.H}, W: {interface.RESIZE.W}}}")
+
+
+def _require_frame_size(interface: InterfaceConfig, name: str) -> tuple:
+    """``(H, W)`` for a backbone whose dense layer is sized from the frame.
+
+    The dense width is derived per axis, so a non-square frame is fine; what
+    cannot be derived is a frame size the interface does not state.
+    """
+    if not interface.resizes:
+        raise ConfigError(
+            f"{name} sizes its dense layer from the frame, so it needs an "
+            f"interface RESIZE; this one does not resize")
+    return (interface.RESIZE.H, interface.RESIZE.W)
 
 
 def _require_input_block(name: str, interface: InterfaceConfig, where: str) -> None:
@@ -312,55 +328,6 @@ class MultiTraceModel(nn.Module):
 # ---------------------------------------------------------------------------
 # Builders: (model config, interface) -> MultiTraceModel
 # ---------------------------------------------------------------------------
-def _build_deepphys(cfg: DeepPhysConfig, interface: InterfaceConfig) -> MultiTraceModel:
-    if not interface.resizes or interface.RESIZE.H != interface.RESIZE.W:
-        raise ConfigError(
-            f"DeepPhys sizes its dense layer from a square frame; the interface "
-            f"RESIZE is {{H: {interface.RESIZE.H}, W: {interface.RESIZE.W}}}")
-    width = len(interface.CHANNELS)
-    size = interface.RESIZE.H
-    return MultiTraceModel(
-        make_copy=lambda: DeepPhys(in_channels=width, img_size=size),
-        channels=interface.CHANNELS, traces=interface.TRACES,
-        input_blocks=[cfg.MOTION_INPUT, cfg.APPEARANCE_INPUT], per_frame=True)
-
-
-def _build_tscan(cfg: TSCANConfig, interface: InterfaceConfig) -> MultiTraceModel:
-    if not interface.resizes or interface.RESIZE.H != interface.RESIZE.W:
-        raise ConfigError(
-            f"TSCAN sizes its dense layer from a square frame; the interface "
-            f"RESIZE is {{H: {interface.RESIZE.H}, W: {interface.RESIZE.W}}}")
-    width = len(interface.CHANNELS)
-    size = interface.RESIZE.H
-    return MultiTraceModel(
-        make_copy=lambda: TSCAN(in_channels=width, img_size=size, frame_depth=cfg.FRAME_DEPTH),
-        channels=interface.CHANNELS, traces=interface.TRACES,
-        input_blocks=[cfg.MOTION_INPUT, cfg.APPEARANCE_INPUT], per_frame=False)
-
-
-def _build_factorizephys(cfg: FactorizePhysConfig, interface: InterfaceConfig) -> MultiTraceModel:
-    _require_min_frame(interface, "FactorizePhys", factorizephys.MIN_FRAME)
-    width = len(interface.CHANNELS)
-    return MultiTraceModel(
-        make_copy=lambda: factorizephys.FactorizePhys(in_channels=width, use_fsam=cfg.FSAM),
-        channels=interface.CHANNELS, traces=interface.TRACES,
-        input_blocks=[cfg.INPUT], per_frame=False)
-
-
-def _build_efficientphys(cfg: EfficientPhysConfig, interface: InterfaceConfig) -> MultiTraceModel:
-    if not interface.resizes or interface.RESIZE.H != interface.RESIZE.W:
-        raise ConfigError(
-            f"EfficientPhys sizes its dense layer from a square frame; the interface "
-            f"RESIZE is {{H: {interface.RESIZE.H}, W: {interface.RESIZE.W}}}")
-    width = len(interface.CHANNELS)
-    size = interface.RESIZE.H
-    return MultiTraceModel(
-        make_copy=lambda: EfficientPhys(in_channels=width, img_size=size,
-                                        frame_depth=cfg.FRAME_DEPTH),
-        channels=interface.CHANNELS, traces=interface.TRACES,
-        input_blocks=[cfg.INPUT], per_frame=False)
-
-
 def _build_bigsmall(cfg: BigSmallConfig, interface: InterfaceConfig) -> MultiTraceModel:
     _require_min_frame(interface, "BigSmall", bigsmall.MIN_FRAME)
     width = len(interface.CHANNELS)
@@ -371,11 +338,30 @@ def _build_bigsmall(cfg: BigSmallConfig, interface: InterfaceConfig) -> MultiTra
         input_blocks=[cfg.BIG_INPUT, cfg.SMALL_INPUT], per_frame=False)
 
 
-def _build_physmamba(cfg: PhysMambaConfig, interface: InterfaceConfig) -> MultiTraceModel:
-    _require_min_frame(interface, "PhysMamba", physmamba.MIN_FRAME)
+def _build_deepphys(cfg: DeepPhysConfig, interface: InterfaceConfig) -> MultiTraceModel:
+    size = _require_frame_size(interface, "DeepPhys")
     width = len(interface.CHANNELS)
     return MultiTraceModel(
-        make_copy=lambda: physmamba.PhysMamba(in_channels=width),
+        make_copy=lambda: deepphys.DeepPhys(in_channels=width, img_size=size),
+        channels=interface.CHANNELS, traces=interface.TRACES,
+        input_blocks=[cfg.MOTION_INPUT, cfg.APPEARANCE_INPUT], per_frame=True)
+
+
+def _build_efficientphys(cfg: EfficientPhysConfig, interface: InterfaceConfig) -> MultiTraceModel:
+    size = _require_frame_size(interface, "EfficientPhys")
+    width = len(interface.CHANNELS)
+    return MultiTraceModel(
+        make_copy=lambda: efficientphys.EfficientPhys(in_channels=width, img_size=size,
+                                                      frame_depth=cfg.FRAME_DEPTH),
+        channels=interface.CHANNELS, traces=interface.TRACES,
+        input_blocks=[cfg.INPUT], per_frame=False)
+
+
+def _build_factorizephys(cfg: FactorizePhysConfig, interface: InterfaceConfig) -> MultiTraceModel:
+    _require_min_frame(interface, "FactorizePhys", factorizephys.MIN_FRAME)
+    width = len(interface.CHANNELS)
+    return MultiTraceModel(
+        make_copy=lambda: factorizephys.FactorizePhys(in_channels=width, use_fsam=cfg.FSAM),
         channels=interface.CHANNELS, traces=interface.TRACES,
         input_blocks=[cfg.INPUT], per_frame=False)
 
@@ -389,20 +375,20 @@ def _build_physformer(cfg: PhysFormerConfig, interface: InterfaceConfig) -> Mult
         input_blocks=[cfg.INPUT], per_frame=False)
 
 
+def _build_physmamba(cfg: PhysMambaConfig, interface: InterfaceConfig) -> MultiTraceModel:
+    _require_min_frame(interface, "PhysMamba", physmamba.MIN_FRAME)
+    width = len(interface.CHANNELS)
+    return MultiTraceModel(
+        make_copy=lambda: physmamba.PhysMamba(in_channels=width),
+        channels=interface.CHANNELS, traces=interface.TRACES,
+        input_blocks=[cfg.INPUT], per_frame=False)
+
+
 def _build_physnet(cfg: PhysNetConfig, interface: InterfaceConfig) -> MultiTraceModel:
     _require_min_frame(interface, "PhysNet", physnet.MIN_FRAME)
     width = len(interface.CHANNELS)
     return MultiTraceModel(
         make_copy=lambda: physnet.PhysNet(in_channels=width),
-        channels=interface.CHANNELS, traces=interface.TRACES,
-        input_blocks=[cfg.INPUT], per_frame=False)
-
-
-def _build_ibvpnet(cfg: iBVPNetConfig, interface: InterfaceConfig) -> MultiTraceModel:
-    _require_min_frame(interface, "iBVPNet", ibvpnet.MIN_FRAME)
-    width = len(interface.CHANNELS)
-    return MultiTraceModel(
-        make_copy=lambda: ibvpnet.iBVPNet(in_channels=width),
         channels=interface.CHANNELS, traces=interface.TRACES,
         input_blocks=[cfg.INPUT], per_frame=False)
 
@@ -416,18 +402,37 @@ def _build_rhythmformer(cfg: RhythmFormerConfig, interface: InterfaceConfig) -> 
         input_blocks=[cfg.INPUT], per_frame=False)
 
 
+def _build_tscan(cfg: TSCANConfig, interface: InterfaceConfig) -> MultiTraceModel:
+    size = _require_frame_size(interface, "TSCAN")
+    width = len(interface.CHANNELS)
+    return MultiTraceModel(
+        make_copy=lambda: tscan.TSCAN(in_channels=width, img_size=size,
+                                      frame_depth=cfg.FRAME_DEPTH),
+        channels=interface.CHANNELS, traces=interface.TRACES,
+        input_blocks=[cfg.MOTION_INPUT, cfg.APPEARANCE_INPUT], per_frame=False)
+
+
+def _build_ibvpnet(cfg: iBVPNetConfig, interface: InterfaceConfig) -> MultiTraceModel:
+    _require_min_frame(interface, "iBVPNet", ibvpnet.MIN_FRAME)
+    width = len(interface.CHANNELS)
+    return MultiTraceModel(
+        make_copy=lambda: ibvpnet.iBVPNet(in_channels=width),
+        channels=interface.CHANNELS, traces=interface.TRACES,
+        input_blocks=[cfg.INPUT], per_frame=False)
+
+
 #: ``NAME`` -> builder. One line per architecture, beside its config class.
 MODEL_BUILDERS = {
     "BigSmall": _build_bigsmall,
     "DeepPhys": _build_deepphys,
-    "FactorizePhys": _build_factorizephys,
     "EfficientPhys": _build_efficientphys,
+    "FactorizePhys": _build_factorizephys,
     "PhysFormer": _build_physformer,
     "PhysMamba": _build_physmamba,
     "PhysNet": _build_physnet,
-    "iBVPNet": _build_ibvpnet,
-    "TSCAN": _build_tscan,
     "RhythmFormer": _build_rhythmformer,
+    "TSCAN": _build_tscan,
+    "iBVPNet": _build_ibvpnet,
 }
 
 

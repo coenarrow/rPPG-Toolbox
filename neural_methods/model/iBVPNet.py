@@ -35,6 +35,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 
+from neural_methods.model.shared import nearest_multiple, require_min_frame
+
 #: The two spatial-only ``MaxPool3d`` stages in ``spatio_temporal_encoder``,
 #: the stride-1 spatial ``MaxPool3d`` in ``temporal_encoder``, and the two
 #: stride-2 spatial convs in ``decoder_block``; a smaller frame pools to
@@ -114,7 +116,7 @@ class encoder_block(nn.Module):
         # divide by 4. At the paper's 160-frame windows the target equals T
         # and this is skipped.
         frames = st_x.shape[2]
-        t4 = max(round(frames / TEMPORAL_STRIDE), 1) * TEMPORAL_STRIDE
+        t4 = nearest_multiple(frames, TEMPORAL_STRIDE)
         if t4 != frames:
             st_x = F.adaptive_avg_pool3d(st_x, (t4, st_x.shape[3], st_x.shape[4]))
 
@@ -155,10 +157,7 @@ class iBVPNet(nn.Module):
     def forward(self, x):
         """``(B, in_channels, T, H, W)`` -> ``(B, 1, T)``."""
         frames, height, width = x.shape[2:]
-        if min(height, width) < MIN_FRAME:
-            raise ValueError(
-                f"iBVPNet pools frames down to nothing below {MIN_FRAME}x{MIN_FRAME}; "
-                f"got {height}x{width}.")
+        require_min_frame("iBVPNet", MIN_FRAME, height, width)
 
         # Diff along time, T -> T - 1, then append a zero frame so the trunk
         # sees T rows, same as the window length in and out.

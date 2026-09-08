@@ -10,10 +10,11 @@ inputs (the interface's channel count) instead of 3. The readout
 (``ConvBlockLast``) stays a single plane, a bare ``Conv1d`` with no
 activation, so an absolute-class signal like ABP can be predicted directly in
 mmHg; a multi-signal run is one complete copy of this network per trace
-(``MultiTraceModel``), never a widened readout on a shared trunk. The losses
-are the trainer's, not the original's: PhysFormer's published DLDL
-frequency/KL term is the ``SPECTRAL`` component of the per-signal loss, not a
-parallel criterion.
+(``MultiTraceModel``), never a widened readout on a shared trunk. The loss is
+the trainer's, not the original's, and is whatever the interface's ``LOSS``
+block states; the published DLDL frequency/KL term is not carried yet, which
+``configs/interfaces/physformer_interface.yaml`` notes beside its negative
+Pearson.
 
 Everything between those two layers — the 3-D stem, the (4,4,4) tube
 tokenization, the three temporal-difference transformer stages, the temporal
@@ -48,6 +49,10 @@ from einops import einsum, rearrange, reduce
 from torch import nn
 from torch.nn import functional as F
 
+from neural_methods.model.shared import (
+    nearest_multiple, require_min_frame, sum_spatial,
+)
+
 #: The stem's three ``MaxPool3d((1, 2, 2))`` stages, i.e. the spatial factor
 #: the tube patch embedding sees on top of its own patch size.
 STEM_SPATIAL_STRIDE = 8
@@ -59,11 +64,6 @@ MIN_FRAME = STEM_SPATIAL_STRIDE
 #: The head's two ``Upsample(scale_factor=(2, 1, 1))`` stages. The temporal
 #: patch size has to match it for the output to come back at the input length.
 HEAD_TEMPORAL_UPSAMPLE = 4
-
-
-def _nearest_multiple(n: int, k: int) -> int:
-    """The positive multiple of ``k`` nearest to ``n``."""
-    return max(round(n / k), 1) * k
 
 
 class CDC_T(nn.Module):
@@ -89,8 +89,8 @@ class CDC_T(nn.Module):
 
         # Only the central difference over a temporal kernel > 1 is meaningful.
         if self.conv.weight.shape[2] > 1:
-            kernel_diff = (reduce(self.conv.weight[:, :, 0], "co ci kh kw -> co ci", "sum")
-                           + reduce(self.conv.weight[:, :, 2], "co ci kh kw -> co ci", "sum"))
+            kernel_diff = (sum_spatial(self.conv.weight[:, :, 0])
+                           + sum_spatial(self.conv.weight[:, :, 2]))
             kernel_diff = rearrange(kernel_diff, "cout cin -> cout cin 1 1 1")
             out_diff = F.conv3d(input=x, weight=kernel_diff, bias=self.conv.bias,
                                 stride=self.conv.stride, padding=0,
@@ -316,10 +316,7 @@ class ViT_ST_ST_Compact3_TDC_gra_sharp(nn.Module):
     def forward(self, x, gra_sharp):
         """``(B, C_in, T, H, W)`` -> ``((B, 1, T), Score1, Score2, Score3)``."""
         frames, height, width = x.shape[2:]
-        if min(height, width) < MIN_FRAME:
-            raise ValueError(
-                f"PhysFormer's stem pools frames {STEM_SPATIAL_STRIDE}x, so they "
-                f"must be at least {MIN_FRAME}x{MIN_FRAME}; got {height}x{width}.")
+        require_min_frame("PhysFormer", MIN_FRAME, height, width)
 
         x = self.Stem0(x)
         x = self.Stem1(x)
@@ -328,7 +325,7 @@ class ViT_ST_ST_Compact3_TDC_gra_sharp(nn.Module):
         # Any size: bring the stem's output to whole tubes. At the paper's
         # 128x128 frames and 160-frame windows the target equals the input
         # and this is skipped, so that path stays the published network.
-        target = tuple(_nearest_multiple(n, self.patch) for n in x.shape[2:])
+        target = tuple(nearest_multiple(n, self.patch) for n in x.shape[2:])
         if tuple(x.shape[2:]) != target:
             x = F.adaptive_avg_pool3d(x, target)
 
@@ -347,8 +344,11 @@ class ViT_ST_ST_Compact3_TDC_gra_sharp(nn.Module):
         features_last = self.upsample(features_last)       # [B, dim,   T/2, gh, gw]
         features_last = self.upsample2(features_last)      # [B, dim/2, T,   gh, gw]
 
-        # Pool the token grid away; time survives.
-        features_last = reduce(features_last, "b c t gh gw -> b c t", "mean")
+        # Pool the token grid away; time survives. Two reductions rather than
+        # one over both axes: in float32 the accumulation order is part of the
+        # answer, and this is the order the original averaged in.
+        features_last = reduce(reduce(features_last, "b c t gh gw -> b c t gw", "mean"),
+                               "b c t gw -> b c t", "mean")
         rPPG = self.ConvBlockLast(features_last)           # [B, 1, T']
 
         # Back to the window length if the tubes did not divide it.

@@ -60,6 +60,10 @@ from timm.layers import DropPath, trunc_normal_
 from torch import Tensor, nn
 from torch.nn import functional as F
 
+from neural_methods.model.shared import (
+    nearest_multiple, require_min_frame, sum_spatial,
+)
+
 #: ``Fusion_Stem``'s stride-2 convolution and stride-2 max pool.
 STEM_SPATIAL_STRIDE = 4
 
@@ -73,21 +77,6 @@ MIN_FRAME = STEM_SPATIAL_STRIDE * PATCH_SPATIAL
 #: Regions per spatial axis in the bi-level routing attention: the region size
 #: is the token grid divided by this, i.e. 2x2 on the paper's 8x8 grid.
 REGION_SPLIT = 4
-
-
-def _nearest_multiple(n: int, k: int) -> int:
-    """The positive multiple of ``k`` nearest to ``n``."""
-    return max(round(n / k), 1) * k
-
-
-def _sum_spatial(weight: Tensor) -> Tensor:
-    """``(co, ci, kh, kw)`` summed over the kernel plane, row by row then across.
-
-    Two reductions rather than one over both axes: in float32 the accumulation
-    order is part of the answer, and this is the order the original summed in.
-    """
-    return reduce(reduce(weight, "co ci kh kw -> co ci kw", "sum"),
-                  "co ci kw -> co ci", "sum")
 
 
 # ---------------------------------------------------------------------------
@@ -181,8 +170,8 @@ class CDC_T(nn.Module):
             # ``.sum(2).sum(2)`` accumulates in: a single joint reduction over
             # both axes is the same number in exact arithmetic but not in
             # float32, and this kernel goes on to weight a convolution.
-            kernel_diff = (_sum_spatial(self.conv.weight[:, :, 0])
-                           + _sum_spatial(self.conv.weight[:, :, 2]))
+            kernel_diff = (sum_spatial(self.conv.weight[:, :, 0])
+                           + sum_spatial(self.conv.weight[:, :, 2]))
             kernel_diff = rearrange(kernel_diff, "cout cin -> cout cin 1 1 1")
             out_diff = F.conv3d(input=x, weight=kernel_diff, bias=self.conv.bias,
                                 stride=self.conv.stride, padding=0,
@@ -494,11 +483,7 @@ class RhythmFormer(nn.Module):
     def forward(self, x):
         """``(B, in_channels, T, H, W)`` -> ``(B, 1, T)``."""
         frames, height, width = x.shape[2:]
-        if min(height, width) < MIN_FRAME:
-            raise ValueError(
-                f"RhythmFormer's stem and patch embedding pool frames "
-                f"{MIN_FRAME}x, so they must be at least {MIN_FRAME}x{MIN_FRAME}; "
-                f"got {height}x{width}.")
+        require_min_frame("RhythmFormer", MIN_FRAME, height, width)
 
         x = self.Fusion_Stem(rearrange(x, "b c t h w -> b t c h w"))
         # The token grid is read off the stem's output, not asserted to be H/4.
@@ -507,7 +492,7 @@ class RhythmFormer(nn.Module):
 
         # Any window length: the stages patch time by up to 8. At the paper's
         # 160-frame windows the target equals T and this is skipped.
-        patched = _nearest_multiple(frames, self.temporal_stride)
+        patched = nearest_multiple(frames, self.temporal_stride)
         if patched != frames:
             x = F.adaptive_avg_pool3d(x, (patched, x.shape[3], x.shape[4]))
 

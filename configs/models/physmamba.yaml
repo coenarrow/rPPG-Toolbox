@@ -4,8 +4,9 @@
 # may flip. Layer sizes are NOT here: the architecture is defined once, in
 # neural_methods/model/PhysMamba.py, at its published values. Widths come from
 # the interface — the stem takes len(CHANNELS) inputs, and there is one
-# complete copy of the network per entry of TRACES. The window must be a
-# multiple of 4 frames (the slow stream strides time by 4).
+# complete copy of the network per entry of TRACES. Any window length works:
+# the slow stream's stride of 4 pools the stem's output to the nearest
+# multiple of 4 first, and the prediction is interpolated back afterwards.
 NAME: PhysMamba
 
 # Which INPUT_PREPROCESSING block the stem reads, by name. Must be listed in

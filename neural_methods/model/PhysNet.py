@@ -30,6 +30,8 @@ import torch.nn as nn
 from einops import rearrange
 from torch.nn import functional as F
 
+from neural_methods.model.shared import nearest_multiple, require_min_frame
+
 #: Two ``MaxPool3d`` stages spatial-only plus two spatial-and-temporal
 #: stages between the input and the bottleneck; a smaller frame pools to
 #: nothing.
@@ -128,10 +130,7 @@ class PhysNet(nn.Module):
     def forward(self, x):
         """``(B, in_channels, T, H, W)`` -> ``(B, 1, T)``."""
         frames, height, width = x.shape[2:]
-        if min(height, width) < MIN_FRAME:
-            raise ValueError(
-                f"PhysNet pools frames 16x, so they must be at least "
-                f"{MIN_FRAME}x{MIN_FRAME}; got {height}x{width}.")
+        require_min_frame("PhysNet", MIN_FRAME, height, width)
 
         x = self.ConvBlock1(x)
         x = self.MaxpoolSpa(x)
@@ -142,7 +141,7 @@ class PhysNet(nn.Module):
         # Any window length: the trunk halves time twice then doubles it back
         # twice, so T must divide by 4. At the paper's 128-frame windows the
         # target equals T and this is skipped.
-        t4 = max(round(frames / TEMPORAL_STRIDE), 1) * TEMPORAL_STRIDE
+        t4 = nearest_multiple(frames, TEMPORAL_STRIDE)
         if t4 != frames:
             x = F.adaptive_avg_pool3d(x, (t4, x.shape[3], x.shape[4]))
 
