@@ -31,7 +31,7 @@ from neural_methods.model.DeepPhys import DeepPhys
 from neural_methods.model.EfficientPhys import EfficientPhys
 from neural_methods.model import (
     BigSmall as bigsmall, PhysFormer as physformer, PhysMamba as physmamba,
-    PhysNet as physnet, iBVPNet as ibvpnet,
+    PhysNet as physnet, RhythmFormer as rhythmformer, iBVPNet as ibvpnet,
 )
 from neural_methods.model.FactorizePhys import FactorizePhys as factorizephys
 from neural_methods.model.PhysMamba import PhysMamba
@@ -162,6 +162,15 @@ class iBVPNetConfig:
         _require_input_block(self.INPUT, interface, f"{where}: INPUT")
 
 
+@dataclass
+class RhythmFormerConfig:
+    NAME: str = ""
+    INPUT: str = ""               # INPUT_PREPROCESSING block the stem reads
+
+    def validate(self, interface: InterfaceConfig, where: str) -> None:
+        _require_input_block(self.INPUT, interface, f"{where}: INPUT")
+
+
 #: ``NAME`` -> the dataclass its file is parsed into.
 MODEL_CONFIGS = {
     "BigSmall": BigSmallConfig,
@@ -173,6 +182,7 @@ MODEL_CONFIGS = {
     "PhysNet": PhysNetConfig,
     "iBVPNet": iBVPNetConfig,
     "TSCAN": TSCANConfig,
+    "RhythmFormer": RhythmFormerConfig,
 }
 
 
@@ -397,6 +407,15 @@ def _build_ibvpnet(cfg: iBVPNetConfig, interface: InterfaceConfig) -> MultiTrace
         input_blocks=[cfg.INPUT], per_frame=False)
 
 
+def _build_rhythmformer(cfg: RhythmFormerConfig, interface: InterfaceConfig) -> MultiTraceModel:
+    _require_min_frame(interface, "RhythmFormer", rhythmformer.MIN_FRAME)
+    width = len(interface.CHANNELS)
+    return MultiTraceModel(
+        make_copy=lambda: rhythmformer.RhythmFormer(in_channels=width),
+        channels=interface.CHANNELS, traces=interface.TRACES,
+        input_blocks=[cfg.INPUT], per_frame=False)
+
+
 #: ``NAME`` -> builder. One line per architecture, beside its config class.
 MODEL_BUILDERS = {
     "BigSmall": _build_bigsmall,
@@ -408,6 +427,7 @@ MODEL_BUILDERS = {
     "PhysNet": _build_physnet,
     "iBVPNet": _build_ibvpnet,
     "TSCAN": _build_tscan,
+    "RhythmFormer": _build_rhythmformer,
 }
 
 
