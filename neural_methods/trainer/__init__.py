@@ -4,6 +4,5 @@ import neural_methods.trainer.TscanTrainer
 import neural_methods.trainer.EfficientPhysTrainer
 import neural_methods.trainer.BigSmallTrainer
 import neural_methods.trainer.RhythmFormerTrainer
-import neural_methods.trainer.FactorizePhysTrainer
 import neural_methods.trainer.PhysHydraTrainer
 import neural_methods.trainer.MultiSignalTrainer

@@ -28,6 +28,7 @@ from src.config import ConfigError, build, load_yaml
 from neural_methods.batch import FRAMES, PREDICTIONS, split_signals
 from neural_methods.frame_transforms import DATA_TYPES
 from neural_methods.model.DeepPhys import DeepPhys
+from neural_methods.model.FactorizePhys import FactorizePhys as factorizephys
 from neural_methods.model import PhysFormer as physformer, PhysMamba as physmamba, PhysNet as physnet
 from neural_methods.model.PhysMamba import PhysMamba
 from src.interface import InterfaceConfig
@@ -53,6 +54,18 @@ class DeepPhysConfig:
                 f"{where}: MOTION_INPUT and APPEARANCE_INPUT are both "
                 f"{self.MOTION_INPUT!r}; the two branches read different "
                 f"preprocessings of the frame")
+
+
+@dataclass
+class FactorizePhysConfig:
+    NAME: str = ""
+    INPUT: str = ""               # INPUT_PREPROCESSING block the stem reads
+    FSAM: bool = True             # run the factorized attention module, the
+                                  # ablation the paper reports; the paper path
+                                  # (FSAM_Res) is true
+
+    def validate(self, interface: InterfaceConfig, where: str) -> None:
+        _require_input_block(self.INPUT, interface, f"{where}: INPUT")
 
 
 @dataclass
@@ -85,6 +98,7 @@ class PhysNetConfig:
 #: ``NAME`` -> the dataclass its file is parsed into.
 MODEL_CONFIGS = {
     "DeepPhys": DeepPhysConfig,
+    "FactorizePhys": FactorizePhysConfig,
     "PhysFormer": PhysFormerConfig,
     "PhysMamba": PhysMambaConfig,
     "PhysNet": PhysNetConfig,
@@ -230,6 +244,15 @@ def _build_deepphys(cfg: DeepPhysConfig, interface: InterfaceConfig) -> MultiTra
         input_blocks=[cfg.MOTION_INPUT, cfg.APPEARANCE_INPUT], per_frame=True)
 
 
+def _build_factorizephys(cfg: FactorizePhysConfig, interface: InterfaceConfig) -> MultiTraceModel:
+    _require_min_frame(interface, "FactorizePhys", factorizephys.MIN_FRAME)
+    width = len(interface.CHANNELS)
+    return MultiTraceModel(
+        make_copy=lambda: factorizephys.FactorizePhys(in_channels=width, use_fsam=cfg.FSAM),
+        channels=interface.CHANNELS, traces=interface.TRACES,
+        input_blocks=[cfg.INPUT], per_frame=False)
+
+
 def _build_physmamba(cfg: PhysMambaConfig, interface: InterfaceConfig) -> MultiTraceModel:
     _require_min_frame(interface, "PhysMamba", physmamba.MIN_FRAME)
     width = len(interface.CHANNELS)
@@ -260,6 +283,7 @@ def _build_physnet(cfg: PhysNetConfig, interface: InterfaceConfig) -> MultiTrace
 #: ``NAME`` -> builder. One line per architecture, beside its config class.
 MODEL_BUILDERS = {
     "DeepPhys": _build_deepphys,
+    "FactorizePhys": _build_factorizephys,
     "PhysFormer": _build_physformer,
     "PhysMamba": _build_physmamba,
     "PhysNet": _build_physnet,
