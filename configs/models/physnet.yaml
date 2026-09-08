@@ -1,0 +1,13 @@
+# PhysNet (Yu et al., 2019). Selected with --model physnet.
+#
+# A model file carries the architecture's name plus the switches an experiment
+# may flip. Layer sizes are NOT here: the architecture is defined once, in
+# neural_methods/model/PhysNet.py, at its published values. Widths come from
+# the interface — the stem takes len(CHANNELS) inputs, and there is one
+# complete copy of the network per entry of TRACES. The window must be a
+# multiple of 4 frames (the trunk halves time twice then doubles it back).
+NAME: PhysNet
+
+# Which INPUT_PREPROCESSING block the stem reads, by name. Must be listed in
+# the interface's INPUT_PREPROCESSING. The paper trains on DiffNormalized.
+INPUT: DiffNormalized

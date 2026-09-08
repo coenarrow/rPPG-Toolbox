@@ -1,28 +1,57 @@
-""" PhysNet
-We repulicate the net pipeline of the orginal paper, but set the input as diffnormalized data.
-orginal source:
-Remote Photoplethysmograph Signal Measurement from Facial Videos Using Spatio-Temporal Networks
-British Machine Vision Conference (BMVC)} 2019,
-By Zitong Yu, 2019/05/05
-Only for research purpose, and commercial use is not allowed.
-MIT License
-Copyright (c) 2019
+"""PhysNet: an end-to-end spatio-temporal encoder-decoder for rPPG.
+
+Yu et al., "Remote Photoplethysmograph Signal Measurement from Facial Videos
+Using Spatio-Temporal Networks", BMVC 2019.
+
+The architecture is unchanged from the original: the same 3D-conv stem, the
+same encoder-decoder trunk that halves time twice and doubles it back twice
+via transposed convolutions, the same single-plane readout. One thing differs
+from the published network: the stem takes ``in_channels`` inputs (the
+interface's channel count) instead of 3. The readout stays a single output
+plane; a multi-signal run is one complete copy of this network per trace
+(``MultiTraceModel``), never a widened readout on a shared trunk. At ``3``
+this is exactly the original, layer for layer.
+
+Any window length is accepted: the trunk halves time twice before the
+transposed convolutions double it back twice, so the stem's output is
+average-pooled in time to the nearest multiple of 4 and the prediction is
+linearly interpolated back to the window length after it. Both are skipped
+when the window already divides by 4, so on
+``configs/interfaces/physnet_interface.yaml`` (128-frame windows) the forward
+pass is the published one. Frames may be any size from 16x16, the smallest
+the four 2x spatial pools leave anything of.
+
+A clip backbone on the multi-signal contract: ``(B, C_in, T, H, W)`` in,
+``(B, 1, T)`` out, preprocessing done by the dataset, the loss owned by the
+trainer. All reshaping is einops.
 """
 
-import math
-import pdb
-
-import torch
 import torch.nn as nn
-from torch.nn.modules.utils import _triple
+from einops import rearrange
+from torch.nn import functional as F
+
+#: Two ``MaxPool3d`` stages spatial-only plus two spatial-and-temporal
+#: stages between the input and the bottleneck; a smaller frame pools to
+#: nothing.
+MIN_FRAME = 16
+
+#: The trunk's temporal stride: two 2x halvings before the bottleneck, undone
+#: by two 2x transposed-conv upsamples after it.
+TEMPORAL_STRIDE = 4
 
 
-class PhysNet_padding_Encoder_Decoder_MAX(nn.Module):
-    def __init__(self, frames=128):
-        super(PhysNet_padding_Encoder_Decoder_MAX, self).__init__()
+class PhysNet(nn.Module):
+    def __init__(self, in_channels=3):
+        """Definition of PhysNet.
+
+        Args:
+          in_channels: the number of input channels. Default: 3.
+        """
+        super().__init__()
+        self.in_channels = in_channels
 
         self.ConvBlock1 = nn.Sequential(
-            nn.Conv3d(3, 16, [1, 5, 5], stride=1, padding=[0, 2, 2]),
+            nn.Conv3d(in_channels, 16, [1, 5, 5], stride=1, padding=[0, 2, 2]),
             nn.BatchNorm3d(16),
             nn.ReLU(inplace=True),
         )
@@ -70,14 +99,14 @@ class PhysNet_padding_Encoder_Decoder_MAX(nn.Module):
         )
 
         self.upsample = nn.Sequential(
-            nn.ConvTranspose3d(in_channels=64, out_channels=64, kernel_size=[
-                4, 1, 1], stride=[2, 1, 1], padding=[1, 0, 0]),  # [1, 128, 32]
+            nn.ConvTranspose3d(in_channels=64, out_channels=64,
+                                kernel_size=[4, 1, 1], stride=[2, 1, 1], padding=[1, 0, 0]),
             nn.BatchNorm3d(64),
             nn.ELU(),
         )
         self.upsample2 = nn.Sequential(
-            nn.ConvTranspose3d(in_channels=64, out_channels=64, kernel_size=[
-                4, 1, 1], stride=[2, 1, 1], padding=[1, 0, 0]),  # [1, 128, 32]
+            nn.ConvTranspose3d(in_channels=64, out_channels=64,
+                                kernel_size=[4, 1, 1], stride=[2, 1, 1], padding=[1, 0, 0]),
             nn.BatchNorm3d(64),
             nn.ELU(),
         )
@@ -87,38 +116,56 @@ class PhysNet_padding_Encoder_Decoder_MAX(nn.Module):
         self.MaxpoolSpa = nn.MaxPool3d((1, 2, 2), stride=(1, 2, 2))
         self.MaxpoolSpaTem = nn.MaxPool3d((2, 2, 2), stride=2)
 
-        # self.poolspa = nn.AdaptiveMaxPool3d((frames,1,1))    # pool only spatial space
-        self.poolspa = nn.AdaptiveAvgPool3d((frames, 1, 1))
+        # Spatial-only pooling to a point, time kept at whatever length the
+        # trunk hands back: ``None`` is the identity in time, so one model
+        # serves any window.
+        self.poolspa = nn.AdaptiveAvgPool3d((None, 1, 1))
 
-    def forward(self, x):  # Batch_size*[3, T, 128,128]
-        x_visual = x
-        [batch, channel, length, width, height] = x.shape
+    def output_layers(self):
+        """The activation-free readout: the final 1x1x1 conv."""
+        return (self.ConvBlock10,)
 
-        x = self.ConvBlock1(x)  # x [3, T, 128,128]
-        x = self.MaxpoolSpa(x)  # x [16, T, 64,64]
+    def forward(self, x):
+        """``(B, in_channels, T, H, W)`` -> ``(B, 1, T)``."""
+        frames, height, width = x.shape[2:]
+        if min(height, width) < MIN_FRAME:
+            raise ValueError(
+                f"PhysNet pools frames 16x, so they must be at least "
+                f"{MIN_FRAME}x{MIN_FRAME}; got {height}x{width}.")
 
-        x = self.ConvBlock2(x)  # x [32, T, 64,64]
-        x_visual6464 = self.ConvBlock3(x)  # x [32, T, 64,64]
-        # x [32, T/2, 32,32]    Temporal halve
-        x = self.MaxpoolSpaTem(x_visual6464)
+        x = self.ConvBlock1(x)
+        x = self.MaxpoolSpa(x)
 
-        x = self.ConvBlock4(x)  # x [64, T/2, 32,32]
-        x_visual3232 = self.ConvBlock5(x)  # x [64, T/2, 32,32]
-        x = self.MaxpoolSpaTem(x_visual3232)  # x [64, T/4, 16,16]
+        x = self.ConvBlock2(x)
+        x = self.ConvBlock3(x)
 
-        x = self.ConvBlock6(x)  # x [64, T/4, 16,16]
-        x_visual1616 = self.ConvBlock7(x)  # x [64, T/4, 16,16]
-        x = self.MaxpoolSpa(x_visual1616)  # x [64, T/4, 8,8]
+        # Any window length: the trunk halves time twice then doubles it back
+        # twice, so T must divide by 4. At the paper's 128-frame windows the
+        # target equals T and this is skipped.
+        t4 = max(round(frames / TEMPORAL_STRIDE), 1) * TEMPORAL_STRIDE
+        if t4 != frames:
+            x = F.adaptive_avg_pool3d(x, (t4, x.shape[3], x.shape[4]))
 
-        x = self.ConvBlock8(x)  # x [64, T/4, 8, 8]
-        x = self.ConvBlock9(x)  # x [64, T/4, 8, 8]
-        x = self.upsample(x)  # x [64, T/2, 8, 8]
-        x = self.upsample2(x)  # x [64, T, 8, 8]
+        x = self.MaxpoolSpaTem(x)
 
-        # x [64, T, 1,1]    -->  groundtruth left and right - 7
+        x = self.ConvBlock4(x)
+        x = self.ConvBlock5(x)
+        x = self.MaxpoolSpaTem(x)
+
+        x = self.ConvBlock6(x)
+        x = self.ConvBlock7(x)
+        x = self.MaxpoolSpa(x)
+
+        x = self.ConvBlock8(x)
+        x = self.ConvBlock9(x)
+        x = self.upsample(x)
+        x = self.upsample2(x)
+
         x = self.poolspa(x)
-        x = self.ConvBlock10(x)  # x [1, T, 1,1]
+        x = self.ConvBlock10(x)
+        out = rearrange(x, "b 1 t 1 1 -> b 1 t")
 
-        rPPG = x.view(-1, length)
-
-        return rPPG, x_visual, x_visual3232, x_visual1616
+        # Back to the window length if the stride did not divide it.
+        if out.shape[-1] != frames:
+            out = F.interpolate(out, size=frames, mode="linear", align_corners=False)
+        return out
