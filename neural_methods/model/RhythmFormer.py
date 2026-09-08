@@ -24,12 +24,9 @@ cross-entropy and label-distribution terms to negative Pearson, and those
 belong in the interface's ``LOSS`` block, not here.
 
 On ``configs/interfaces/rhythmformer_interface.yaml`` (128x128 frames,
-160-frame windows) the forward pass is the published computation: every layer
-in the original order, nothing skipped and nothing added, agreeing with the
-upstream module loaded from the same weights to 1.5e-8 on a paper-shaped
-clip. That residue is float32 rounding, not arithmetic — where upstream
-handed the attention matmul a transposed strided view, einops materializes
-the operand and BLAS sums in a different order.
+160-frame windows) the forward pass is the published one, bit for bit:
+loaded from the same weights, this module and the pre-migration one return
+identical tensors on a paper-shaped clip.
 
 Any other frame size from 16x16 and any window length are accepted through
 three adaptive stages, each an exact no-op at the paper's shape:
@@ -81,6 +78,16 @@ REGION_SPLIT = 4
 def _nearest_multiple(n: int, k: int) -> int:
     """The positive multiple of ``k`` nearest to ``n``."""
     return max(round(n / k), 1) * k
+
+
+def _sum_spatial(weight: Tensor) -> Tensor:
+    """``(co, ci, kh, kw)`` summed over the kernel plane, row by row then across.
+
+    Two reductions rather than one over both axes: in float32 the accumulation
+    order is part of the answer, and this is the order the original summed in.
+    """
+    return reduce(reduce(weight, "co ci kh kw -> co ci kw", "sum"),
+                  "co ci kw -> co ci", "sum")
 
 
 # ---------------------------------------------------------------------------
@@ -170,8 +177,12 @@ class CDC_T(nn.Module):
 
         # Only the central difference over a temporal kernel > 1 is meaningful.
         if self.conv.weight.shape[2] > 1:
-            kernel_diff = (reduce(self.conv.weight[:, :, 0], "co ci kh kw -> co ci", "sum")
-                           + reduce(self.conv.weight[:, :, 2], "co ci kh kw -> co ci", "sum"))
+            # Summed over kh and then over kw, the order upstream's
+            # ``.sum(2).sum(2)`` accumulates in: a single joint reduction over
+            # both axes is the same number in exact arithmetic but not in
+            # float32, and this kernel goes on to weight a convolution.
+            kernel_diff = (_sum_spatial(self.conv.weight[:, :, 0])
+                           + _sum_spatial(self.conv.weight[:, :, 2]))
             kernel_diff = rearrange(kernel_diff, "cout cin -> cout cin 1 1 1")
             out_diff = F.conv3d(input=x, weight=kernel_diff, bias=self.conv.bias,
                                 stride=self.conv.stride, padding=0,
@@ -503,8 +514,10 @@ class RhythmFormer(nn.Module):
         for stage in self.stages:
             x = stage(x)                       # [B, dim, T, gh, gw]
 
-        # Pool the token grid away; time survives.
-        features_last = reduce(x, "b c t gh gw -> b c t", "mean")
+        # Pool the token grid away, row by row then across, the order
+        # upstream's two ``torch.mean(., 3)`` calls average in; time survives.
+        features_last = reduce(reduce(x, "b c t gh gw -> b c t gw", "mean"),
+                               "b c t gw -> b c t", "mean")
         rPPG = self.ConvBlockLast(features_last)               # [B, 1, T']
 
         # Back to the window length if the temporal patches did not divide it.
