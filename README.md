@@ -71,52 +71,84 @@ which the standard interface
 ([`configs/interfaces/interface_neckflix.yaml`](configs/interfaces/interface_neckflix.yaml))
 does not produce yet; their paper interfaces do.
 
-Each one trains and tests on the PURE dataset, holding out its first
-participant, on the model's own paper interface and paper training recipe
-(the rPPG-Toolbox definition of that model; see `configs/interfaces/` and
-`configs/training/`):
+Each one trains on the PURE dataset holding out its first participant, on
+the model's own paper interface and paper training recipe (the rPPG-Toolbox
+definition of that model; see `configs/interfaces/` and `configs/training/`).
+A fold is three commands run back to back, train, infer, evaluate, each
+reading the run directory the one before it wrote:
+
+```bash
+# 1. fit the model; writes runs/PHYSNET_PURE.01_<YYYYMMDDHHMM>/ (config.yaml, model.pt, losses.csv)
+uv run python scripts/train.py --datasets pure --test-participant-dataset pure --test-participant-id 01 --model physnet --interface configs/interfaces/physnet_interface.yaml --training configs/training/physnet_training.yaml
+
+# 2. run the checkpoint over the held-out participant; writes test_records/ beside it
+uv run python scripts/infer.py runs/PHYSNET_PURE.01_<YYYYMMDDHHMM>
+
+# 3. score the records; writes windows.csv, rates.csv, summary.csv, digest.txt and the plots
+uv run python -m src.evaluation.evaluate runs/PHYSNET_PURE.01_<YYYYMMDDHHMM>
+```
+
+`scripts/infer.py` rebuilds the run from `model.pt` alone (the checkpoint
+carries every config the run executed on), so it also runs the model on
+another participant (`--test-participant-dataset pure
+--test-participant-id 02 --out DIR`) or from another cache (`--datasets`).
+`scripts/train.py` with no held-out participant trains on every admitted
+store, as `runs/<MODEL>_<DATASET>.all-..._<YYYYMMDDHHMM>/`, for a final model
+to infer with later.
+`scripts/eval.py` is a stub for now; step 3 is the evaluation package's own
+entry point until the script is shaped. Add `--limit-windows 8` to steps 1
+and 2 for a wiring check.
+
+The training command per model; steps 2 and 3 follow with the run directory
+it prints:
 
 ```bash
 # BigSmall
-uv run python run_experiment.py --datasets pure --test-participant-dataset pure --test-participant-id 01 --model bigsmall --interface configs/interfaces/bigsmall_interface.yaml --training configs/training/bigsmall_training.yaml
+uv run python scripts/train.py --datasets pure --test-participant-dataset pure --test-participant-id 01 --model bigsmall --interface configs/interfaces/bigsmall_interface.yaml --training configs/training/bigsmall_training.yaml
 
 # DeepPhys
-uv run python run_experiment.py --datasets pure --test-participant-dataset pure --test-participant-id 01 --model deepphys --interface configs/interfaces/deepphys_interface.yaml --training configs/training/deepphys_training.yaml
+uv run python scripts/train.py --datasets pure --test-participant-dataset pure --test-participant-id 01 --model deepphys --interface configs/interfaces/deepphys_interface.yaml --training configs/training/deepphys_training.yaml
 
 # EfficientPhys
-uv run python run_experiment.py --datasets pure --test-participant-dataset pure --test-participant-id 01 --model efficientphys --interface configs/interfaces/efficientphys_interface.yaml --training configs/training/efficientphys_training.yaml
+uv run python scripts/train.py --datasets pure --test-participant-dataset pure --test-participant-id 01 --model efficientphys --interface configs/interfaces/efficientphys_interface.yaml --training configs/training/efficientphys_training.yaml
 
 # FactorizePhys
-uv run python run_experiment.py --datasets pure --test-participant-dataset pure --test-participant-id 01 --model factorizephys --interface configs/interfaces/factorizephys_interface.yaml --training configs/training/factorizephys_training.yaml
+uv run python scripts/train.py --datasets pure --test-participant-dataset pure --test-participant-id 01 --model factorizephys --interface configs/interfaces/factorizephys_interface.yaml --training configs/training/factorizephys_training.yaml
 
 # PhysFormer
-uv run python run_experiment.py --datasets pure --test-participant-dataset pure --test-participant-id 01 --model physformer --interface configs/interfaces/physformer_interface.yaml --training configs/training/physformer_training.yaml
+uv run python scripts/train.py --datasets pure --test-participant-dataset pure --test-participant-id 01 --model physformer --interface configs/interfaces/physformer_interface.yaml --training configs/training/physformer_training.yaml
 
 # PhysMamba
-uv run python run_experiment.py --datasets pure --test-participant-dataset pure --test-participant-id 01 --model physmamba --interface configs/interfaces/physmamba_interface.yaml --training configs/training/physmamba_training.yaml
+uv run python scripts/train.py --datasets pure --test-participant-dataset pure --test-participant-id 01 --model physmamba --interface configs/interfaces/physmamba_interface.yaml --training configs/training/physmamba_training.yaml
 
 # PhysNet
-uv run python run_experiment.py --datasets pure --test-participant-dataset pure --test-participant-id 01 --model physnet --interface configs/interfaces/physnet_interface.yaml --training configs/training/physnet_training.yaml
+uv run python scripts/train.py --datasets pure --test-participant-dataset pure --test-participant-id 01 --model physnet --interface configs/interfaces/physnet_interface.yaml --training configs/training/physnet_training.yaml
 
 # RhythmFormer
-uv run python run_experiment.py --datasets pure --test-participant-dataset pure --test-participant-id 01 --model rhythmformer --interface configs/interfaces/rhythmformer_interface.yaml --training configs/training/rhythmformer_training.yaml
+uv run python scripts/train.py --datasets pure --test-participant-dataset pure --test-participant-id 01 --model rhythmformer --interface configs/interfaces/rhythmformer_interface.yaml --training configs/training/rhythmformer_training.yaml
 
 # TS-CAN
-uv run python run_experiment.py --datasets pure --test-participant-dataset pure --test-participant-id 01 --model tscan --interface configs/interfaces/tscan_interface.yaml --training configs/training/tscan_training.yaml
+uv run python scripts/train.py --datasets pure --test-participant-dataset pure --test-participant-id 01 --model tscan --interface configs/interfaces/tscan_interface.yaml --training configs/training/tscan_training.yaml
 
 # iBVPNet
-uv run python run_experiment.py --datasets pure --test-participant-dataset pure --test-participant-id 01 --model ibvpnet --interface configs/interfaces/ibvpnet_interface.yaml --training configs/training/ibvpnet_training.yaml
+uv run python scripts/train.py --datasets pure --test-participant-dataset pure --test-participant-id 01 --model ibvpnet --interface configs/interfaces/ibvpnet_interface.yaml --training configs/training/ibvpnet_training.yaml
 ```
 
-Add `--limit-windows 8` for a wiring check. Outputs land in
-`runs/<model>_pure_01/`, starting with a `config.yaml` that compiles every
-config the run executed on (command, git commit, datasets, split, interface,
-model, training recipe, resolved device) into one file. The evaluation
-scores every absolute signal on its level (`windows.csv`) and reads a heart
-rate off every cardiac trace the run predicts (`rates.csv`): PPG, ECG, ABP
-and CVP each against their own label, plus the fused power spectrum of all
-of them and the median of their rates when a window carries more than one.
-`digest.txt` is the readable summary of both.
+Outputs land in `runs/<MODEL>_PURE.01_<YYYYMMDDHHMM>/` (the model, each
+dataset with the participant it held out or `all`, and the minute the run
+started; `scripts/train.py` prints it), starting with a `config.yaml` that
+compiles every config the run executed on (command, git commit, datasets,
+split, interface, model, training recipe, resolved device) into one file.
+Inference adds `test_records/`: `windows.csv` (where each window sits and
+which channels and traces it carried), `meta.json`, and per recording and
+camera one `<TRACE>.csv` holding the time axis, the label, the mean and
+standard deviation of the overlapping window predictions, and one column
+per window, all in physical units and readable in a spreadsheet.
+The evaluation scores every absolute signal on its level (`windows.csv`) and
+reads a heart rate off every cardiac trace the run predicts (`rates.csv`):
+PPG, ECG, ABP and CVP each against their own label, plus the fused power
+spectrum of all of them and the median of their rates when a window carries
+more than one. `digest.txt` is the readable summary of both.
 
 To put another architecture on the contract, new or migrated from upstream,
 follow [docs/adding_a_model.md](docs/adding_a_model.md): one backbone module,

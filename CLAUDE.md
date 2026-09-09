@@ -34,9 +34,24 @@ multi-signal contract.
   Every addition considers all three platforms: Windows dev, Linux HPC, macOS.
 - **All tensor reshaping uses einops** (`rearrange` / `reduce` / `einsum`),
   not `view` / `permute` / `reshape` — including migrated model code.
-- **Testing stays minimal.** Research code, not production: existing contract
-  tests plus one smoke test per migration is the ceiling. Don't add tests
-  opportunistically.
+- **Tests are a cost, not a safety net.** This is research code; the suite
+  exists to catch a broken build, not to specify behaviour. Write a test only
+  when it is (a) the one build-and-forward smoke test a model migration
+  requires, or (b) a unit test of a pure function that fits in a dozen lines
+  with no fixtures. Never add tests to a refactor or a design change, never
+  test a test helper, and never add a test "for coverage". The verification
+  for a change is the run command in `README.md`, not a new test. This
+  overrides the test-driven-development and verification skills' defaults.
+- **Stale tests are deleted in the same change that stales them.** A test
+  that imports a module, name, or fixture argument that no longer exists, or
+  that asserts behaviour the current design has replaced, is deleted, not
+  fixed, skipped, marked xfail, or left failing. The design is the spec; the
+  old tests are not. After a design change, run only the tests that cover
+  the files you touched. If a test elsewhere fails, the default is that the
+  test is stale: delete it and name it in the summary so a human can veto,
+  rather than adapting the code back to it. A collection error from
+  `uv run pytest --collect-only -q` names a file to delete, not a file to
+  fix.
 - **Legacy code is deleted, not adapted.** No compatibility shims; git history
   and the `pre-overhaul` tag are the archive.
 - **Every model accepts any frame size and any window length.** Structural
@@ -61,8 +76,10 @@ multi-signal contract.
   paper files are where a migration is checked against the paper.
 - **A finished migration ends with a command in `README.md`.** When a model
   migrated from rPPG-Toolbox is done, add under "Algorithms" the exact
-  `run_experiment.py` command that trains and tests it on the PURE dataset
+  `scripts/train.py` command that trains it on the PURE dataset
   (`--datasets pure`) with only the first participant held out
   (`--test-participant-dataset pure --test-participant-id 01`), on its paper
-  interface and paper training recipe. That command is the migration's proof
-  of life; a model without one is not finished.
+  interface and paper training recipe (inference and evaluation are the
+  same two commands for every model, on the run directory it prints).
+  That command is the migration's proof of life; a model without one is
+  not finished.

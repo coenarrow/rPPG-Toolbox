@@ -7,7 +7,7 @@ models on the contract today (BigSmall, DeepPhys, EfficientPhys,
 FactorizePhys, PhysFormer, PhysMamba, PhysNet, RhythmFormer, TS-CAN,
 iBVPNet), and every file it touches is the file yours will touch.
 
-The authority on *how* a model is run is [`run_experiment.py`](../run_experiment.py)
+The authority on *how* a model is run is [`scripts/train.py`](../scripts/train.py)
 and the modules it imports from [`src/`](../src/). `main.py` and the
 `neural_methods/trainer/` package are legacy and are not what this guide
 describes.
@@ -395,14 +395,13 @@ refusal will surface first.
 
 ## Running it
 
+A fold is three commands, each reading the run directory the one before it
+wrote (`scripts/train.py` prints it):
+
 ```bash
-uv run python run_experiment.py \
-    --datasets neckflix \
-    --test-participant-dataset neckflix --test-participant-id 1 \
-    --model mynet \
-    --interface configs/interfaces/mynet_interface.yaml \
-    --training configs/training/mynet_training.yaml \
-    --limit-windows 8
+uv run python scripts/train.py --datasets neckflix --test-participant-dataset neckflix --test-participant-id 1 --model mynet --interface configs/interfaces/mynet_interface.yaml --training configs/training/mynet_training.yaml --limit-windows 8
+uv run python scripts/infer.py runs/MYNET_NECKFLIX.1_<YYYYMMDDHHMM> --limit-windows 8
+uv run python -m src.evaluation.evaluate runs/MYNET_NECKFLIX.1_<YYYYMMDDHHMM>
 ```
 
 `--limit-windows N` keeps N evenly spaced windows per split for a wiring
@@ -412,24 +411,33 @@ explicitly: the defaults point at `configs/interface.yaml` and
 the paper interface first to check the migration against the paper, then
 the standard interface every model is compared on.
 
-What happens, in order (all of it in `run_experiment.py`):
+What happens, in order:
 
-1. `load_interface` reads the interface; `load_model_config` reads your YAML
-   and validates it against that interface.
-2. `build_model(model_config, interface)` calls your builder.
-3. `Trainer(...)` checks the window against `temporal_divisor` /
+1. `scripts/train.py`: `load_interface` reads the interface;
+   `load_model_config` reads your YAML and validates it against that
+   interface; `build_model(model_config, interface)` calls your builder;
+   `Trainer(...)` checks the window against `temporal_divisor` /
    `temporal_length`, seeds the readout biases, exempts the readouts from
-   weight decay, wraps in DDP if distributed, then `fit` and `test`.
-4. `evaluate(records, run_dir, fs)` scores the held-out participant.
+   weight decay, wraps in DDP if distributed, then `fit` writes the run
+   directory. What the scripts share (the arguments, the compiled config,
+   the windowed datasets) is `src/experiment.py`.
+2. `scripts/infer.py`: rebuilds the interface, model config and recipe from
+   the checkpoint's compiled config through the same parsers the files went
+   through, builds the model, loads the weights, and `test` records the
+   held-out participant's windows.
+3. `src.evaluation.evaluate` (`scripts/eval.py` is a stub for now):
+   `evaluate(records, run_dir, fs)` scores them.
 
-Outputs land in `runs/<model>_<dataset>_<participant>/`:
+Outputs land in `runs/<MODEL>_<DATASET>.<participant or all>-..._<YYYYMMDDHHMM>/`
+(one `<DATASET>.<...>` per `--datasets` entry, the held-out participant on the
+dataset it came from and `all` on the rest):
 
 | File | Written by | Contents |
 | ------ | ----------- | ---------- |
-| `config.yaml` | trainer, before anything else | everything the run ran on in one mapping: the command, git commit, every dataset / interface / model / training config as loaded, the files they came from, the stores on each side of the hold-out, and the resolved device and precision |
-| `model.pt` | trainer, every epoch | state dict plus the same compiled config |
-| `losses.csv` | trainer, every epoch | per-epoch loss, per trace and component |
-| `test_records.pt` | trainer, after `test` | one record per strided window, predictions and labels in physical units |
+| `config.yaml` | train, before anything else | everything the run ran on in one mapping: the command, git commit, every dataset / interface / model / training config as loaded, the files they came from, the stores on each side of the hold-out, and the resolved device and precision |
+| `model.pt` | train, every epoch | state dict plus the same compiled config, which is what `infer` rebuilds the run from |
+| `losses.csv` | train, every epoch | per-epoch loss, per trace and component |
+| `test_records/` | infer | `meta.json`, `windows.csv` (one row per window with its position and presence flags), and per recording and camera one `<TRACE>.csv`: frame, time, label, mean / std / n over the overlapping windows, then one column per window, all in physical units |
 | `windows.csv`, `rates.csv`, `summary.csv`, plots | evaluation | per-window level scores for the absolute signals; per-window heart rate from every cardiac trace (PPG, ECG, ABP, CVP), from their fused spectra and from their median, each against its own label; the summary of both |
 
 ## Migrating an upstream rPPG-Toolbox model
