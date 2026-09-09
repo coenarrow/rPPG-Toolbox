@@ -9,4 +9,4 @@ SCHEDULER: OneCycle          # a name the trainer implements
 PRECISION: bfloat16          # float32 | bfloat16 | float16
 DEVICE: gpu                  # gpu | cpu; gpu = CUDA or Apple MPS, refused if neither exists
 NUM_WORKERS: 4               # DataLoader workers
-# MODEL_FILE_NAME: deepphys  # optional; default <model>_<test dataset>_<participant>
+# MODEL_FILE_NAME: deepphys  # optional; default <MODEL>_<DATASET>.<participant|all>-..._<YYYYMMDDHHMM>

@@ -17,4 +17,4 @@ SCHEDULER: Constant          # upstream: StepLR(50, 0.5), never reached in 10 ep
 PRECISION: float32           # upstream trains in full precision
 DEVICE: gpu                  # gpu | cpu; gpu = CUDA or Apple MPS, refused if neither exists
 NUM_WORKERS: 4               # DataLoader workers (a machine key, not the paper's)
-# MODEL_FILE_NAME: physformer  # optional; default <model>_<test dataset>_<participant>
+# MODEL_FILE_NAME: physformer  # optional; default <MODEL>_<DATASET>.<participant|all>-..._<YYYYMMDDHHMM>

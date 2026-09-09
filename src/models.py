@@ -234,24 +234,30 @@ def resolve_model_config(name: str) -> Path:
     return path
 
 
-def load_model_config(name: str, interface: InterfaceConfig):
-    """``configs/models/<name>.yaml``, typed by its ``NAME``, checked against ``interface``."""
-    path = resolve_model_config(name)
-    mapping = load_yaml(str(path))
+def parse_model_config(mapping: dict, interface: InterfaceConfig, where: str):
+    """One model mapping — a loaded file, or the ``model`` section a run's
+    compiled config carries — typed by its ``NAME``, checked against
+    ``interface``. ``where`` names the source in errors."""
     if not isinstance(mapping, dict) or not mapping:
-        raise ConfigError(f"{path.name}: a model config must be a non-empty mapping")
+        raise ConfigError(f"{where}: a model config must be a non-empty mapping")
     arch = mapping.get("NAME")
     if arch not in MODEL_CONFIGS:
         raise ConfigError(
-            f"{path.name}: NAME must be one of {sorted(MODEL_CONFIGS)}, got {arch!r}")
+            f"{where}: NAME must be one of {sorted(MODEL_CONFIGS)}, got {arch!r}")
     cls = MODEL_CONFIGS[arch]
     missing = sorted(f.name for f in fields(cls) if f.name not in mapping)
     if missing:
         raise ConfigError(
-            f"{path.name}: every {arch} key is required; missing {missing}")
-    cfg = build(cls, mapping, path.stem)
-    cfg.validate(interface, path.name)
+            f"{where}: every {arch} key is required; missing {missing}")
+    cfg = build(cls, mapping, where)
+    cfg.validate(interface, where)
     return cfg
+
+
+def load_model_config(name: str, interface: InterfaceConfig):
+    """``configs/models/<name>.yaml``, typed by its ``NAME``, checked against ``interface``."""
+    path = resolve_model_config(name)
+    return parse_model_config(load_yaml(str(path)), interface, path.name)
 
 
 # ---------------------------------------------------------------------------

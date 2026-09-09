@@ -80,14 +80,20 @@ def validate_training(cfg: TrainingConfig, where: str) -> TrainingConfig:
     return cfg
 
 
+def parse_training(mapping: dict, where: str) -> TrainingConfig:
+    """One recipe mapping — a loaded file, or the ``training`` section a run's
+    compiled config carries — typed, every required key present, every rule
+    checked. ``where`` names the source in errors."""
+    if not isinstance(mapping, dict):
+        raise ConfigError(f"{where}: the training recipe must be a mapping")
+    _require_every_key(mapping, where)
+    cfg = build(TrainingConfig, mapping, where)
+    return validate_training(cfg, where)
+
+
 def load_training(path: Path = DEFAULT_TRAINING_PATH) -> TrainingConfig:
     """The training file, typed, every required key present, every rule checked."""
     path = Path(path)
     if not path.is_file():
         raise ConfigError(f"No training config at {path}")
-    mapping = load_yaml(str(path))
-    if not isinstance(mapping, dict):
-        raise ConfigError(f"{path}: the training recipe must be a mapping")
-    _require_every_key(mapping, path.name)
-    cfg = build(TrainingConfig, mapping, path.stem)
-    return validate_training(cfg, path.name)
+    return parse_training(load_yaml(str(path)), path.name)

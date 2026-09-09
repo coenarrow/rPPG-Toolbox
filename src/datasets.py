@@ -76,13 +76,20 @@ def resolve_dataset_configs(names: list[str]) -> dict[str, Path]:
     return resolved
 
 
+def parse_dataset_config(mapping: dict, where: str) -> DatasetConfig:
+    """One dataset mapping — a loaded file, or an entry of the ``datasets``
+    section a run's compiled config carries — typed and with unknown keys
+    refused. ``where`` names the source in errors."""
+    cfg = build(DatasetConfig, mapping, where)
+    if not cfg.CACHED_PATH:
+        raise ConfigError(f"{where}: CACHED_PATH is required")
+    cfg.FILTERS = normalise_filters(cfg.FILTERS, where)
+    return cfg
+
+
 def load_dataset_config(path: Path) -> DatasetConfig:
     """One dataset file, typed and with unknown keys refused."""
-    cfg = build(DatasetConfig, load_yaml(str(path)), path.stem)
-    if not cfg.CACHED_PATH:
-        raise ConfigError(f"{path}: CACHED_PATH is required")
-    cfg.FILTERS = normalise_filters(cfg.FILTERS, path.stem)
-    return cfg
+    return parse_dataset_config(load_yaml(str(path)), path.stem)
 
 
 def load_dataset_configs(names: list[str]) -> dict[str, DatasetConfig]:

@@ -78,10 +78,13 @@ def require_batch_dict(batch) -> dict:
 
 
 def batch_size(batch) -> int:
-    """Batch length, read off any collated frames tensor."""
-    frames = require_batch_dict(batch)[FRAMES]
-    any_channel = next(iter(frames.values()))
-    return int(any_channel.shape[0])
+    """Batch length, read off the first collated frames tensor at any depth
+    (``{channel: {prep: (B, T, H, W)}}`` today, the flat per-channel form
+    the legacy helpers still speak)."""
+    node = require_batch_dict(batch)[FRAMES]
+    while isinstance(node, dict):
+        node = next(iter(node.values()))
+    return int(node.shape[0])
 
 
 # --- The two shape moves -------------------------------------------------

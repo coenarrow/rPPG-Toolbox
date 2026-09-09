@@ -12,15 +12,17 @@ write to. Everything it does is stated by the three configs it is handed:
 There is no validation split: LOSO scores on the held-out participant, and
 the last epoch is the model. The test pass returns *records* — one dict per
 strided window with predictions, labels, stats, masks and metadata, in
-physical units — and writes them to the run directory as
-``{"fs": float, "windows": [...]}``; scoring them is the evaluation
-package's job, not this one's.
+physical units — and writes nothing: ``src.records`` turns them into files,
+and scoring them is the evaluation package's job, not this one's.
 
 The trainer is also handed the run's compiled ``config`` — one plain mapping
-of every config the run executed on, assembled by ``run_experiment.py`` — and
-writes it to the run directory as ``config.yaml`` the moment that directory
-exists, then carries it inside every checkpoint. What a run ran on is never
-in doubt, even when the files it was launched from have since changed.
+of every config the run executed on, assembled by
+``src.experiment.compile_config`` for ``scripts/train.py`` — and writes it to
+the run directory as ``config.yaml`` the moment that directory exists, then
+carries it inside every checkpoint. What a run ran on is never in doubt, even
+when the files it was launched from have since changed, and
+``scripts/infer.py`` rebuilds the run from the checkpoint alone. Handed no
+config (inference), it writes nothing but the records.
 
 Distributed runs (``src.distributed.Runtime`` with ``world_size > 1``): the
 model is wrapped in ``DistributedDataParallel``, the train set is sharded by a
@@ -49,10 +51,9 @@ from tqdm import tqdm
 
 from src.config import ConfigError
 from dataset.data_loader.label_transforms import INVERSES
-from src.evaluation.records import RECORDS_NAME
 from neural_methods.batch import (
     FRAMES, LABEL_MASK, LABEL_STATS, LABELS, PREDICTIONS, detach_to_cpu,
-    move_to_device,
+    iter_samples, move_to_device,
 )
 from neural_methods.loss.PerSignalLoss import PerSignalLoss, weight_losses
 from neural_methods.signals import signal_prior
@@ -224,7 +225,8 @@ class Trainer:
         return tqdm(iterable, desc=desc, leave=False, disable=not self.runtime.is_main)
 
     def checkpoint(self) -> dict:
-        """The model plus the compiled run config, so only-test can rebuild it."""
+        """The model plus the compiled run config, so ``scripts/infer.py`` can
+        rebuild the run from this file alone."""
         return {"model_state": self.model.state_dict(), "config": self.config}
 
     def _prepare_run_dir(self) -> None:
@@ -239,6 +241,22 @@ class Trainer:
                 yaml.safe_dump(self.config, handle, sort_keys=False)
 
     # -- fit ----------------------------------------------------------------
+    def step(self, batch: dict) -> tuple[float, dict]:
+        """One optimiser step on one collated batch: forward under autocast,
+        the weighted loss, backward through the scaler, update. Returns the
+        total as a float and the per-trace per-component floats. The
+        scheduler is ``fit``'s to advance; this is the step alone, so a
+        memory probe can take exactly one."""
+        batch = move_to_device(batch, self.device, non_blocking=True)
+        with self._autocast():
+            out = self.net(batch)
+            total, weighted = self._losses(out)
+        self.optimizer.zero_grad(set_to_none=True)
+        self.scaler.scale(total).backward()
+        self.scaler.step(self.optimizer)
+        self.scaler.update()
+        return float(total.detach()), weighted
+
     def fit(self, train_dataset: Dataset) -> list:
         """Train for the recipe's epochs; returns the per-epoch loss log."""
         cfg, runtime = self.training, self.runtime
@@ -258,20 +276,13 @@ class Trainer:
             sums = {"batches": 0.0}
             progress = self._progress(loader, f"epoch {epoch + 1}/{cfg.EPOCHS}")
             for batch in progress:
-                batch = move_to_device(batch, self.device, non_blocking=True)
-                with self._autocast():
-                    out = self.net(batch)
-                    total, weighted = self._losses(out)
-                self.optimizer.zero_grad(set_to_none=True)
-                self.scaler.scale(total).backward()
-                self.scaler.step(self.optimizer)
-                self.scaler.update()
+                total, weighted = self.step(batch)
                 scheduler.step()
                 for trace, components in weighted.items():
                     for component, value in components.items():
                         key = f"{trace}/{component}"
                         sums[key] = sums.get(key, 0.0) + value
-                sums["total"] = sums.get("total", 0.0) + float(total.detach())
+                sums["total"] = sums.get("total", 0.0) + float(total)
                 sums["batches"] += 1
                 progress.set_postfix(loss=f"{sums['total'] / sums['batches']:.4g}")
             sums = all_reduce_sum(sums, runtime)      # global means, not rank 0's
@@ -301,14 +312,14 @@ class Trainer:
     # -- test ---------------------------------------------------------------
     @torch.no_grad()
     def test(self, test_dataset: Dataset) -> list:
-        """Every strided window through the model; returns and saves the records.
+        """Every strided window through the model; returns the records.
 
         A record is the per-sample view of the batch dict minus the frames:
         ``predictions``, ``labels``, ``label_stats``, ``label_mask``,
-        ``channel_mask`` and ``metadata``, all on the CPU and with the traces
-        inverted to physical units. Under DDP each rank
-        runs a strided shard and the main rank returns and saves them all;
-        the other ranks return ``[]``.
+        ``channel_mask`` and ``metadata``, detached on the CPU and with the
+        traces inverted to physical units. Nothing is written here. Under
+        DDP each rank runs a strided shard and the main rank returns them
+        all; the other ranks return ``[]``.
         """
         runtime = self.runtime
         shard = test_dataset
@@ -321,27 +332,10 @@ class Trainer:
             batch = move_to_device(batch, self.device, non_blocking=True)
             with self._autocast():
                 out = self.net(batch)
-            out = detach_to_cpu({k: v for k, v in out.items() if k != FRAMES})
             out[PREDICTIONS] = {t: p.float() for t, p in out[PREDICTIONS].items()}
-            n = next(iter(out[PREDICTIONS].values())).shape[0]
-            records.extend(_unbatch(out, i) for i in range(n))
-        records = [to_physical(r, self.interface.LABEL_PREPROCESSING) for r in records]
-        records = gather_lists(records, runtime)
-        if runtime.is_main:
-            self._prepare_run_dir()
-            torch.save({"fs": self.interface.FS, "windows": records},
-                       self.run_dir / RECORDS_NAME)
-            print(f"test: {len(records)} windows recorded to {self.run_dir / RECORDS_NAME}")
-        return records
-
-
-def _unbatch(obj, i: int):
-    """Sample ``i`` of a collated value: tensors and the metadata lists are
-    indexed on the batch axis, dicts recurse, 0-dim tensors pass through."""
-    if torch.is_tensor(obj):
-        return obj if obj.ndim == 0 else obj[i]
-    if isinstance(obj, dict):
-        return {k: _unbatch(v, i) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple)):
-        return obj[i]
-    return obj
+            # The frames stay in the dict for iter_samples to size the batch
+            # (slicing is a view); each sample drops them before leaving the device.
+            for sample in iter_samples(out):
+                sample = detach_to_cpu({k: v for k, v in sample.items() if k != FRAMES})
+                records.append(to_physical(sample, self.interface.LABEL_PREPROCESSING))
+        return gather_lists(records, runtime)

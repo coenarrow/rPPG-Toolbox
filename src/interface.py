@@ -172,14 +172,20 @@ def _exactly_the_traces(mapping: dict, traces: list, where: str) -> None:
             f"{missing}, not in TRACES {extra}")
 
 
+def parse_interface(mapping: dict, where: str) -> InterfaceConfig:
+    """One interface mapping — a loaded file, or the ``interface`` section a
+    run's compiled config carries — typed, every key present, every rule
+    checked. ``where`` names the source in errors."""
+    if not isinstance(mapping, dict):
+        raise ConfigError(f"{where}: the interface must be a mapping")
+    _require_every_key(mapping, where)
+    cfg = build(InterfaceConfig, mapping, where)
+    return validate_interface(cfg, where)
+
+
 def load_interface(path: Path = DEFAULT_INTERFACE_PATH) -> InterfaceConfig:
     """The interface file, typed, every key present, every rule checked."""
     path = Path(path)
     if not path.is_file():
         raise ConfigError(f"No interface config at {path}")
-    mapping = load_yaml(str(path))
-    if not isinstance(mapping, dict):
-        raise ConfigError(f"{path}: the interface must be a mapping")
-    _require_every_key(mapping, path.name)
-    cfg = build(InterfaceConfig, mapping, path.stem)
-    return validate_interface(cfg, path.name)
+    return parse_interface(load_yaml(str(path)), path.name)
