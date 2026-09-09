@@ -1,3 +1,3 @@
-# Datasets are imported directly from their modules (e.g.
-# dataset.data_loader.NeckflixLoader); the markdown files alongside them are
-# the cache specs for datasets whose legacy loaders were deleted in Phase 2.
+# Dataset loading lives in src/datasets.py. This package keeps label_transforms
+# and the markdown cache specs, one per dataset, that describe the zarr layout
+# the preprocessor writes.

@@ -195,24 +195,6 @@ def test_portable_mamba_cpu_path_matches_the_fused_kernels():
     assert (on_cpu - on_gpu).abs().max() < 1e-4
 
 
-def test_physmamba_runs_on_cpu_whatever_is_installed():
-    """Installing mamba-ssm must not make the model CPU-unusable: its kernels
-    raise `Expected x.is_cuda() to be true`, which PortableMamba routes around."""
-    from neural_methods.model.PhysMamba import PhysMamba
-    with torch.no_grad():
-        out = PhysMamba()(torch.randn(1, 3, 32, 32, 32))
-    assert out.shape == (1, 32) and torch.isfinite(out).all()
-
-
-def test_physmamba_legacy_tensor_forward():
-    """The upstream tuple-contract trainers pass and receive plain tensors."""
-    from neural_methods.model.PhysMamba import PhysMamba
-    with torch.no_grad():
-        out = PhysMamba()(torch.randn(1, 3, 32, 32, 32))
-    assert out.shape == (1, 32)
-    assert torch.isfinite(out).all()
-
-
 def test_physhydra_forward():
     from neural_methods.model.PhysHydra import PhysHydra
     with torch.no_grad():

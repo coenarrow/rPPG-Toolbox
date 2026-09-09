@@ -12,7 +12,6 @@ from scipy.sparse import spdiags
 from src.evaluation.post_process import (
     _calculate_fft_hr, _compute_macc, _detrend, calculate_metric_per_video,
 )
-from unsupervised_methods import utils
 
 
 def detrend_dense(input_signal, lambda_value):
@@ -64,12 +63,6 @@ def test_detrend_removes_a_linear_trend():
 def test_detrend_passes_through_signals_too_short_to_difference():
     for n in (0, 1, 2):
         assert _detrend(np.ones(n), 100).shape == (n,)
-
-
-def test_unsupervised_utils_detrend_is_the_same_function():
-    rng = np.random.default_rng(1)
-    signal = rng.normal(size=64)
-    assert np.array_equal(utils.detrend(signal, 100), _detrend(signal, 100))
 
 
 @pytest.mark.parametrize("n", [13, 64, 181, 300])

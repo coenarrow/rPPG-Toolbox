@@ -150,7 +150,7 @@ the zarr loader already NaN-pads trace tails, and `label_mask` handles
 recordings that lack a trace, so recordings without AU coding simply omit
 the `au*` groups rather than carrying `-1` fill. Consequences to accept
 explicitly: per-window `zscore`/`minmax` label normalisation is meaningless
-for integer class codes, and `MultiSignalTrainer` has no classification
+for integer class codes, and the trainer in `src/trainer.py` has no classification
 head — a consumer wanting BigSmall-style AU training must treat `au*` keys
 specially. The legacy AU-span video crop becomes consumer-side (recoverable
 as the non-NaN span of any `au*` trace).
