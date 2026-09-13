@@ -6,7 +6,7 @@ which checks exactly the clauses tabulated under "What the validator checks".
 [`revised_overhaul_plan.md`](../revised_overhaul_plan.md) is the statement of
 intent it implements. There is one contract — this document — and it is not
 versioned: a store either satisfies it or it does not. The reader
-(`src/windows.py`) reads exactly this layout.
+(`src/inputs.py`) reads exactly this layout.
 
 The cache is written by a dataset's cacher, which lives at
 `dataset/cachers/<name>/` (for Neckflix, the submodule at
@@ -79,7 +79,7 @@ treats each perspective as an independent sample.
 
 Fixed vocabulary — a store may carry any subset, nothing outside it. The
 table lives once in code (`MODALITY_CHANNELS` in
-`neural_methods/signals.py`) and is the global channel map.
+`src/signal_transforms.py`) and is the global channel map.
 
 | key     | meaning          | C        | canonical channels |
 | ------- | ---------------- | -------- | ------------------ |
@@ -97,7 +97,7 @@ Each modality group holds:
 - `video/data` — `(C, T, H, W)`, stacked in exactly that order, `C` fixed
   by the vocabulary, `T > 0`. **Any dtype** — uint8 RGB, uint16 IR or
   depth, float — the contract does not care; the consumer casts
-  (`neural_methods/frame_transforms.py`).
+  (`src/frame_transforms.py`).
 - One group per trace the recording carries, index-aligned to **this
   modality's** frames: trace length equals video `T`.
 
@@ -113,7 +113,7 @@ exists.
 
 ## Trace
 
-Fixed vocabulary (`TRACE_KEYS` in `neural_methods/signals.py`):
+Fixed vocabulary (`TRACE_KEYS` in `src/signal_transforms.py`):
 
 | key   | meaning                 | repo signal |
 | ----- | ----------------------- | ----------- |
@@ -151,7 +151,7 @@ values are finite, and the content of any filter attr.
 
 ## Reader consequences
 
-What `src/windows.py` does with a conformant store:
+What `src/inputs.py` does with a conformant store:
 
 - Reads `video/data`, the perspective-level `fps` and `timestamps_us`; no
   admission check of its own.

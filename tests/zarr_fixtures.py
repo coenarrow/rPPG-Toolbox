@@ -8,7 +8,7 @@ docs/architecture.md.
 import numpy as np
 import zarr
 
-from neural_methods.signals import MODALITY_CHANNELS
+from src.signal_transforms import MODALITY_CHANNELS
 
 TOOL_VERSION = "1.0.0"
 

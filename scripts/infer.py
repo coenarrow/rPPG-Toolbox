@@ -15,7 +15,7 @@ trained on. The records land in ``RUN_DIR/test_records/`` (or ``--out``):
 ``meta.json``, ``windows.csv``, and per recording and camera one
 ``<TRACE>.csv`` with the time axis, the label, the mean and spread of the
 overlapping window predictions and one column per window, all in physical
-units (``src/records.py``).
+units (``src/outputs.py``).
 """
 
 import argparse
@@ -36,7 +36,7 @@ from src.experiment import (                                     # noqa: E402
     print_setup, print_stores, rebuild, test_windows,
 )
 from src.models import build_model                               # noqa: E402
-from src.records import RECORDS_DIR, write_records               # noqa: E402
+from src.outputs import RECORDS_DIR, write_records               # noqa: E402
 from src.trainer import Trainer                                  # noqa: E402
 
 SCRIPT = "scripts/infer.py"

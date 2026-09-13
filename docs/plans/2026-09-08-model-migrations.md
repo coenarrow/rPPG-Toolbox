@@ -2,8 +2,9 @@
 
 **Goal:** put every remaining upstream rPPG-Toolbox model in
 `neural_methods/model/` on the multi-signal contract, one sub-agent per
-model, so that each one trains and tests on PURE through `run_experiment.py`
-on its own paper interface and paper recipe. PhysHydra is excluded.
+model, so that each one trains and tests on PURE through `scripts/train.py`,
+`scripts/infer.py` and `scripts/eval.py` on its own paper interface and
+paper recipe. PhysHydra is excluded.
 
 **Spec:** `docs/adding_a_model.md` is the recipe and the authority; `CLAUDE.md`
 carries the cross-cutting rules. DeepPhys (per-frame), PhysMamba and
@@ -60,9 +61,11 @@ Binding for every task. Copied from `CLAUDE.md` and `docs/adding_a_model.md`.
    by the DeepPhys and PhysMamba files.
 7. **A finished migration ends with a command in `README.md`** under
    "Algorithms": the model added to the "On the multi-signal contract today"
-   line and the exact `run_experiment.py` command that trains and tests it on
-   PURE with participant `01` held out on its paper interface and recipe, in
-   the same shape as the DeepPhys block already there.
+   line and the exact `scripts/train.py` command that trains it on PURE with
+   participant `01` held out on its paper interface and recipe (inference and
+   evaluation are the same `scripts/infer.py` / `scripts/eval.py` commands
+   for every model, on the run directory it prints), in the same shape as the
+   DeepPhys block already there.
 8. **Dependencies go through `uv add`, never pip.** No migration here should
    need one.
 9. The backbone contract (`docs/adding_a_model.md` step 1): constructor takes
@@ -86,21 +89,24 @@ Binding for every task. Copied from `CLAUDE.md` and `docs/adding_a_model.md`.
   make it time out. Scope searches to `neural_methods`, `src`, `configs`,
   `tests`, `docs`, `README.md`.
 - The PURE cache is at `D:/pure_zarr` (see `configs/datasets/pure.yaml`);
-  the box has a CUDA GPU. The smoke run for a model is
+  the box has a CUDA GPU. The smoke run for a model is the three-command
+  chain, each reading the run directory the one before it printed:
   ```
-  uv run python run_experiment.py --datasets pure \
+  uv run python scripts/train.py --datasets pure \
       --test-participant-dataset pure --test-participant-id 01 \
       --model <name> --interface configs/interfaces/<name>_interface.yaml \
       --training configs/training/<name>_training.yaml --limit-windows 8
+  uv run python scripts/infer.py runs/<NAME>_PURE.01_<YYYYMMDDHHMM> --limit-windows 8
+  uv run python scripts/eval.py runs/<NAME>_PURE.01_<YYYYMMDDHHMM>
   ```
-  It must reach `evaluate` and write `runs/<name>_pure_01/` with
-  `config.yaml`, `losses.csv`, `test_records.pt`, `rates.csv`, `summary.csv`
-  and `digest.txt`. Paste the tail of its output and the digest into the
-  report. Then also build the model on the standard interface
+  It must reach `scripts/eval.py` and leave `runs/<NAME>_PURE.01_<YYYYMMDDHHMM>/`
+  holding `config.yaml`, `losses.csv` and `test_records/`, whose `evaluation/`
+  includes `digest.txt`. Paste the tail of each command's output and the
+  digest into the report. Then also build the model on the standard interface
   (`configs/interfaces/interface_neckflix.yaml`) and push one synthetic batch
   through it in a Python one-liner (window and frame size from that file) to
-  show the adaptive stages work; paste that too. Remove `runs/<name>_pure_01`
-  afterwards.
+  show the adaptive stages work; paste that too. Remove the
+  `runs/<NAME>_PURE.01_<YYYYMMDDHHMM>` directory afterwards.
 - **Committing:** the working tree carries a large uncommitted overhaul that
   is not yours. Commit with `git add <explicit paths>` naming only the files
   this task creates, edits or deletes; never `git add -A`, `git add .` or

@@ -17,7 +17,7 @@ this contract asks of every model:
 - the in-network ``torch.diff`` keeps a zero frame appended, so a clip of T
   frames leaves T rows. Upstream repeated the last frame in its trainer
   before the forward, which is the same arithmetic (``x_T - x_T = 0``) and
-  the same convention as ``neural_methods.frame_transforms.diff_normalized``;
+  the same convention as ``src.frame_transforms.diff_normalized``;
 - the ``frames``, ``md_config``, ``device`` and ``debug`` arguments are gone:
   the window is read off the input, the published factorisation values are
   constructor defaults, modules follow their parameters, and the debug

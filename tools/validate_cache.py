@@ -16,7 +16,7 @@ from typing import NamedTuple
 import numpy as np
 import zarr
 
-from neural_methods.signals import MODALITY_CHANNELS, TRACE_KEYS
+from src.signal_transforms import MODALITY_CHANNELS, TRACE_KEYS
 
 #: Modalities whose frame representation the contract has not pinned yet. Their
 #: channel count goes unchecked; the CLI says so rather than passing silently.

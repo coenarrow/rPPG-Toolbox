@@ -184,5 +184,5 @@ BEGIN/END percentage splits with their CSV file lists, and the load-time
 exclusion/task filtering are all consumer-side or obsolete in the new
 pipeline. The cache stores raw full-length RGB frames and the
 physical-unit trace only; `DATA_TYPE` transforms and resizing happen in
-`neural_methods/frame_transforms.py`, and splits/exclusions are root-attr
+`src/frame_transforms.py`, and splits/exclusions are root-attr
 filters at load time.

@@ -42,7 +42,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 
-from neural_methods.signals import canonical_signal, validate_traces
+from src.signal_transforms import canonical_signal, validate_traces
 
 _EPS = 1e-8
 

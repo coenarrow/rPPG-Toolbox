@@ -1,0 +1,32 @@
+# The pressure-only Neckflix interface: the standard Neckflix interface with
+# ECG dropped and cut down for a cheap end-to-end run. Written out in full
+# rather than BASE-merged onto interface_neckflix.yaml, because a merge of
+# mappings unions their keys and would keep the ECG entries of
+# LABEL_PREPROCESSING and LOSS that this interface exists to remove.
+#
+# Three deliberate departures from configs/interfaces/interface_neckflix.yaml:
+#   TRACES               ABP and CVP only, no ECG.
+#   RESIZE               36x36, a quarter of the standard's pixel count and
+#                        still above PhysMamba's MIN_FRAME of 16.
+#   INPUT_PREPROCESSING  DiffNormalized alone. PhysMamba's model config reads
+#                        the DiffNormalized block by name, so the standard
+#                        interface's Standardized block was built and thrown
+#                        away on every window.
+#
+# Every key is required — there are no defaults.
+FS: 30.0                       # frame rate the model sees; faster stores are
+                               # decimated to it
+UPSAMPLING: refuse             # slower stores: refuse | interpolate
+WINDOW_SECONDS: 6.0            # T = WINDOW_SECONDS x FS = 180 frames
+WINDOW_STRIDE: 1.0             # seconds the test set steps between windows;
+                               # training draws random windows and ignores it
+CHANNELS: [R, G, B]            # ordered camera channels, subset of R,G,B,I,D
+TRACES: [ABP, CVP]             # the two pressure waveforms; ECG dropped
+RESIZE: {H: 36, W: 36}         # what the model sees; {H: 0, W: 0} = no resize
+INPUT_PREPROCESSING: [DiffNormalized]   # Raw | Standardized | DiffNormalized
+LABEL_PREPROCESSING:           # one entry per trace: raw | zscore
+  ABP: raw
+  CVP: raw
+LOSS:                          # one entry per trace: {component: weight}, as in
+  ABP: {CCC: 1.0, MEAN: 0.05, MAX: 0.05, MIN: 0.05}   # the standard interface
+  CVP: {CCC: 1.0, MEAN: 0.2, MAX: 0.2, MIN: 0.2}

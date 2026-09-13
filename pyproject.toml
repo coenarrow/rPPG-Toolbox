@@ -50,6 +50,7 @@ dependencies = [
     "tqdm>=4.70",
     "zarr>=3.3",
     "pillow>=12.3.0",
+    "seaborn>=0.13.2",
 ]
 
 [dependency-groups]
@@ -61,7 +62,6 @@ dev = [
     "ipywidgets>=8.1.9",
     "isort>=6",
     "pytest>=8.4",
-    "seaborn>=0.13.2",     # prototype notebooks only
 ]
 
 [tool.uv]

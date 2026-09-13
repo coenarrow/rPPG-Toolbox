@@ -1,8 +1,8 @@
-"""The evaluation of a run's test records, with no config.
+"""The evaluation of a run's records, with no config, interface file or
+checkpoint — though torch still arrives transitively today.
 
-``evaluate`` scores levels (absolute signals) and heart rate (every cardiac
-trace, fused and median) per window; ``rate`` is the spectral estimator;
-``plots`` the figures; ``records`` the on-disk record format;
-``post_process`` the upstream toolbox's detrend / bandpass / MACC helpers
-the estimator and the unsupervised methods share.
+One recording and camera at a time: ``recording.py`` (with ``beats.py``
+and ``rate.py``) scores a folder's trace tables into beats, readings and
+heart rates, written beside them. ``scripts/eval.py`` is the entry point;
+``docs/evaluation.md`` the reference.
 """

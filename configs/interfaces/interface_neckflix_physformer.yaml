@@ -1,0 +1,39 @@
+# PhysFormer's paper interface, pointed at Neckflix's pressure traces.
+#
+# The geometry is PhysFormer's own, straight from
+# configs/interfaces/physformer_interface.yaml: 128x128 frames (the cache's
+# native size, so no rescale), 160-frame windows at 30 fps, DiffNormalized
+# input alone, which is the block configs/models/physformer.yaml reads.
+#
+# What changes is the traces, and everything that follows from them. ABP and
+# CVP are absolute-class signals: they carry meaning in mmHg, so
+# src/signal_transforms.py feeds them raw and scores level as well as shape.
+# The paper's `zscore` label is wrong for them — its inverse restores physical
+# units from the label window's own mean and SD, which would hand the model
+# every systolic, MAP and diastolic value it is being scored on. Likewise the
+# paper's NEGPEARSON is shape-only and would leave the level unconstrained.
+# Both therefore come from configs/interfaces/interface_neckflix.yaml
+# unchanged, which also makes this run comparable with the PhysMamba one on
+# configs/interfaces/interface_neckflix_bp.yaml.
+#
+# Written out in full rather than BASE-merged: merging mappings unions their
+# keys, so the paper file's PPG entries in LABEL_PREPROCESSING and LOSS would
+# survive and be refused as rules for an unlisted trace.
+#
+# Every key is required — there are no defaults.
+FS: 30.0                       # frame rate the model sees; faster stores are
+                               # decimated to it
+UPSAMPLING: refuse             # slower stores: refuse | interpolate
+WINDOW_SECONDS: 5.333333       # 160 frames (160 / 30), the upstream CHUNK_LENGTH
+WINDOW_STRIDE: 1.0             # seconds the test set steps between windows;
+                               # training draws random windows and ignores it
+CHANNELS: [R, G, B]            # ordered camera channels, subset of R,G,B,I,D
+TRACES: [ABP, CVP]             # the two pressure waveforms; no ECG, no PPG
+RESIZE: {H: 128, W: 128}       # upstream PhysFormer frame size
+INPUT_PREPROCESSING: [DiffNormalized]
+LABEL_PREPROCESSING:           # raw: absolute signals keep their mmHg
+  ABP: raw
+  CVP: raw
+LOSS:                          # the standard Neckflix pressure loss; the
+  ABP: {CCC: 1.0, MEAN: 0.05, MAX: 0.05, MIN: 0.05}   # weights are where the
+  CVP: {CCC: 1.0, MEAN: 0.2, MAX: 0.2, MIN: 0.2}      # per-signal scale lives

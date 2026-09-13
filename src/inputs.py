@@ -1,4 +1,4 @@
-"""Windows over admitted stores, shaped to the interface.
+"""The input side: windows read out of the zarr cache, shaped to the interface.
 
 One :class:`WindowedDataset` per dataset name, built from that dataset's
 admitted stores (``src.datasets``) and the interface (``src.interface``).
@@ -35,7 +35,10 @@ Emitted (``default_collate`` prepends the batch axis)::
      "metadata":     {"dataset", "recording", "participant", "perspective": str,
                       "start_frame": int}}
 
-Input preprocessing is per channel: each channel's window is standardised or
+``start_frame`` is the window's first frame **at FS**, not in the store's
+native frames: every window downstream (``src.outputs``, the evaluation)
+sits on the interface's time base, and the store's rate is a detail only this
+module knows. Input preprocessing is per channel: each channel's window is standardised or
 differenced with its own statistics, so a channel's block never depends on
 which other channels the interface happens to demand.
 """
@@ -47,23 +50,17 @@ from pathlib import Path
 import numpy as np
 import torch
 import zarr
-from einops import rearrange
 
-from dataset.data_loader.label_transforms import (STAT_NAMES, apply_norm,
-                                                  finite_stats)
-from neural_methods.frame_transforms import diff_normalized, resize_video, standardized
-from neural_methods.signals import MODALITY_CHANNELS, TRACE_KEYS
+from src.frame_transforms import FRAME_TRANSFORMS, resize_video
 from src.interface import InterfaceConfig
+from src.signal_transforms import (
+    MODALITY_CHANNELS, STAT_NAMES, TRACE_KEYS, TRACE_KEYS_INVERSE, finite_stats,
+    normalise_label,
+)
 
 MODES = ("random", "strided")
 #: Measured rates within this fraction of each other are the same nominal rate.
 FPS_NOMINAL_TOLERANCE = 0.01
-
-_PREPROCESS = {
-    "Raw": lambda v: v,
-    "Standardized": standardized,
-    "DiffNormalized": diff_normalized,
-}
 
 
 # ---------------------------------------------------------------------------
@@ -80,13 +77,20 @@ class WindowPlan:
     ``span`` native frames are read from ``start``; ``offsets`` picks
     ``window_frames`` of them (identity or decimation when ``weights`` is
     None), or ``offsets`` is a ``(lo, hi)`` pair and ``weights`` the linear
-    blend between them (upsampling, never duplication).
+    blend between them (upsampling, never duplication). ``rate`` is interface
+    frames per native frame: exactly 1 when the rates are nominally the same,
+    so a native start is then reported unchanged.
     """
 
     span: int
     stride: int
     offsets: object
     weights: np.ndarray | None
+    rate: float = 1.0
+
+    def start_at_fs(self, native_start: int) -> int:
+        """A native start frame as the window's first frame at ``FS``."""
+        return int(round(native_start * self.rate))
 
     def take(self, array: np.ndarray, axis: int) -> np.ndarray:
         if self.weights is None:
@@ -119,11 +123,12 @@ def plan_window(native_fps: float, interface: InterfaceConfig, where: str) -> Wi
         positions = np.arange(n) * ratio
         lo = np.clip(np.floor(positions).astype(int), 0, span - 1)
         hi = np.clip(lo + 1, 0, span - 1)
-        return WindowPlan(span, stride, (lo, hi), (positions - lo).astype(np.float32))
+        return WindowPlan(span, stride, (lo, hi), (positions - lo).astype(np.float32),
+                          rate=1.0 / ratio)
     span = max(int(round(interface.WINDOW_SECONDS * native_fps)), n)
     stride = max(int(round(interface.WINDOW_STRIDE * native_fps)), 1)
     offsets = np.clip(np.rint(np.arange(n) * ratio).astype(int), 0, span - 1)
-    return WindowPlan(span, stride, offsets, None)
+    return WindowPlan(span, stride, offsets, None, rate=1.0 / ratio)
 
 
 # ---------------------------------------------------------------------------
@@ -249,10 +254,9 @@ class WindowedDataset(torch.utils.data.Dataset):
             if present:
                 modality, index = source
                 plane = torch.from_numpy(np.ascontiguousarray(videos[modality][index])).float()
-                plane = rearrange(plane, "t h w -> 1 1 t h w")
                 if self.interface.resizes:
                     plane = resize_video(plane, (self.interface.RESIZE.H, self.interface.RESIZE.W))
-                frames[ch] = {prep: rearrange(_PREPROCESS[prep](plane), "1 1 t h w -> t h w")
+                frames[ch] = {prep: FRAME_TRANSFORMS[prep](plane)
                               for prep in self.interface.INPUT_PREPROCESSING}
             else:
                 frames[ch] = {prep: torch.zeros((self.interface.window_frames, *self._pad_hw(s)))
@@ -267,7 +271,7 @@ class WindowedDataset(torch.utils.data.Dataset):
             if present:
                 finite = torch.isfinite(trace)
                 stats = finite_stats(trace)
-                normed = apply_norm(trace, stats, self.interface.LABEL_PREPROCESSING[sig])
+                normed = normalise_label(trace, stats, self.interface.LABEL_PREPROCESSING[sig])
                 labels[sig] = torch.where(finite, normed, trace.new_zeros(()))
             else:
                 labels[sig] = torch.zeros(self.interface.window_frames)
@@ -280,7 +284,7 @@ class WindowedDataset(torch.utils.data.Dataset):
             "channel_mask": channel_mask, "label_mask": label_mask,
             "metadata": {"dataset": self.name, "recording": s.recording,
                          "participant": s.participant, "perspective": s.perspective,
-                         "start_frame": start},
+                         "start_frame": s.plan.start_at_fs(start)},
         }
 
     def _pad_hw(self, s: Sample) -> tuple[int, int]:
@@ -300,9 +304,6 @@ class WindowedDataset(torch.utils.data.Dataset):
             return plan.take(sliced, axis=0)
         lo, hi = plan.offsets
         return sliced[lo] + (sliced[hi] - sliced[lo]) * plan.weights.astype(np.float64)
-
-
-TRACE_KEYS_INVERSE = {signal: key for key, signal in TRACE_KEYS.items()}
 
 
 def _finite_mean(arrays: list[np.ndarray]) -> np.ndarray:

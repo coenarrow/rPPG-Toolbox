@@ -42,7 +42,7 @@ from src.interface import load_interface          # noqa: E402
 from src.models import build_model, load_model_config        # noqa: E402
 from src.trainer import Trainer                   # noqa: E402
 from src.training import load_training            # noqa: E402
-from src.windows import WindowedDataset           # noqa: E402
+from src.inputs import WindowedDataset            # noqa: E402
 
 #: A CUDA context is created per process outside the allocator's books, so
 #: neither ``max_memory_reserved`` nor a warm ``mem_get_info`` delta sees it.

@@ -26,7 +26,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from neural_methods.batch import CHANNEL_MASK, LABEL_MASK, LABELS, METADATA, PREDICTIONS
 from src.interface import InterfaceConfig
 
 RECORDS_DIR = "test_records"
@@ -42,7 +41,7 @@ def _array(value) -> np.ndarray:
 
 
 def _start(record) -> int:
-    return int(record[METADATA]["start_frame"])
+    return int(record["metadata"]["start_frame"])
 
 
 def window_rows(records, interface: InterfaceConfig) -> pd.DataFrame:
@@ -50,15 +49,15 @@ def window_rows(records, interface: InterfaceConfig) -> pd.DataFrame:
     flag per interface channel and trace."""
     rows = []
     for i, record in enumerate(records):
-        meta, start = record[METADATA], _start(record)
+        meta, start = record["metadata"], _start(record)
         row = {"window": i, "dataset": str(meta["dataset"]),
                "recording": str(meta["recording"]),
                "participant": str(meta["participant"]),
                "perspective": str(meta["perspective"]),
                "start_frame": start, "end_frame": start + interface.window_frames}
-        row.update({f"channel_{ch}": bool(record[CHANNEL_MASK][ch])
+        row.update({f"channel_{ch}": bool(record["channel_mask"][ch])
                     for ch in interface.CHANNELS})
-        row.update({f"label_{sig}": bool(record[LABEL_MASK][sig])
+        row.update({f"label_{sig}": bool(record["label_mask"][sig])
                     for sig in interface.TRACES})
         rows.append(row)
     return pd.DataFrame(rows)
@@ -68,7 +67,7 @@ def trace_table(records, sig: str, fs: float) -> pd.DataFrame:
     """The wide table of one trace over one (recording, perspective)'s
     windows, which must be sorted by ``start_frame``."""
     starts = [_start(r) for r in records]
-    length = _array(records[0][PREDICTIONS][sig]).size
+    length = _array(records[0]["predictions"][sig]).size
     first = starts[0]
     frames = np.arange(first, starts[-1] + length)
     label = np.full(frames.size, np.nan)
@@ -76,14 +75,14 @@ def trace_table(records, sig: str, fs: float) -> pd.DataFrame:
     for record, start in zip(records, starts):
         lo = start - first
         column = np.full(frames.size, np.nan)
-        column[lo:lo + length] = _array(record[PREDICTIONS][sig])
+        column[lo:lo + length] = _array(record["predictions"][sig])
         columns[f"w{start}"] = column
-        if bool(record[LABEL_MASK][sig]):
+        if bool(record["label_mask"][sig]):
             # Overlapping windows carry the same label; the first to cover
             # a frame writes it.
             span = label[lo:lo + length]
             missing = np.isnan(span)
-            span[missing] = _array(record[LABELS][sig])[missing]
+            span[missing] = _array(record["labels"][sig])[missing]
     stack = np.stack(list(columns.values()), axis=1)     # (frames, windows)
     covered = ~np.isnan(stack)
     n = covered.sum(axis=1)
@@ -111,7 +110,7 @@ def write_records(records, out_dir, interface: InterfaceConfig, meta: dict) -> P
 
     groups: dict[tuple, list] = {}
     for record in records:
-        m = record[METADATA]
+        m = record["metadata"]
         groups.setdefault((str(m["recording"]), str(m["perspective"])), []).append(record)
     for (recording, perspective), group in groups.items():
         group.sort(key=_start)          # DDP gathers shards in rank order

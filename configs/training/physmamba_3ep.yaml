@@ -1,0 +1,10 @@
+# PhysMamba's paper recipe cut to 3 epochs, for a cheap end-to-end run.
+#
+# Everything else — Adam at 3e-3 with weight decay 5e-4, OneCycleLR, batch 4,
+# float32 — is the paper recipe, inherited from the file below. Only EPOCHS
+# moves, so what this run exercises is the pipeline, not the fit.
+#
+# MODEL_FILE_NAME stays unset on purpose: it would name every fold of a LOSO
+# sweep the same thing and each would overwrite the last.
+BASE: physmamba_training.yaml
+EPOCHS: 3

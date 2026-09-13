@@ -1,0 +1,13 @@
+# Neckflix cut down to five participants for a cheap end-to-end run.
+#
+# 32, 33, 34, 35 and 36 are the subset chosen because every perspective of
+# every one of their 34 stores carries abp, cvp and ecg — checked against the
+# cache, not assumed. Together they are 67 camera perspectives of roughly 30 s
+# each, enough to exercise the evaluation on real data without a long fit.
+#
+# The keys and the filter grammar are documented in configs/datasets/neckflix.yaml.
+BASE: neckflix.yaml
+FILTERS:
+  participant:
+    include: ["32", "33", "34", "35", "36"]
+    exclude: []

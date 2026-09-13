@@ -158,5 +158,5 @@ Face cropping (Haar Cascade / YOLO5Face), spatial resizing, chunking,
 BEGIN/END percentage splits with their CSV file lists are all
 consumer-side or obsolete in the new pipeline. The cache stores raw
 full-length RGB frames and the physical-unit trace only; `DATA_TYPE`
-transforms and resizing happen in `neural_methods/frame_transforms.py`,
+transforms and resizing happen in `src/frame_transforms.py`,
 and splits are root-attr filters at load time.

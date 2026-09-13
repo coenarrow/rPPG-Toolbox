@@ -38,7 +38,7 @@ from src.interface import DEFAULT_INTERFACE_PATH, InterfaceConfig, parse_interfa
 from src.models import parse_model_config, resolve_model_config
 from src.trainer import CHECKPOINT_NAME, CONFIG_NAME
 from src.training import DEFAULT_TRAINING_PATH, TrainingConfig, parse_training
-from src.windows import WindowedDataset
+from src.inputs import WindowedDataset
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 

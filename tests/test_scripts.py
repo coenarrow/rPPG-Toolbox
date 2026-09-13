@@ -1,10 +1,11 @@
-"""The train -> infer chain, end to end over a synthetic zarr cache on the CPU.
+"""The train -> infer -> eval chain, end to end over a synthetic zarr cache on the CPU.
 
 One epoch of PhysNet on three participants holding one out, then the
 checkpoint over that participant and over another, then a run with nobody
 held out. The scripts have to leave exactly the files the README promises
 where it promises them, and ``infer`` has to rebuild the run from ``model.pt``
-alone. The stride is half a window, so the trace tables carry overlaps.
+alone, and ``eval`` has to score the records from the directory alone. The
+stride is half a window, so the trace tables carry overlaps.
 """
 import json
 import textwrap
@@ -15,8 +16,9 @@ import pytest
 
 import src.datasets
 from scripts.infer import main as infer
+from scripts.eval import main as evaluate
 from scripts.train import main as train
-from src.records import META_NAME, RECORDS_DIR, WINDOWS_NAME
+from src.outputs import META_NAME, RECORDS_DIR, WINDOWS_NAME
 from src.trainer import CHECKPOINT_NAME, CONFIG_NAME, LOSS_LOG_NAME
 from tests.zarr_fixtures import make_store
 
@@ -126,6 +128,18 @@ def test_train_writes_the_run_and_infer_rebuilds_it(tmp_path, train_args):
     assert _participants(records) == {"001"}
     assert (out / WINDOWS_NAME).is_file() and (out / "P001_S01_R1_0_D" / "1" / "ABP.csv").is_file()
     assert not (out / CONFIG_NAME).exists() and not (out / RECORDS_DIR).exists()
+
+    # The records alone: every recording scored beside its trace tables. 32
+    # covered frames at 30 fps cut into 0.5 s readings gives two; the
+    # two-frame remainder is dropped.
+    folder = run_dir / RECORDS_DIR / "P003_S01_R1_0_D" / "1"
+    assert evaluate([str(run_dir), "--reading-seconds", "0.5"]) == [folder]
+    for name in ("readings.csv", "beats.csv", "rates.csv"):
+        assert (folder / name).is_file(), name
+    readings = pd.read_csv(folder / "readings.csv")
+    assert set(readings["signal"]) == {"ABP", "CVP"}
+    assert sorted(readings["reading"].unique()) == [0, 1]
+    assert readings["waveform_mad"].notna().all()
 
 
 def test_train_on_everyone_then_infer_must_name_a_participant(tmp_path, train_args):

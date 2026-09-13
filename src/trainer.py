@@ -12,7 +12,7 @@ write to. Everything it does is stated by the three configs it is handed:
 There is no validation split: LOSO scores on the held-out participant, and
 the last epoch is the model. The test pass returns *records* — one dict per
 strided window with predictions, labels, stats, masks and metadata, in
-physical units — and writes nothing: ``src.records`` turns them into files,
+physical units — and writes nothing: ``src.outputs`` turns them into files,
 and scoring them is the evaluation package's job, not this one's.
 
 The trainer is also handed the run's compiled ``config`` — one plain mapping
@@ -49,17 +49,12 @@ from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data import DataLoader, Dataset, DistributedSampler, Subset
 from tqdm import tqdm
 
-from src.config import ConfigError
-from dataset.data_loader.label_transforms import INVERSES
-from neural_methods.batch import (
-    FRAMES, LABEL_MASK, LABEL_STATS, LABELS, PREDICTIONS, detach_to_cpu,
-    iter_samples, move_to_device,
-)
 from neural_methods.loss.PerSignalLoss import PerSignalLoss, weight_losses
-from neural_methods.signals import signal_prior
+from src.config import ConfigError
 from src.distributed import Runtime, all_reduce_sum, gather_lists
 from src.interface import InterfaceConfig
 from src.models import MultiTraceModel
+from src.signal_transforms import denormalise_label, signal_prior
 from src.training import TrainingConfig
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -161,12 +156,57 @@ def to_physical(record: dict, label_preprocessing: dict) -> dict:
     Exact, not approximate: the stats that produced the normalisation ride in
     the record. For a ``raw`` signal the inverse is the identity.
     """
-    stats = record[LABEL_STATS]
+    stats = record["label_stats"]
     out = dict(record)
-    for key in (PREDICTIONS, LABELS):
-        out[key] = {sig: INVERSES[label_preprocessing[sig]](trace, stats[sig])
+    for key in ("predictions", "labels"):
+        out[key] = {sig: denormalise_label(trace, stats[sig], label_preprocessing[sig])
                     for sig, trace in record[key].items()}
     return out
+
+
+# ---------------------------------------------------------------------------
+# Walking the batch dict
+# ---------------------------------------------------------------------------
+def map_tensors(obj, fn):
+    """Apply ``fn`` to every tensor in a nested dict/list, preserving structure;
+    the metadata strings pass through."""
+    if torch.is_tensor(obj):
+        return fn(obj)
+    if isinstance(obj, dict):
+        return {k: map_tensors(v, fn) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return type(obj)(map_tensors(v, fn) for v in obj)
+    return obj
+
+
+def move_to_device(batch, device, non_blocking: bool = False):
+    return map_tensors(batch, lambda t: t.to(device, non_blocking=non_blocking))
+
+
+def detach_to_cpu(batch):
+    return map_tensors(batch, lambda t: t.detach().cpu())
+
+
+def _index_sample(obj, i, n):
+    """One batch element of a collated value: tensors indexed on their batch
+    axis, the length-``n`` lists ``default_collate`` makes of the metadata
+    strings likewise, and anything else — a 0-dim tensor is batch-level by
+    construction — passed through."""
+    if torch.is_tensor(obj):
+        return obj if obj.ndim == 0 else obj[i]
+    if isinstance(obj, dict):
+        return {k: _index_sample(v, i, n) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)) and len(obj) == n:
+        return obj[i]
+    return obj
+
+
+def iter_samples(out: dict):
+    """Per-sample views of a model output, one dict per batch element, with
+    the un-collated shapes the dataset produced. Sized off the predictions."""
+    n = next(iter(out["predictions"].values())).shape[0]
+    for i in range(n):
+        yield _index_sample(out, i, n)
 
 
 # ---------------------------------------------------------------------------
@@ -218,7 +258,7 @@ class Trainer:
     def _losses(self, out: dict) -> tuple:
         """``(total, weighted)``: the scalar to backpropagate and the per-trace
         per-component floats for logging, weights from the interface."""
-        raw = self.criterion(out[PREDICTIONS], out[LABELS], out[LABEL_MASK])
+        raw = self.criterion(out["predictions"], out["labels"], out["label_mask"])
         return weight_losses(raw, self.criterion.weights)
 
     def _progress(self, iterable, desc: str):
@@ -332,10 +372,9 @@ class Trainer:
             batch = move_to_device(batch, self.device, non_blocking=True)
             with self._autocast():
                 out = self.net(batch)
-            out[PREDICTIONS] = {t: p.float() for t, p in out[PREDICTIONS].items()}
-            # The frames stay in the dict for iter_samples to size the batch
-            # (slicing is a view); each sample drops them before leaving the device.
+            out = {k: v for k, v in out.items() if k != "frames"}
+            out["predictions"] = {t: p.float() for t, p in out["predictions"].items()}
             for sample in iter_samples(out):
-                sample = detach_to_cpu({k: v for k, v in sample.items() if k != FRAMES})
-                records.append(to_physical(sample, self.interface.LABEL_PREPROCESSING))
+                records.append(to_physical(detach_to_cpu(sample),
+                                           self.interface.LABEL_PREPROCESSING))
         return gather_lists(records, runtime)

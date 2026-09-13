@@ -1,0 +1,19 @@
+# PhysFormer's paper recipe cut to 5 epochs and batch 2, for a cheap
+# end-to-end run.
+#
+# Everything else — Adam at 1e-4 with weight decay 5e-5, a constant learning
+# rate, float32 — is the paper recipe, inherited from the file below.
+#
+# Two keys move. EPOCHS is the run's length. BATCH_SIZE drops from the paper's
+# 4 to 2 because PhysFormer on 128x128 frames and 160-frame windows, in two
+# copies (one per trace), reserves 14.6 GB at batch 4 and needs 15.1 GB with
+# the CUDA context allowance, against 14.9 GB free on this box. Measured with
+# tools/memory_report.py; at batch 2 the same probe reserves 7.4 GB. This run
+# exercises the pipeline, not the fit, so the headroom is worth more than the
+# recipe's batch size.
+#
+# MODEL_FILE_NAME stays unset on purpose: it would name every fold of a LOSO
+# sweep the same thing and each would overwrite the last.
+BASE: physformer_training.yaml
+EPOCHS: 5
+BATCH_SIZE: 2

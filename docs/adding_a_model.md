@@ -401,8 +401,11 @@ wrote (`scripts/train.py` prints it):
 ```bash
 uv run python scripts/train.py --datasets neckflix --test-participant-dataset neckflix --test-participant-id 1 --model mynet --interface configs/interfaces/mynet_interface.yaml --training configs/training/mynet_training.yaml --limit-windows 8
 uv run python scripts/infer.py runs/MYNET_NECKFLIX.1_<YYYYMMDDHHMM> --limit-windows 8
-uv run python -m src.evaluation.evaluate runs/MYNET_NECKFLIX.1_<YYYYMMDDHHMM>
+uv run python scripts/eval.py runs/MYNET_NECKFLIX.1_<YYYYMMDDHHMM> --reading-seconds 0.5
 ```
+
+With `--limit-windows 8` the covered trace is a few seconds long, so shrink
+the reading for the wiring check; drop both flags for a real fold.
 
 `--limit-windows N` keeps N evenly spaced windows per split for a wiring
 check; drop it for a real fold. Pass `--interface` and `--training`
@@ -425,8 +428,9 @@ What happens, in order:
    the checkpoint's compiled config through the same parsers the files went
    through, builds the model, loads the weights, and `test` records the
    held-out participant's windows.
-3. `src.evaluation.evaluate` (`scripts/eval.py` is a stub for now):
-   `evaluate(records, run_dir, fs)` scores them.
+3. `scripts/eval.py`: reads `test_records/` alone and writes `beats.csv`,
+   `readings.csv` and `rates.csv` beside each recording's trace tables
+   (`docs/evaluation.md`).
 
 Outputs land in `runs/<MODEL>_<DATASET>.<participant or all>-..._<YYYYMMDDHHMM>/`
 (one `<DATASET>.<...>` per `--datasets` entry, the held-out participant on the
@@ -438,7 +442,7 @@ dataset it came from and `all` on the rest):
 | `model.pt` | train, every epoch | state dict plus the same compiled config, which is what `infer` rebuilds the run from |
 | `losses.csv` | train, every epoch | per-epoch loss, per trace and component |
 | `test_records/` | infer | `meta.json`, `windows.csv` (one row per window with its position and presence flags), and per recording and camera one `<TRACE>.csv`: frame, time, label, mean / std / n over the overlapping windows, then one column per window, all in physical units |
-| `windows.csv`, `rates.csv`, `summary.csv`, plots | evaluation | per-window level scores for the absolute signals; per-window heart rate from every cardiac trace (PPG, ECG, ABP, CVP), from their fused spectra and from their median, each against its own label; the summary of both |
+| `test_records/<recording>/<camera>/{beats,readings,rates}.csv` | eval | per reference beat its matched predicted beat and both beats' levels; per reading the beat counts, the level means / SDs / errors and the waveform agreement; per reading a heart rate per source |
 
 ## Migrating an upstream rPPG-Toolbox model
 

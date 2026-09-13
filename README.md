@@ -84,8 +84,8 @@ uv run python scripts/train.py --datasets pure --test-participant-dataset pure -
 # 2. run the checkpoint over the held-out participant; writes test_records/ beside it
 uv run python scripts/infer.py runs/PHYSNET_PURE.01_<YYYYMMDDHHMM>
 
-# 3. score the records; writes windows.csv, rates.csv, summary.csv, digest.txt and the plots
-uv run python -m src.evaluation.evaluate runs/PHYSNET_PURE.01_<YYYYMMDDHHMM>
+# 3. score the records; writes beats.csv, readings.csv and rates.csv beside each recording's trace tables
+uv run python scripts/eval.py runs/PHYSNET_PURE.01_<YYYYMMDDHHMM>
 ```
 
 `scripts/infer.py` rebuilds the run from `model.pt` alone (the checkpoint
@@ -94,10 +94,8 @@ another participant (`--test-participant-dataset pure
 --test-participant-id 02 --out DIR`) or from another cache (`--datasets`).
 `scripts/train.py` with no held-out participant trains on every admitted
 store, as `runs/<MODEL>_<DATASET>.all-..._<YYYYMMDDHHMM>/`, for a final model
-to infer with later.
-`scripts/eval.py` is a stub for now; step 3 is the evaluation package's own
-entry point until the script is shaped. Add `--limit-windows 8` to steps 1
-and 2 for a wiring check.
+to infer with later. Add `--limit-windows 8` to steps 1 and 2 for a wiring
+check.
 
 The training command per model; steps 2 and 3 follow with the run directory
 it prints:
@@ -144,11 +142,14 @@ which channels and traces it carried), `meta.json`, and per recording and
 camera one `<TRACE>.csv` holding the time axis, the label, the mean and
 standard deviation of the overlapping window predictions, and one column
 per window, all in physical units and readable in a spreadsheet.
-The evaluation scores every absolute signal on its level (`windows.csv`) and
-reads a heart rate off every cardiac trace the run predicts (`rates.csv`):
-PPG, ECG, ABP and CVP each against their own label, plus the fused power
-spectrum of all of them and the median of their rates when a window carries
-more than one. `digest.txt` is the readable summary of both.
+The evaluation (`scripts/eval.py`) cuts each recording's combined trace
+into readings (30 s by default), detects the beats of every cardiac trace
+on both the label and the prediction, and scores per reading each
+absolute signal's levels (systolic / MAP / diastolic for ABP), the
+per-sample waveform agreement, and a heart rate from every cardiac trace,
+their fused spectrum and their median. The three tables land beside the
+recording's trace tables as `readings.csv`, `beats.csv` and `rates.csv`.
+[docs/evaluation.md](docs/evaluation.md) lists every column.
 
 To put another architecture on the contract, new or migrated from upstream,
 follow [docs/adding_a_model.md](docs/adding_a_model.md): one backbone module,

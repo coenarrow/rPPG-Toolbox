@@ -25,8 +25,6 @@ import torch.nn as nn
 from einops import rearrange
 
 from src.config import ConfigError, build, load_yaml
-from neural_methods.batch import FRAMES, PREDICTIONS, split_signals
-from neural_methods.frame_transforms import DATA_TYPES
 from neural_methods.model import (
     BigSmall as bigsmall, DeepPhys as deepphys, EfficientPhys as efficientphys,
     PhysFormer as physformer, PhysMamba as physmamba, PhysNet as physnet,
@@ -213,9 +211,8 @@ def _require_frame_size(interface: InterfaceConfig, name: str) -> tuple:
 
 
 def _require_input_block(name: str, interface: InterfaceConfig, where: str) -> None:
-    if name not in DATA_TYPES:
-        raise ConfigError(
-            f"{where} must be one of {list(DATA_TYPES)}, got {name!r}")
+    """The interface has already checked its blocks against the vocabulary,
+    so a block it produces is a valid one."""
     if name not in interface.INPUT_PREPROCESSING:
         raise ConfigError(
             f"{where} is {name!r}, which the interface does not produce; its "
@@ -305,7 +302,7 @@ class MultiTraceModel(nn.Module):
 
     def prepare_frames(self, batch) -> torch.Tensor:
         """``batch['frames'][ch][block]`` ``(B, T, H, W)`` -> ``(B, C_in, T, H, W)``."""
-        frames = batch[FRAMES]
+        frames = batch["frames"]
         blocks = [torch.stack([frames[ch][block] for ch in self.channels], dim=1)
                   for block in self.input_blocks]
         return torch.cat(blocks, dim=1)
@@ -322,9 +319,9 @@ class MultiTraceModel(nn.Module):
         return torch.cat(outs, dim=1)
 
     def forward(self, batch: dict) -> dict:
-        predictions = split_signals(self.forward_video(self.prepare_frames(batch)),
-                                    self.traces)
-        return {**batch, PREDICTIONS: predictions}
+        out = self.forward_video(self.prepare_frames(batch))
+        predictions = {trace: out[:, i] for i, trace in enumerate(self.traces)}
+        return {**batch, "predictions": predictions}
 
     def extra_repr(self) -> str:
         return (f"channels={list(self.channels)}, traces={list(self.traces)}, "

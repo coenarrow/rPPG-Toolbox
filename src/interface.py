@@ -21,11 +21,12 @@ zero-filled trace pushed through zscore would not be.
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 
-from src.config import ConfigError, build, load_yaml
-from dataset.data_loader.label_transforms import NORM_MODES
-from neural_methods.frame_transforms import DATA_TYPES
 from neural_methods.loss.PerSignalLoss import normalise_loss_weights
-from neural_methods.signals import canonical_signal, validate_channels, validate_traces
+from src.config import ConfigError, build, load_yaml
+from src.frame_transforms import FRAME_TRANSFORMS
+from src.signal_transforms import (
+    LABEL_TRANSFORMS, canonical_signal, validate_channels, validate_traces,
+)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_INTERFACE_PATH = REPO_ROOT / "configs" / "interface.yaml"
@@ -126,22 +127,22 @@ def validate_interface(cfg: InterfaceConfig, where: str) -> InterfaceConfig:
     if not cfg.INPUT_PREPROCESSING:
         raise ConfigError(
             f"{where}: INPUT_PREPROCESSING must list at least one of "
-            f"{list(DATA_TYPES)}")
-    unknown = [t for t in cfg.INPUT_PREPROCESSING if t not in DATA_TYPES]
+            f"{list(FRAME_TRANSFORMS)}")
+    unknown = [t for t in cfg.INPUT_PREPROCESSING if t not in FRAME_TRANSFORMS]
     if unknown:
         raise ConfigError(
             f"{where}: INPUT_PREPROCESSING has unknown entries {unknown}; "
-            f"known: {list(DATA_TYPES)}")
+            f"known: {list(FRAME_TRANSFORMS)}")
 
     # One entry per trace, no more and no fewer: a listed trace with no rule
     # would need a default, and a rule for an unlisted trace is a typo.
     resolved = {}
     for name, mode in cfg.LABEL_PREPROCESSING.items():
         signal = _canonical(name, f"{where}: LABEL_PREPROCESSING")
-        if mode not in NORM_MODES:
+        if mode not in LABEL_TRANSFORMS:
             raise ConfigError(
                 f"{where}: LABEL_PREPROCESSING.{name} must be one of "
-                f"{list(NORM_MODES)}, got {mode!r}")
+                f"{list(LABEL_TRANSFORMS)}, got {mode!r}")
         resolved[signal] = mode
     _exactly_the_traces(resolved, cfg.TRACES, f"{where}: LABEL_PREPROCESSING")
     cfg.LABEL_PREPROCESSING = {t: resolved[t] for t in cfg.TRACES}
